@@ -3,7 +3,7 @@
 ## Target Folder
 
 ```
-apps/web/app/                          → page wrapper + main content component
+apps/web/app/                          → page wrapper + page content orchestrator + private route components
 apps/web/components/                   → reusable UI components
 apps/web/hooks/transactions/           → frontend data-fetching hooks
 apps/web/constants/                    → query keys + API routes
@@ -14,7 +14,7 @@ packages/types/                        → shared response types
 
 ## Key Patterns
 
-- `page.tsx` must stay thin; main logic lives in `*-content.tsx`
+- `page.tsx` must stay thin; route orchestration lives in `*-page-content.tsx`, with private parts in `_components/`
 - JSX must not call `fetch` / `axios` directly
 - API integration must go through transaction hooks
 - payload changes must sync with `packages/schemas`

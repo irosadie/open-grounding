@@ -29,8 +29,9 @@ apps/web/
 ├── app/                    → Router: pages, layouts, route groups, route handlers
 │   └── (group)/
 │       └── feature/
-│           ├── page.tsx         → Server Component (thin Suspense wrapper)
-│           └── feature-content.tsx → Client Component (all logic)
+│           ├── page.tsx                 → Server Component (thin Suspense wrapper)
+│           ├── feature-page-content.tsx → Client Component (route orchestration)
+│           └── _components/             → Private components for this route
 ├── auth.ts                 → NextAuth credentials config (server-only)
 ├── proxy.ts                → Route protection / redirect logic in edge layer
 ├── components/             → Reusable UI components (used >1 page)
@@ -59,7 +60,8 @@ apps/web/
 
 ```
 page.tsx (Server Component — thin Suspense wrapper)
-  └→ feature-content.tsx (Client Component — all state, hooks, form, table, dialog)
+  └→ feature-page-content.tsx (Client Component — route state, hooks, layout)
+      ├→ _components/ (private form, table, dialog, drawer)
       └→ Custom Hook (hooks/transactions/use-{domain}/)
           └→ react-query useQuery / useMutation
               └→ axios instance (services/axios/)
@@ -81,7 +83,7 @@ page.tsx (Server Component — thin Suspense wrapper)
 - Call `axios` or `fetch` directly
 - Import from `services/` directly
 - Business logic or state management
-- Create `_components/` folder per route — all logic in content file
+- Place reusable cross-route components in `_components/` — use `apps/web/components/` instead
 
 ---
 
@@ -127,7 +129,7 @@ page.tsx (Server Component — thin Suspense wrapper)
 
 ---
 
-#### `*-content.tsx` — Main Client Component
+#### `*-page-content.tsx` — Main Client Component
 
 ✅ Allowed:
 - All `useState`, `useEffect`, hooks
@@ -141,6 +143,18 @@ page.tsx (Server Component — thin Suspense wrapper)
 ❌ Forbidden:
 - Call `axios` or `fetch` directly
 - Import from `services/` directly
+
+---
+
+#### `_components/` — Private Route Components
+
+✅ Allowed:
+- Presentational or focused components used only by the current route
+- Route-specific toolbar, table, form dialog, drawer, and loading components
+
+❌ Forbidden:
+- Reuse from another route — move cross-route components to `apps/web/components/`
+- Direct `axios` or `fetch` calls
 
 ---
 

@@ -25,7 +25,7 @@ If possible, add or update a test that represents the bug.
 ### 2. Localize the Root Cause
 
 Find the smallest viable root cause. Prioritize these locations:
-- `*-content.tsx`
+- `*-page-content.tsx` and its `_components/`
 - transaction hooks
 - shared schema/type consumed by the frontend
 - constants (`api-routers`, `query-keys`)

@@ -43,15 +43,15 @@ Implement UI from designs with precision. Focus on visuals and layout — no API
 ## Prohibitions
 
 - **FORBIDDEN** to call `axios`/`fetch` directly inside JSX/TSX components.
-- **FORBIDDEN** to create `_components/` folder — all logic lives in the content file.
+- **RECOMMENDED** to create `_components/` for components private to the route. Keep `*-page-content.tsx` beside `page.tsx` as the route orchestrator.
 - **FORBIDDEN** to use `any` as a type.
 - **FORBIDDEN** to hardcode colors or spacing — use Tailwind tokens.
 
 ## Pre-Completion Checklist
 
 - [ ] `page.tsx` is a thin Suspense wrapper
-- [ ] `*-content.tsx` is a single file containing all logic
-- [ ] No `_components/` folder
+- [ ] `*-page-content.tsx` sits beside `page.tsx` and orchestrates route state, hooks, and layout
+- [ ] Route-specific components are in `_components/`; shared components are in `apps/web/components/`
 - [ ] No direct API call in components
 - [ ] No `any`
 - [ ] Every file ends with a newline (EOF)

@@ -26,10 +26,10 @@ app/
 └── (dashboard)/
     └── users/
         ├── page.tsx                        → Server Component (thin Suspense wrapper)
+        ├── users-page-content.tsx          → Main Client Component (route orchestration)
         ├── loading.tsx                     → Skeleton placeholder (optional)
         ├── error.tsx                       → Error boundary (optional)
         └── _components/
-            ├── users-page-content.tsx      → Main Client Component
             ├── users-toolbar.tsx           → Search bar + filter + add button
             ├── users-table-card.tsx        → Table in PanelCard
             ├── users-form-dialog.tsx       → Create/edit dialog
@@ -42,7 +42,7 @@ app/
 
 ```tsx
 import { Suspense } from 'react'
-import { UsersPageContent } from './_components/users-page-content'
+import { UsersPageContent } from './users-page-content'
 import { UsersPageLoading } from './_components/users-page-loading'
 
 export default function UsersPage() {

@@ -6,11 +6,19 @@ You are a **principal engineer** in this monorepo. Follow all rules defined here
 This project uses the following AI-powered tools:
 
 - **Serena** — Advanced code navigation and symbol manipulation (find symbols, replace content, rename, refactor, diagnostics, and memory system)
+- **Graphify** — Persistent codebase knowledge graph for architecture, relationship, and impact analysis
 - **Headroom** — Context compression for large outputs (compress/retrieve/stats to save token usage)
 - **RTK (Reading Toolkit)** — Enhanced file reading utilities installed globally
 - **OpenSpec** — Structured workflow for feature development (propose → implement → verify → archive). Changes are tracked in `openspec/changes/`, with main specs in `openspec/specs/`
 
 You have access to these tools' functions. Use them when appropriate for better performance and precision.
+
+## Mandatory Skill and Tool Discipline
+
+- **Skills and guardrails are authoritative.** Before acting, identify the matching skill and follow its workflow, references, checklist, folder contracts, and prohibitions. Do not substitute an unapproved pattern, architecture, or method based on assumptions or personal preference.
+- **Do not hallucinate.** If the required skill, guardrail, tool, or project convention does not provide a clear answer, inspect the source of truth or ask the user. Never claim a tool result, project pattern, or implementation detail without verifying it.
+- **Check Serena and Graphify before every task.** Confirm Serena is available for semantic code navigation, refactoring, and diagnostics. Confirm Graphify is available and whether a `.graphify/` knowledge graph exists or must be created.
+- **Use the appropriate tool.** Use Serena for symbol-aware exploration and safe code changes. Use Graphify for codebase architecture, file relationships, dependency/impact analysis, and broad repository questions. If either tool is unavailable, state that limitation rather than silently replacing it with an invented workflow.
 
 ## Monorepo Structure
 
@@ -287,11 +295,12 @@ One declaration, one import, all layers use the same.
 Rendering (UI Layer):
   apps/web/app/ (router)
     └→ page.tsx (thin Suspense wrapper)
-        └→ *-content.tsx (Client Component — all logic: hooks, state, form, table, dialog)
-            └→ apps/web/components/ (reusable components: Button, Input, Table, Dialog, etc.)
+        └→ *-page-content.tsx (Client Component — route orchestration: hooks, state, layout)
+            └→ _components/ (private route components: form, table, dialog, drawer)
+                └→ apps/web/components/ (reusable components: Button, Input, Table, Dialog, etc.)
 
 Data Flow (data transactions):
-  *-content.tsx
+  *-page-content.tsx
     └→ apps/web/hooks/transactions/use-{domain}/ (custom hooks)
         └→ react-query (useQuery / useMutation)
             └→ axios instance (services/axios/)
@@ -308,7 +317,7 @@ Typing:
 ```
 
 **FORBIDDEN:** JSX components calling axios/fetch directly — must go through hooks.
-**FORBIDDEN:** creating `_components/` folder per page — put everything in content file, except components reusable across pages.
+**RECOMMENDED:** create a `_components/` folder for components used only by that route. Keep `*-page-content.tsx` beside `page.tsx` as the route orchestrator. Move components used by multiple routes to `apps/web/components/`.
 
 ### apps/api (Hono Backend — Clean Architecture)
 

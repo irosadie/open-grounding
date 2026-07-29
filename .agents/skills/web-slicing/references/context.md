@@ -4,7 +4,7 @@
 
 ```
 apps/web/
-├── app/                  → page.tsx + *-content.tsx
+├── app/                  → page.tsx + *-page-content.tsx + _components/
 └── components/           → reusable UI (only when shared across pages)
 ```
 
@@ -12,11 +12,12 @@ apps/web/
 
 ```
 app/(group)/[feature]/
-├── page.tsx               → Server Component, Suspense wrapper only
-└── [feature]-content.tsx  → Client Component, all logic lives here
+├── page.tsx                    → Server Component, Suspense wrapper only
+├── [feature]-page-content.tsx  → Client Component, route orchestration
+└── _components/                → Components private to this route
 ```
 
-**No** `_components/` subfolder. Dialog, form, table — all inline in the content file.
+Use `_components/` for private dialogs, forms, tables, and drawers. Move components used by more than one route to `apps/web/components/`.
 
 ## Real Code Examples
 
@@ -27,7 +28,7 @@ Pattern: useDataTable + useQueryParam + debounce + SweetAlert preConfirm + Actio
 
 Files:
 - `page.tsx` — Suspense wrapper
-- `examples-content.tsx` — all logic: list, search, form dialog, delete confirm
+- `examples-content.tsx` — route orchestration: list, search, form dialog, delete confirm
 
 **Use for:** CRUD pages with simple fields.
 
@@ -39,13 +40,13 @@ Files:
 
 ```tsx
 import { Suspense } from 'react'
-import FeatureContent from './feature-content'
+import FeaturePageContent from './feature-page-content'
 import { LoadingSpinner } from '$/components/loading-spinner'
 
 export default function FeaturePage() {
   return (
     <Suspense fallback={<LoadingSpinner />}>
-      <FeatureContent />
+      <FeaturePageContent />
     </Suspense>
   )
 }
