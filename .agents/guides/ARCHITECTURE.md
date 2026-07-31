@@ -10,12 +10,12 @@ Read this file at the start of each implementation session. Contains complete la
 vibecoding-starter/
 ├── apps/
 │   ├── web/      → Next.js 16 App Router (frontend)
-│   ├── api/      → Hono (backend, Clean Architecture)
+│   ├── api/      → FastAPI (backend, Clean Architecture, Python)
 │   └── worker/   → BullMQ (background job processor)
 └── packages/
-    ├── schemas/  → Zod validation schemas (shared FE + BE + Worker)
-    ├── types/    → API response TypeScript types (shared FE + BE)
-    └── utils/    → Pure utility functions (shared all)
+    ├── schemas/  → Zod validation schemas (shared FE + Worker)
+    ├── types/    → API response TypeScript types (shared FE)
+    └── utils/    → Pure utility functions (shared FE + Worker)
 ```
 
 ---
@@ -249,161 +249,149 @@ page.tsx (Server Component — thin Suspense wrapper)
 
 ---
 
-## apps/api — Hono Backend (Clean Architecture)
+## apps/api — FastAPI Backend (Clean Architecture)
 
 ### Layer Map
 
 ```
-apps/api/src/
-├── interfaces/http/
-│   ├── routes/             → HTTP routing + Zod validation
-│   └── controllers/        → Parse request, call service, format response
-├── application/
-│   ├── services/           → Orchestrate use cases, transform Entity → DTO
-│   ├── use-cases/          → Business logic (one file per operation)
-│   ├── dtos/               → Data Transfer Objects (output shapes)
-│   └── validators/         → Zod schemas for request validation
-├── domain/
-│   ├── entities/           → Domain models (plain objects/classes)
-│   └── repositories/       → Repository interfaces (contracts)
-└── infrastructure/
-    ├── config/             → Runtime config (env, database config, etc.)
-    └── database/           → Prisma repository implementations
+apps/api/app/
+│   ├── interfaces/http/
+│   │   ├── routes.py            → APIRouter handlers (controller = inline)
+│   │   ├── schemas.py           → Pydantic request models (validation)
+│   │   ├── dependencies.py     → FastAPI Depends DI + Annotated aliases
+│   │   └── errors.py            → Exception handlers (DomainError, ValidationError)
+│   ├── application/
+│   │   ├── {domain}_service.py  → Orchestrate use cases, Entity → DTO
+│   │   └── dtos.py             → Pydantic response models (output shapes)
+│   ├── domain/
+│   │   ├── models.py            → Domain entities (@dataclass) + StrEnum
+│   │   ├── repositories.py     → Repository interfaces (Protocol)
+│   │   ├── errors.py            → DomainError + classmethod factories
+│   │   └── use_cases/           → Business logic (one file per operation)
+│   ├── infrastructure/
+│   │   └── database.py          → SQLAlchemy ORM records + repository impls + _to_* mappers
+└── core/
+    ├── settings.py          → Pydantic-settings BaseSettings
+    └── security.py          → JWT, password hash
 ```
 
-### Request Lifecycle
+### Request Lifecycle (Hybrid 4-Hop)
 
 ```
 HTTP Request
-  → routes/         (Zod validation, delegate to controller)
-  → controllers/    (parse req, call service, format response)
-  → services/       (orchestrate use cases, Entity → DTO)
-  → use-cases/      (business logic, throw DomainError)
-  → domain/repos/   (interface contract)
-  → database/       (Prisma implementation, return Entity)
+  → routes.py        (Pydantic validation, delegate to service — handler IS controller)
+  → service          (orchestrate use cases, Entity → DTO)
+  → use_cases/       (business logic, raise DomainError)
+  → repositories     (Protocol contract)
+  → database.py      (SQLAlchemy implementation, return Entity)
   ↑
-  Error bubble up → errorHandler middleware → HTTP Response
+  DomainError → @app.exception_handler(DomainError) → JSON Response
 ```
 
 ### Error Handling
 
 ```
-DomainError → errorHandler middleware
-  ├── NOT_FOUND    → 404
-  ├── UNAUTHORIZED → 401
-  ├── FORBIDDEN    → 403
-  ├── CONFLICT     → 409
-  ├── VALIDATION   → 422
-  └── INTERNAL     → 500
+DomainError → @app.exception_handler(DomainError)
+  ├── NOT_FOUND          → 404
+  ├── UNAUTHORIZED       → 401
+  ├── FORBIDDEN          → 403
+  ├── CONFLICT           → 409
+  ├── VALIDATION_ERROR   → 422 (RequestValidationError)
+  └── INTERNAL_SERVER_ERROR → 500
 ```
 
 ### Contracts per Layer
 
-#### `interfaces/http/routes/` — HTTP Routes
+#### `interfaces/http/routes.py` — HTTP Routes (Controller = Inline)
 
 ✅ Allowed:
-- Define HTTP method + path
-- Validate request body/query with Zod schema from `validators/`
-- Delegate to controller handler
-- Set middleware per route (auth, rate-limit)
-
-❌ Forbidden:
-- Business logic
-- Call use case or repository directly
-- Format response manually
-
----
-
-#### `interfaces/http/controllers/` — Controllers
-
-✅ Allowed:
-- Parse `c.req` (body, params, query)
-- Call service method
-- Format and return HTTP response (`c.json(...)`)
+- Define `APIRouter` with prefix and tags
+- Validate request with Pydantic model (auto-validated by FastAPI)
+- Delegate to service method — handler IS the controller
+- Attach dependencies per route via `Depends()`
 
 ❌ Forbidden:
 - Business logic
 - Call use case or repository directly — must go through service
-- Throw `DomainError` — that's use case's job
-- `try/catch` for domain error — let it bubble to errorHandler
+- Format response manually (use `success()` envelope helper)
 
 ---
 
-#### `application/services/` — Application Services
+#### `application/{domain}_service.py` — Application Services
 
 ✅ Allowed:
 - Orchestrate one or more use cases
-- Transform Entity to DTO before returning to controller
-- Inject and call repository or use case
+- Transform Entity to DTO before returning to route handler
+- Inject repository interface and settings via `__init__`
 
 ❌ Forbidden:
 - Business logic — that's in use case
-- Access Prisma directly — must go through repository interface
-- HTTP concern (status code, header)
-- `try/catch` for domain error
+- Access SQLAlchemy directly — must go through repository interface
+- HTTP concern (status code, header, JSONResponse)
+- `try/except` for domain error — let it bubble
 
 ---
 
-#### `application/use-cases/` — Use Cases
+#### `domain/use_cases/` — Use Cases
 
 ✅ Allowed:
-- Contains one business logic operation
-- Throw `DomainError` for expected errors
-- Call repository interface
-- One file per operation: `create-user.ts`, `get-user.ts`, etc.
+- Contains one business logic operation per file
+- Raise `DomainError` for expected errors
+- Call repository interface (Protocol)
+- One file per operation: `register_user.py`, `get_user_by_id.py`
 
 ❌ Forbidden:
-- Access Prisma or database directly
-- HTTP concern (import from `hono` for response/exception)
-- Throw `HTTPException` — use `DomainError`
+- Access SQLAlchemy or database directly
+- HTTP concern (import from FastAPI)
+- Raise `HTTPException` — use `DomainError`
 
 ---
 
-#### `domain/entities/` — Domain Entities
+#### `domain/models.py` — Domain Entities
 
 ✅ Allowed:
-- Plain TypeScript type or class
-- Fields matching domain model
+- `@dataclass(frozen=True)` that represents a domain model
+- `StrEnum` for fixed-value fields
 - Pure domain methods (without external dependency)
 
 ❌ Forbidden:
-- Import Prisma types directly
+- Import SQLAlchemy types or ORM records
 - HTTP or database dependency
 
 ---
 
-#### `domain/repositories/` — Repository Interfaces
+#### `domain/repositories.py` — Repository Interfaces
 
 ✅ Allowed:
-- Define interface/abstract class
-- Method signature: `findById(id: string): Promise<Entity | null>`
-- Use Entity types from `domain/entities/`
+- Define `Protocol` class
+- Method signature: `async def find_by_id(self, user_id: str) -> User | None`
+- Use Entity types from `domain/models.py`
 
 ❌ Forbidden:
-- Concrete implementation — that's in `infrastructure/database/`
-- Import Prisma
+- Concrete implementation — that's in `infrastructure/database.py`
+- Import SQLAlchemy
 - Business logic
 
 ---
 
-#### `infrastructure/database/` — Prisma Repositories
+#### `infrastructure/database.py` — SQLAlchemy Repositories
 
 ✅ Allowed:
-- Implement repository interface from `domain/repositories/`
-- Access Prisma client
-- Map Prisma model to domain Entity
+- Implement repository Protocol from `domain/repositories.py`
+- Access SQLAlchemy `AsyncSession`
+- Map ORM record to domain Entity via `_to_*` mapper
 
 ❌ Forbidden:
 - Business logic
-- Return raw Prisma model — must map to Entity
+- Return raw ORM record — must map to Entity
 - HTTP concern
 
 ---
 
-#### `infrastructure/config/` — Runtime Config
+#### `core/settings.py` — Runtime Config
 
 ✅ Allowed:
-- Parse env with Zod
+- Parse env with `pydantic-settings` BaseSettings
 - Setup application config needed at runtime bootstrap
 
 ❌ Forbidden:
@@ -454,7 +442,7 @@ BullMQ Queue (job data defined in packages/schemas/)
 - Shared enum/constant values
 
 ❌ Forbidden:
-- FE or BE specific imports
+- FE-specific imports (React). The backend is Python and does not import this package.
 - Business logic, side effects
 
 ---
@@ -479,6 +467,6 @@ BullMQ Queue (job data defined in packages/schemas/)
 - Format, transform, parse helpers
 
 ❌ Forbidden:
-- Import FE-specific (React) or BE-specific (Hono, Prisma) library
+- Import FE-specific (React) library. The backend is Python — do not import Hono, Prisma, or any BE library here.
 - State management
 - API calls

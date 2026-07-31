@@ -65,6 +65,8 @@ Repo does not use root `.env` as source of truth. Env is managed per app.
 | --- | --- | --- | --- |
 | `API_PORT` | no | `3001` | HTTP API port |
 | `DATABASE_URL` | no | `postgresql://postgres:postgres@127.0.0.1:5432/vibecoding_starter` | Default local PostgreSQL for SQLAlchemy |
+| `DEPLOYMENT_TENANT_ID` | **yes** | none | Stable UUID identifier for the deployment tenant. Set before first startup. See `docs/TENANT-DEPLOYMENT.md`. |
+| `TENANT_MODE` | no | `single-deployment` | Only `single-deployment` is supported in v1. |
 
 ### `apps/worker/.env.example`
 

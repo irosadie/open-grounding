@@ -2,31 +2,30 @@
 
 ## Preparation
 
-- [ ] Check OpenSpec specs/design under `openspec/changes/{slug}/` for endpoint requirements
-- [ ] Check `docs/openapi/components/` — are the required schemas/responses already present?
+- [ ] Check `apps/api/app/interfaces/http/routes.py` for routes that need annotations
+- [ ] Check `apps/api/app/interfaces/http/schemas.py` for schemas that need descriptions
 
-## Path Files
+## Route Annotations
 
-- [ ] Create `docs/openapi/paths/{feature-slug}.yaml`
-- [ ] All endpoints of the feature are covered
-- [ ] Parameters (path, query, body) fully defined
-- [ ] Success responses use the correct schema
-- [ ] Error responses use shared `$ref` from components/responses/
+- [ ] Every new route has `tags` (via APIRouter)
+- [ ] Every new route has `summary`
+- [ ] Every new route has `description` (if behavior is non-obvious)
+- [ ] `response_model` or explicit return type on routes that need it
+- [ ] Error responses documented via `responses` dict
 
-## Schema Components
+## Schema Annotations
 
-- [ ] Create a new entity schema in `components/schemas/` if missing
-- [ ] No duplication — use `$ref` when a schema already exists
-- [ ] Every field has the correct type (string, integer, boolean, etc.)
-- [ ] `required` array lists the mandatory fields
+- [ ] Every new field has `Field(description=...)`
+- [ ] Request schemas have `model_config` with `json_schema_extra` examples
 
-## Entry File
+## Export
 
-- [ ] `docs/openapi/openapi.yaml` updated with `$ref` to the new path
-- [ ] New schemas registered under `components.schemas`
-- [ ] File parses cleanly in Swagger/Redoc
+- [ ] `uv run python -m app.export_openapi` run
+- [ ] `docs/openapi.json` regenerated
+- [ ] Spec is valid and consumable by Scalar/Swagger
 
 ## Finalization
 
 - [ ] Every file ends with a newline (EOF)
-- [ ] No remaining placeholders
+- [ ] No hand-written OpenAPI YAML files created
+- [ ] `docs/openapi.json` not edited directly

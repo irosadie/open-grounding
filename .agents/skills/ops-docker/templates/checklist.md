@@ -2,22 +2,30 @@
 
 ## Preparation
 
-- [ ] Identify target: `apps/api` and/or `apps/worker`
-- [ ] Check whether Prisma is used in target app
+- [ ] Identify target: `apps/api` (Python) and/or `apps/worker` (Bun)
 - [ ] Check ports exposed in source code
 
-## Dockerfile
+## Dockerfile (API — Python + uv)
 
 - [ ] Multi-stage build (builder + runner)
+- [ ] Base image: `python:3.12-slim`
+- [ ] `uv` installed from `ghcr.io/astral-sh/uv:latest`
+- [ ] `uv sync --frozen --no-dev` in builder stage
+- [ ] `.venv` copied from builder to runner
+- [ ] `alembic` migrations copied to runner
+- [ ] `PATH` includes `.venv/bin`
+- [ ] Non-root user created and used in runner stage
+- [ ] `EXPOSE 3001`
+- [ ] `CMD ["uvicorn", "app.main:app", ...]`
+
+## Dockerfile (Worker — Bun + TypeScript)
+
 - [ ] Base image: `oven/bun:1-alpine`
 - [ ] `--frozen-lockfile` on `bun install`
 - [ ] Monorepo packages (`packages/`) copied in builder stage
 - [ ] Build artifact copied from builder to runner
-- [ ] If Prisma: `prisma generate` runs in builder
 - [ ] Non-root user created and used in runner stage
 - [ ] `ENV NODE_ENV=production` in runner stage
-- [ ] `EXPOSE` matches used port
-- [ ] `CMD` runs compiled artifact
 
 ## Security
 
@@ -29,7 +37,7 @@
 
 - [ ] Build succeeds: `docker build -f apps/{app}/Dockerfile -t test:latest .`
 - [ ] Container runs: `docker run --rm -e ... test:latest`
-- [ ] Reasonable image size (< 300MB for Bun Alpine)
+- [ ] Reasonable image size
 
 ## Finalization
 

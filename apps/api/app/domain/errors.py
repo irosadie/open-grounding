@@ -32,3 +32,55 @@ class DomainError(Exception):
     @classmethod
     def user_not_found(cls) -> "DomainError":
         return cls("USER_NOT_FOUND", "User not found", 404)
+
+    # --- Tenant errors --------------------------------------------------------
+
+    @classmethod
+    def tenant_not_configured(cls) -> "DomainError":
+        return cls(
+            "TENANT_NOT_CONFIGURED",
+            "DEPLOYMENT_TENANT_ID is not set. Configure it before starting the application.",
+            500,
+        )
+
+    @classmethod
+    def tenant_mismatch(cls, *, configured_id: str, persisted_id: str) -> "DomainError":
+        return cls(
+            "TENANT_MISMATCH",
+            "Configured DEPLOYMENT_TENANT_ID does not match the persisted deployment tenant. "
+            "Changing the tenant ID in place is not supported; provision a new deployment instead.",
+            500,
+            {"configuredTenantId": configured_id, "persistedTenantId": persisted_id},
+        )
+
+    @classmethod
+    def tenant_membership_inactive(cls) -> "DomainError":
+        return cls(
+            "TENANT_MEMBERSHIP_INACTIVE",
+            "User does not have an active membership in the deployment tenant.",
+            403,
+        )
+
+    @classmethod
+    def tenant_membership_required(cls) -> "DomainError":
+        return cls(
+            "TENANT_MEMBERSHIP_REQUIRED",
+            "Tenant membership is required to access this resource.",
+            403,
+        )
+
+    @classmethod
+    def tenant_scope_missing(cls) -> "DomainError":
+        return cls(
+            "TENANT_SCOPE_MISSING",
+            "Tenant scope is required for this operation.",
+            400,
+        )
+
+    @classmethod
+    def tenant_scope_mismatch(cls) -> "DomainError":
+        return cls(
+            "TENANT_SCOPE_MISMATCH",
+            "Operation tenant scope does not match the active deployment tenant.",
+            403,
+        )

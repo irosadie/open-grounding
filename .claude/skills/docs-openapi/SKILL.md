@@ -1,6 +1,6 @@
 ---
 name: "docs-openapi"
-description: "Write or update OpenAPI documentation in split-per-feature format under `docs/openapi`. Use when endpoints, request/response schemas, or API contracts change."
+description: "Manage OpenAPI quality via FastAPI annotations (tags, summaries, response_model, descriptions, examples) and export the spec to docs/openapi.json. Use when endpoints, request/response schemas, or API contracts change."
 ---
 
 Source of truth lives at `.agents/skills/docs-openapi/SKILL.md`.

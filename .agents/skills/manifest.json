@@ -38,7 +38,7 @@
     },
     {
       "name": "api-bugfix",
-      "description": "Fix backend bugs with minimal touch, keep other layers stable, then sync validator, DTO, OpenAPI, shared schema/types, tests, and related docs when behavior is affected.",
+      "description": "Fix backend bugs with minimal touch, keep other layers stable, then sync Pydantic schemas, DTO, OpenAPI, and tests when behavior is affected.",
       "scope": "backend",
       "path": ".agents/skills/api-bugfix",
       "whenToUse": "Fix backend bug with minimal touch and sync impacted contracts"
@@ -58,18 +58,18 @@
       "whenToUse": "Implement new backend feature following Clean Architecture"
     },
     {
-      "name": "db-prisma-schema",
-      "description": "Write or modify apps/api/prisma/schema.prisma and execute safe PostgreSQL migrations. Use for database model, relation, index, enum changes, or schema-to-domain-layer sync.",
+      "name": "db-alembic-schema",
+      "description": "Write or modify SQLAlchemy ORM models in apps/api/app/infrastructure/ and execute safe Alembic migrations. Use for database model, relation, index, enum changes, or schema-to-domain-layer sync.",
       "scope": "backend",
-      "path": ".agents/skills/db-prisma-schema",
-      "whenToUse": "Changes to schema.prisma and PostgreSQL migration validation"
+      "path": ".agents/skills/db-alembic-schema",
+      "whenToUse": "Update SQLAlchemy ORM models and Alembic migrations"
     },
     {
       "name": "docs-openapi",
-      "description": "Write or update OpenAPI documentation in split-per-feature format under `docs/openapi`. Use when endpoints, request/response schemas, or API contracts change.",
+      "description": "Manage OpenAPI quality via FastAPI annotations (tags, summaries, response_model, descriptions, examples) and export the spec to docs/openapi.json. Use when endpoints, request/response schemas, or API contracts change.",
       "scope": "docs",
       "path": ".agents/skills/docs-openapi",
-      "whenToUse": "Write or update split OpenAPI documentation per feature"
+      "whenToUse": "Manage OpenAPI quality via FastAPI annotations and export spec"
     },
     {
       "name": "ops-docker",

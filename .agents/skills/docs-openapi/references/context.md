@@ -1,96 +1,39 @@
 # Context: docs-openapi
 
-## Existing Shared Components
+## Target Files
 
-### components/schemas/PaginationMeta.yaml
-```yaml
-type: object
-properties:
-  pagination:
-    type: object
-    properties:
-      total:
-        type: integer
-      currentPage:
-        type: integer
-      perPage:
-        type: integer
-      lastPage:
-        type: integer
-  cursor:
-    type: string
-    nullable: true
+```
+apps/api/app/interfaces/http/routes.py    → route annotations (tags, summary, description, responses)
+apps/api/app/interfaces/http/schemas.py   → Pydantic schema annotations (Field description, examples)
+apps/api/app/export_openapi.py            → export script
+docs/openapi.json                         → generated OpenAPI spec (DO NOT EDIT DIRECTLY)
 ```
 
-### components/responses/NotFound.yaml
-```yaml
-description: Resource not found
-content:
-  application/json:
-    schema:
-      type: object
-      properties:
-        error:
-          type: object
-          properties:
-            code:
-              type: string
-              example: NOT_FOUND
-            message:
-              type: string
+## How OpenAPI is Generated
+
+The OpenAPI spec is auto-generated from the FastAPI application:
+
+1. `create_app()` builds the FastAPI app with all routers, schemas, and annotations
+2. `app.openapi()` produces the OpenAPI dict
+3. `apps/api/app/export_openapi.py` writes it to `docs/openapi.json`
+
+There are no hand-written split YAML files. The source of truth is the FastAPI app.
+
+## Route Annotation Checklist
+
+- `APIRouter(tags=["FeatureName"])` — groups routes in docs
+- `@router.post("/path", summary="Short description")` — shows in docs
+- `@router.post("/path", description="Longer description")` — optional
+- `@router.post("/path", response_model=MyDto)` — explicit response typing
+- `@router.post("/path", responses={409: {"description": "..."}})` — error responses
+
+## Schema Annotation Checklist
+
+- `Field(description="...")` on each field
+- `model_config = {"json_schema_extra": {"examples": [...]}}` for request examples
+
+## Commands
+
+```bash
+uv run python -m app.export_openapi    # regenerate docs/openapi.json
 ```
-
-### components/responses/Validation.yaml
-```yaml
-description: Validation failed
-content:
-  application/json:
-    schema:
-      type: object
-      properties:
-        error:
-          type: object
-          properties:
-            code:
-              type: string
-              example: VALIDATION
-            message:
-              type: string
-            fields:
-              type: object
-              additionalProperties:
-                type: array
-                items:
-                  type: string
-```
-
-## Entity Schema Example
-
-### components/schemas/PaymentMethod.yaml
-```yaml
-type: object
-properties:
-  id:
-    type: string
-    format: uuid
-  name:
-    type: string
-  code:
-    type: string
-  isActive:
-    type: boolean
-  createdAt:
-    type: string
-    format: date-time
-  updatedAt:
-    type: string
-    format: date-time
-required: [id, name, code, isActive, createdAt, updatedAt]
-```
-
-## Adding a New Feature
-
-1. Create `docs/openapi/paths/{feature-slug}.yaml`
-2. Create `docs/openapi/components/schemas/{EntityName}.yaml` if it does not exist
-3. Add `$ref` entries in `docs/openapi/openapi.yaml`
-4. Reuse existing shared components — never duplicate

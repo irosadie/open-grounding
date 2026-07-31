@@ -1,6 +1,6 @@
 interface:
-  display_name: "OpenAPI Split"
-  short_description: "Kelola dokumentasi OpenAPI split per fitur"
-  default_prompt: "Use $docs-openapi to write or update split OpenAPI paths and shared components for feature-level API changes."
+  display_name: "OpenAPI (FastAPI)"
+  short_description: "Kelola kualitas OpenAPI via FastAPI annotations dan export spec"
+  default_prompt: "Use $docs-openapi to manage OpenAPI quality via FastAPI annotations and export the spec to docs/openapi.json."
 policy:
   allow_implicit_invocation: true

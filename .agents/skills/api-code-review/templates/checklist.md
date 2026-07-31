@@ -9,8 +9,8 @@
 ## Core Review
 
 - [ ] Hunt endpoint bugs/regressions first
-- [ ] Check clean architecture layering
-- [ ] Check validator/DTO/schema/type/OpenAPI drift when relevant
+- [ ] Check clean architecture layering (route handler → service → use case → repository)
+- [ ] Check Pydantic schema/DTO/OpenAPI drift when relevant
 - [ ] Check error handling and status code behavior
 - [ ] Check test gaps for important behavior
 

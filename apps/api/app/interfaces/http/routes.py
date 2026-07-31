@@ -1,12 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, status
+from fastapi import APIRouter, Depends, Header, Request, status
 
 from app.core.security import decode_refresh_token
 from app.core.settings import Settings, get_settings
 from app.interfaces.http.dependencies import (
     AuthContextDependency,
     AuthServiceDependency,
+    TenantContextDependency,
 )
 from app.interfaces.http.schemas import LoginRequest, RegisterRequest
 
@@ -29,10 +30,22 @@ async def get_app_info() -> dict[str, object]:
 
 
 @system_router.get("/health")
-async def get_health() -> dict[str, object]:
+async def get_health(request: Request) -> dict[str, object]:
     from datetime import UTC, datetime
 
-    return success("Health status loaded", {"status": "ok", "service": "vibecoding-starter-api", "timestamp": datetime.now(UTC).isoformat()})
+    from app.core.settings import get_settings
+    from app.infrastructure.tenant_bootstrap import tenant_diagnostics
+
+    bootstrap_result = getattr(request.app.state, "tenant_bootstrap_result", None)
+    return success(
+        "Health status loaded",
+        {
+            "status": "ok",
+            "service": "vibecoding-starter-api",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "tenant": tenant_diagnostics(get_settings(), bootstrap_result),
+        },
+    )
 
 
 @auth_router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -69,3 +82,17 @@ async def refresh(
     refresh_token = authorization.removeprefix("Bearer ").strip()
     decode_refresh_token(refresh_token, settings)
     return success("Token refreshed", await service.refresh(refresh_token))
+
+
+@auth_router.get("/tenant/context")
+async def get_tenant_context(tenant: TenantContextDependency) -> dict[str, object]:
+    """Return the server-derived tenant context for the authenticated user.
+
+    This endpoint proves that tenant context is resolved from deployment
+    configuration and authenticated membership — never from client-supplied
+    headers, path, query, body, or JWT claims.
+    """
+    return success(
+        "Tenant context loaded",
+        {"tenantId": tenant.tenant_id, "membershipId": tenant.membership_id, "userId": tenant.user_id},
+    )

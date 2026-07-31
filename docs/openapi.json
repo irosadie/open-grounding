@@ -289,6 +289,58 @@
           }
         }
       }
+    },
+    "/auth/tenant/context": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Get Tenant Context",
+        "description": "Return the server-derived tenant context for the authenticated user.\n\nThis endpoint proves that tenant context is resolved from deployment\nconfiguration and authenticated membership \u2014 never from client-supplied\nheaders, path, query, body, or JWT claims.",
+        "operationId": "get_tenant_context_auth_tenant_context_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Tenant Context Auth Tenant Context Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

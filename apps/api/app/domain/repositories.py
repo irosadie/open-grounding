@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Protocol
 
-from app.domain.models import AuthSession, User, UserRole, UserStatus
+from app.domain.models import AuthSession, Tenant, TenantMembership, TenantMembershipStatus, User, UserRole, UserStatus
 
 
 class AuthRepository(Protocol):
@@ -12,3 +12,33 @@ class AuthRepository(Protocol):
     async def find_auth_session(self, session_id: str, user_id: str) -> AuthSession | None: ...
     async def delete_auth_session(self, session_id: str, user_id: str) -> None: ...
     async def delete_auth_sessions_for_user(self, user_id: str) -> None: ...
+
+
+class TenantRepository(Protocol):
+    """Repository protocol for tenant and tenant-membership persistence.
+
+    All tenant-owned read and write operations MUST receive a tenant_id to
+    scope the database operation. Methods that look up the deployment tenant
+    itself (find_tenant_by_id, find_active_tenant) are exempt because they
+    resolve the tenant identity, not tenant-owned resources.
+    """
+
+    async def find_tenant_by_id(self, tenant_id: str) -> Tenant | None: ...
+    async def find_active_tenant(self) -> Tenant | None: ...
+    async def create_tenant(self, *, tenant_id: str, slug: str, name: str) -> Tenant: ...
+
+    async def find_membership(
+        self, *, tenant_id: str, user_id: str
+    ) -> TenantMembership | None: ...
+    async def create_membership(
+        self, *, tenant_id: str, user_id: str, status: TenantMembershipStatus
+    ) -> TenantMembership: ...
+    async def find_active_membership(
+        self, *, tenant_id: str, user_id: str
+    ) -> TenantMembership | None: ...
+    async def backfill_memberships(
+        self, *, tenant_id: str, status: TenantMembershipStatus
+    ) -> int:
+        """Create active memberships for users who do not yet have one in the
+        given tenant. Returns the number of memberships created. Idempotent."""
+        ...

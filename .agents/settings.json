@@ -14,8 +14,13 @@
 
   "stack": {
     "frontend": "Next.js (App Router)",
-    "backend": "Hono (Clean Architecture)",
-    "language": "TypeScript",
+    "backend": "FastAPI (Clean Architecture)",
+    "backendLanguage": "Python",
+    "backendOrm": "SQLAlchemy 2 async",
+    "backendMigration": "Alembic",
+    "backendValidation": "Pydantic v2",
+    "backendPackageManager": "uv",
+    "language": "TypeScript + Python",
     "styling": "Tailwind CSS",
     "packageManager": "bun"
   },

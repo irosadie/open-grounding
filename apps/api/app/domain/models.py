@@ -13,6 +13,16 @@ class UserStatus(StrEnum):
     SUSPENDED = "SUSPENDED"
 
 
+class TenantStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    DISABLED = "DISABLED"
+
+
+class TenantMembershipStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+
+
 @dataclass(frozen=True)
 class User:
     id: str
@@ -33,3 +43,23 @@ class AuthSession:
     token_hash: str
     expires_at: datetime
     created_at: datetime
+
+
+@dataclass(frozen=True)
+class Tenant:
+    id: str
+    slug: str
+    name: str
+    status: TenantStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class TenantMembership:
+    id: str
+    tenant_id: str
+    user_id: str
+    status: TenantMembershipStatus
+    created_at: datetime
+    updated_at: datetime

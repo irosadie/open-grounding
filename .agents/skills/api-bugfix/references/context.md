@@ -3,36 +3,32 @@
 ## Target Folders
 
 ```
-apps/api/src/interfaces/http/          → route, controller, middleware
-apps/api/src/application/              → service, use-case, DTO, validator
-apps/api/src/domain/                   → entity and repository contract
-apps/api/src/infrastructure/           → side-effect implementations
-packages/schemas/                      → shared request schemas when relevant
-packages/types/                        → shared response types
-docs/openapi/                          → split OpenAPI source of truth
-docs/openapi.json                      → generated merged spec
+apps/api/app/interfaces/http/          → routes.py, schemas.py, dependencies.py, errors.py
+apps/api/app/application/              → {domain}_service.py, dtos.py
+apps/api/app/domain/                   → models.py, repositories.py, errors.py, use_cases/
+apps/api/app/infrastructure/            → database.py
+docs/openapi.json                      → generated OpenAPI spec
 ```
 
 ## Impact Map
 
 Check in this order:
-1. Is the bug in request validation?
-2. Is the bug in orchestration / response mapping?
-3. Is the bug in a use-case business rule?
-4. Is the bug in repository / side effect?
+1. Is the bug in request validation? (Pydantic schema in schemas.py)
+2. Is the bug in orchestration / response mapping? (service)
+3. Is the bug in a use-case business rule? (use_cases/)
+4. Is the bug in repository / side effect? (infrastructure/database.py)
 5. Does the user-visible endpoint behavior change?
 
 ## Key Patterns
 
 - Layer boundaries must stay clean during a bugfix
 - Minimal touch beats broad refactor
-- Response or error contract changes trigger an audit of `packages/types` and OpenAPI
-- Request shape changes trigger an audit of validator and `packages/schemas`
-- Edit OpenAPI in split files, then regenerate the merged spec
+- Response or error contract changes trigger OpenAPI regeneration via `uv run python -m app.export_openapi`
+- Request shape changes trigger Pydantic schema audit in `interfaces/http/schemas.py`
 
 ## Active Surface Examples
 
-- `apps/api/src/interfaces/http/routes/root-route.ts`
-- `apps/api/src/application/services/system-service.ts`
-- `apps/api/src/application/use-cases/`
-- `docs/openapi/base.json`
+- `apps/api/app/interfaces/http/routes.py`
+- `apps/api/app/application/auth_service.py`
+- `apps/api/app/domain/use_cases/`
+- `docs/openapi.json`

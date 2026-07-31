@@ -1,62 +1,74 @@
-# Guide: API Validator (`apps/api/src/application/validators/`)
+# Guide: API Request Schema (`apps/api/app/interfaces/http/schemas.py`)
 
 ## Folder Contract
 
 ✅ Allowed:
-- Zod schema for request validation (body, query, params)
-- Export inferred types from schema
-- Group by domain in a single file
+- Pydantic `BaseModel` for request validation (body, query, params)
+- Field constraints via `Field(min_length=..., max_length=...)`
+- `EmailStr` for email validation
+- Group by domain in a single file or split to `schemas/{domain}.py` when it grows
 
 ❌ Forbidden:
 - Business logic or database queries
 - Import from `domain/` or `infrastructure/`
-- Use `any`
+- Use `Any` for typed fields
 
 ---
 
 ## Conventions
 
-### Validator Pattern
+### Request Schema Pattern
 
-```typescript
-// application/validators/user.schemas.ts
-import { z } from 'zod'
+```python
+# interfaces/http/schemas.py
+from pydantic import BaseModel, EmailStr, Field
 
-export const createUserSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  email: z.string().email('Invalid email format'),
-  role: z.enum(['ADMIN', 'USER', 'MANAGER']),
-})
 
-export const updateUserSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  role: z.enum(['ADMIN', 'USER', 'MANAGER']).optional(),
-  isActive: z.boolean().optional(),
-})
+class RegisterRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    email: EmailStr = Field(max_length=255)
+    password: str = Field(min_length=8, max_length=128)
 
-export const listUserQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(10),
-  search: z.string().optional(),
-  role: z.enum(['ADMIN', 'USER', 'MANAGER']).optional(),
-})
 
-export type CreateUserPayload = z.infer<typeof createUserSchema>
-export type UpdateUserPayload = z.infer<typeof updateUserSchema>
-export type ListUserQuery = z.infer<typeof listUserQuerySchema>
+class LoginRequest(BaseModel):
+    email: EmailStr = Field(max_length=255)
+    password: str = Field(min_length=8, max_length=128)
+```
+
+### Query Parameter Schema
+
+```python
+class ListUserQuery(BaseModel):
+    page: int = Field(default=1, ge=1)
+    limit: int = Field(default=10, ge=1, le=100)
+    search: str | None = None
+    role: str | None = None
+```
+
+### Success Envelope Schema
+
+```python
+class SuccessEnvelope(BaseModel):
+    success: bool = True
+    message: str
+    data: Any | None = None
+    meta: Any | None = None
 ```
 
 ### Naming
 
-- File name: `{domain}.schemas.ts` — kebab-case with `.schemas` suffix
-- Example: `user.schemas.ts`, `order.schemas.ts`
-- Schema name: `{action}{Domain}Schema` — camelCase
+- File name: `schemas.py` (single file) or `schemas/{domain}.py` when it grows
+- Class name: `{Action}{Domain}Request` or `{Domain}Query` — PascalCase
+- Example: `RegisterRequest`, `LoginRequest`, `ListUserQuery`
 
 ---
 
 ## Additional Rules
 
-- Use `z.coerce.number()` for query params (always string from HTTP)
-- Export inferred type alongside schema in the same file
-- For enums, use `z.enum([...])` instead of `z.string()` if values are constrained
+- Pydantic v2 is the validation layer — it replaces Zod from the TypeScript stack
+- FastAPI automatically validates request bodies against the Pydantic model before the handler runs
+- Validation errors are caught by the `RequestValidationError` exception handler in `interfaces/http/errors.py`
+- Use `Field(...)` for constraints — `min_length`, `max_length`, `ge`, `le`, `pattern`
+- Use `EmailStr` for email fields (requires `email-validator` package)
+- Optional fields use `T | None = None` (Pydantic v2 syntax)
 - File must end with newline

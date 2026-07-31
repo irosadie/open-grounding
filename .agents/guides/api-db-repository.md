@@ -1,106 +1,130 @@
-# Guide: API Prisma Repository (`apps/api/src/infrastructure/database/`)
+# Guide: API SQLAlchemy Repository (`apps/api/app/infrastructure/database.py`)
 
 ## Folder Contract
 
 ✅ Allowed:
-- Implement repository interface from `domain/repositories/`
-- Access Prisma client
-- Map Prisma model to domain Entity
+- Implement repository Protocol from `domain/repositories.py`
+- Access SQLAlchemy `AsyncSession`
+- Map ORM record to domain Entity via `_to_*` mapper function
 
 ❌ Forbidden:
 - Business logic
-- Return raw Prisma model — always map to Entity
+- Return raw ORM record — always map to Entity
 - HTTP concerns
 
 ---
 
 ## Conventions
 
-### Prisma Repository Pattern
+### ORM Record Pattern
 
-```typescript
-// infrastructure/database/PrismaUserRepository.ts
-import { prisma } from '@/infrastructure/database/prisma'
-import type { IUserRepository, UserListFilter, UserListResult } from '@/domain/repositories/IUserRepository'
-import type { User } from '@/domain/entities/User'
+```python
+# infrastructure/database.py
+from datetime import UTC, datetime
 
-export class PrismaUserRepository implements IUserRepository {
-  async findById(id: string): Promise<User | null> {
-    const row = await prisma.user.findUnique({ where: { id } })
-    return row ? toEntity(row) : null
-  }
+from sqlalchemy import DateTime, Enum, String, Uuid
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-  async findAll(filter: UserListFilter): Promise<UserListResult> {
-    const where = {
-      ...(filter.search && {
-        OR: [
-          { name: { contains: filter.search, mode: 'insensitive' as const } },
-          { email: { contains: filter.search, mode: 'insensitive' as const } },
-        ],
-      }),
-      ...(filter.isActive !== undefined && { isActive: filter.isActive }),
-    }
 
-    const [data, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        skip: (filter.page - 1) * filter.limit,
-        take: filter.limit,
-        orderBy: { createdAt: 'desc' },
-      }),
-      prisma.user.count({ where }),
-    ])
+class Base(DeclarativeBase):
+    pass
 
-    return { data: data.map(toEntity), total }
-  }
 
-  async create(input: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
-    const row = await prisma.user.create({ data: input })
-    return toEntity(row)
-  }
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
-  async update(id: string, input: Partial<Pick<User, 'name' | 'role' | 'isActive'>>): Promise<User> {
-    const row = await prisma.user.update({ where: { id }, data: input })
-    return toEntity(row)
-  }
 
-  async delete(id: string): Promise<void> {
-    await prisma.user.delete({ where: { id } })
-  }
-}
+class UserRecord(Base):
+    __tablename__ = "users"
 
-function toEntity(row: any): User {
-  return {
-    id: row.id,
-    name: row.name,
-    email: row.email,
-    role: row.role,
-    isActive: row.isActive,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  }
-}
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column("password_hash", String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="UserRole"), default=UserRole.USER, nullable=False)
+    status: Mapped[UserStatus] = mapped_column(Enum(UserStatus, name="UserStatus"), default=UserStatus.ACTIVE, nullable=False)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
 ```
 
-### Prisma Client Singleton
+### Repository Implementation
 
-```typescript
-// infrastructure/database/prisma.ts
-import { PrismaClient } from '@prisma/client'
+```python
+# infrastructure/database.py
+from uuid import uuid4
 
-export const prisma = new PrismaClient()
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+
+class SqlAlchemyUserRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def find_by_email(self, email: str) -> User | None:
+        result = await self._session.execute(select(UserRecord).where(UserRecord.email == email))
+        row = result.scalar_one_or_none()
+        return _to_user(row) if row else None
+
+    async def create(self, *, email: str, password_hash: str, name: str, role: UserRole, status: UserStatus, photo: str | None) -> User:
+        row = UserRecord(id=str(uuid4()), email=email, password_hash=password_hash, name=name, role=role, status=status, photo=photo)
+        self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_user(row)
+
+    async def delete(self, user_id: str) -> None:
+        await self._session.execute(delete(UserRecord).where(UserRecord.id == user_id))
+        await self._session.commit()
+```
+
+### Entity Mapper
+
+```python
+def _to_user(row: UserRecord) -> User:
+    return User(
+        id=row.id,
+        email=row.email,
+        password_hash=row.password_hash,
+        name=row.name,
+        role=row.role,
+        status=row.status,
+        photo=row.photo,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+```
+
+### Session Factory
+
+```python
+from collections.abc import AsyncIterator
+
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+engine = create_async_engine(settings.async_database_url)
+async_session = async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def get_session() -> AsyncIterator[AsyncSession]:
+    async with async_session() as session:
+        yield session
 ```
 
 ### Naming
 
-- File name: `Prisma{Domain}Repository.ts` — PascalCase with `Prisma` prefix
-- Example: `PrismaUserRepository.ts`, `PrismaOrderRepository.ts`
+- File name: `database.py` (single file for all records + repos) or split to `database/{domain}.py` when it grows
+- ORM record class: `{Domain}Record` — PascalCase with `Record` suffix
+- Repository class: `SqlAlchemy{Domain}Repository` — PascalCase with `SqlAlchemy` prefix
+- Mapper function: `_to_{domain}` — private, snake_case
 
 ---
 
 ## Additional Rules
 
-- `toEntity` mapper is written as a local function below the class — no need to export
-- Use `Promise.all` for concurrent count + data queries (pagination)
-- Build `where` object conditionally — avoid `undefined` values in Prisma
+- `_to_*` mapper is written as a private function (underscore prefix) — no need to export
+- Use `select()` for queries (SQLAlchemy 2.0 style) — not the legacy `query()` API
+- Use `mapped_column` with explicit snake_case column names via first positional arg
+- Use `Enum(PythonEnum)` for enum columns — the Python `StrEnum` is the source of truth
+- ORM record is the persistence model — Entity is the domain model; they are separate types
 - File must end with newline

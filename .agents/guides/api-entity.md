@@ -1,14 +1,15 @@
-# Guide: API Entity (`apps/api/src/domain/entities/`)
+# Guide: API Entity (`apps/api/app/domain/models.py`)
 
 ## Folder Contract
 
 ✅ Allowed:
-- Plain TypeScript `type` or `class` that represents a domain model
+- Python `@dataclass(frozen=True)` that represents a domain model
 - Domain-specific fields — not database columns
 - Pure domain methods (calculations, internal validation)
+- `StrEnum` for fixed-value fields (roles, statuses)
 
 ❌ Forbidden:
-- Import Prisma types or Prisma client
+- Import SQLAlchemy types or ORM records
 - HTTP or database dependencies
 - Business logic that changes per use case — put that in use cases
 
@@ -16,54 +17,61 @@
 
 ## Conventions
 
-### Entity as Type
+### Entity as Frozen Dataclass
 
-```typescript
-// domain/entities/User.ts
-export type User = {
-  id: string
-  name: string
-  email: string
-  role: string
-  isActive: boolean
-  createdAt: Date
-  updatedAt: Date
-}
+```python
+# domain/models.py
+from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
+
+
+class UserRole(StrEnum):
+    USER = "USER"
+    ADMIN = "ADMIN"
+
+
+class UserStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+
+
+@dataclass(frozen=True)
+class User:
+    id: str
+    email: str
+    password_hash: str
+    name: str
+    role: UserRole
+    status: UserStatus
+    photo: str | None
+    created_at: datetime
+    updated_at: datetime
 ```
 
-### Entity as Class (if domain methods exist)
+### Enum via StrEnum
 
-```typescript
-// domain/entities/Order.ts
-export class Order {
-  constructor(
-    public readonly id: string,
-    public readonly total: number,
-    public readonly status: string,
-    public readonly createdAt: Date,
-  ) {}
-
-  isCompleted(): boolean {
-    return this.status === 'COMPLETED'
-  }
-
-  canBeCancelled(): boolean {
-    return ['PENDING', 'PROCESSING'].includes(this.status)
-  }
-}
+```python
+class TenantStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    DISABLED = "DISABLED"
 ```
+
+Values are always `SCREAMING_SNAKE_CASE`.
 
 ### Naming
 
-- File name: `{Domain}.ts` — PascalCase without suffix
-- Type/class name: same as file name
-- Example: `User.ts`, `Order.ts`, `ProductCategory.ts`
+- File name: `models.py` (single file for all entities) or `models/{domain}.py` when the file grows
+- Entity class: PascalCase, no suffix — `User`, `Order`, `TenantMembership`
+- Enum class: PascalCase — `UserRole`, `UserStatus`, `TenantStatus`
 
 ---
 
 ## Additional Rules
 
-- Entity is the source of truth for the domain — not a mirror of Prisma schema
-- If Prisma model has field `is_active` (`snake_case`), Entity uses `isActive` (`camelCase`)
-- Use primitive types — not Prisma scalar types
+- Entity is the source of truth for the domain — not a mirror of the ORM record
+- Python convention is `snake_case` for fields — Entity and ORM record use the same field names
+- Use `@dataclass(frozen=True)` for immutability — entities should not be mutated after creation
+- Use primitive types (`str`, `int`, `datetime`, `bool`) — not SQLAlchemy column types
+- Use `StrEnum` for any field with a fixed set of string values
 - File must end with newline

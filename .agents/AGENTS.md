@@ -109,8 +109,8 @@ vibecoding-starter/
 | `api-bugfix` | Backend | Fix backend bug with minimal touch and sync impacted contracts |
 | `api-code-review` | Backend | Review backend code strictly before merge or during quality audit |
 | `api-feature` | Backend | Implement new backend feature following Clean Architecture |
-| `db-prisma-schema` | Backend | Changes to schema.prisma and PostgreSQL migration validation |
-| `docs-openapi` | Docs | Write or update split OpenAPI documentation per feature |
+| `db-alembic-schema` | Backend | Update SQLAlchemy ORM models and Alembic migrations |
+| `docs-openapi` | Docs | Manage OpenAPI quality via FastAPI annotations and export spec |
 | `ops-docker` | Ops | Write or modify backend Dockerfile for Linux deployment |
 | `ops-mcp-setup` | Ops | Setup GitHub MCP for this repo's workflow |
 | `flow-session-start` | Flow | Handle Start/Mulai command for repo onboarding |
@@ -354,9 +354,9 @@ BullMQ Worker scaffold
 ### packages/ (Shared)
 
 ```
-packages/schemas/  → Zod schemas (used by web + api + worker)
-packages/types/    → API response types (used by web + api)
-packages/utils/    → Pure TS utilities (used by all)
+packages/schemas/  → Zod schemas (used by web + worker)
+packages/types/    → API response types (used by web)
+packages/utils/    → Pure TS utilities (used by web + worker)
 ```
 
 **Shared packages rules:**
@@ -395,7 +395,7 @@ packages/utils/    → Pure TS utilities (used by all)
 - For skill `api-bugfix`: `.agents/skills/api-bugfix/SKILL.md`
 - For skill `api-code-review`: `.agents/skills/api-code-review/SKILL.md`
 - For skill `api-feature`: `.agents/skills/api-feature/SKILL.md`
-- For skill `db-prisma-schema`: `.agents/skills/db-prisma-schema/SKILL.md`
+- For skill `db-alembic-schema`: `.agents/skills/db-alembic-schema/SKILL.md`
 - For skill `docs-openapi`: `.agents/skills/docs-openapi/SKILL.md`
 - For skill `ops-docker`: `.agents/skills/ops-docker/SKILL.md`
 - For skill `ops-mcp-setup`: `.agents/skills/ops-mcp-setup/SKILL.md`

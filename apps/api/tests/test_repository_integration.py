@@ -8,10 +8,13 @@ from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.settings import Settings
-from app.domain.models import UserRole, UserStatus
+from app.domain.models import TenantMembershipStatus, UserRole, UserStatus
 from app.infrastructure.database import (
     AuthSessionRecord,
     SqlAlchemyAuthRepository,
+    SqlAlchemyTenantRepository,
+    TenantMembershipRecord,
+    TenantRecord,
     UserRecord,
     create_session_factory,
 )
@@ -31,6 +34,8 @@ async def repository() -> SqlAlchemyAuthRepository:
 
     session_factory: async_sessionmaker[AsyncSession] = create_session_factory(settings)
     async with session_factory() as session:
+        await session.execute(delete(TenantMembershipRecord))
+        await session.execute(delete(TenantRecord))
         await session.execute(delete(AuthSessionRecord))
         await session.execute(delete(UserRecord))
         await session.commit()
@@ -38,6 +43,14 @@ async def repository() -> SqlAlchemyAuthRepository:
     bind = session_factory.kw.get("bind")
     if bind is not None:
         await bind.dispose()
+
+
+@pytest.fixture
+async def tenant_repository(repository: SqlAlchemyAuthRepository) -> SqlAlchemyTenantRepository:
+    return SqlAlchemyTenantRepository(repository._session)
+
+
+DEPLOYMENT_TENANT_ID = str(uuid4())
 
 
 async def test_repository_persists_user_and_session(
@@ -120,3 +133,114 @@ async def test_repository_reads_existing_row_and_manages_session_lifecycle(
     await repository.delete_auth_sessions_for_user(existing_user.id)
 
     assert await repository.find_auth_session(session.id, existing_user.id) is None
+
+
+async def test_tenant_bootstrap_creates_tenant_and_backfills_memberships(
+    repository: SqlAlchemyAuthRepository,
+    tenant_repository: SqlAlchemyTenantRepository,
+) -> None:
+    user_a = await repository.create_user(
+        email="user-a@example.com", password_hash="hash-a", name="User A",
+        role=UserRole.USER, status=UserStatus.ACTIVE, photo=None,
+    )
+    user_b = await repository.create_user(
+        email="user-b@example.com", password_hash="hash-b", name="User B",
+        role=UserRole.ADMIN, status=UserStatus.ACTIVE, photo=None,
+    )
+
+    assert await tenant_repository.find_tenant_by_id(DEPLOYMENT_TENANT_ID) is None
+
+    tenant = await tenant_repository.create_tenant(
+        tenant_id=DEPLOYMENT_TENANT_ID, slug="deployment-test", name="Test Deployment Tenant",
+    )
+    assert tenant.id == DEPLOYMENT_TENANT_ID
+    assert tenant.status.value == "ACTIVE"
+
+    backfilled = await tenant_repository.backfill_memberships(
+        tenant_id=DEPLOYMENT_TENANT_ID, status=TenantMembershipStatus.ACTIVE,
+    )
+    assert backfilled == 2
+
+    membership_a = await tenant_repository.find_active_membership(
+        tenant_id=DEPLOYMENT_TENANT_ID, user_id=user_a.id,
+    )
+    membership_b = await tenant_repository.find_active_membership(
+        tenant_id=DEPLOYMENT_TENANT_ID, user_id=user_b.id,
+    )
+    assert membership_a is not None and membership_a.status is TenantMembershipStatus.ACTIVE
+    assert membership_b is not None and membership_b.status is TenantMembershipStatus.ACTIVE
+
+    # Idempotency: re-running backfill creates zero new memberships.
+    assert await tenant_repository.backfill_memberships(
+        tenant_id=DEPLOYMENT_TENANT_ID, status=TenantMembershipStatus.ACTIVE,
+    ) == 0
+
+
+async def test_tenant_membership_backfill_preserves_user_and_session_identifiers(
+    repository: SqlAlchemyAuthRepository,
+    tenant_repository: SqlAlchemyTenantRepository,
+) -> None:
+    user = await repository.create_user(
+        email="preserve@example.com", password_hash="original-hash", name="Preserve User",
+        role=UserRole.USER, status=UserStatus.ACTIVE, photo=None,
+    )
+    session = await repository.create_auth_session(
+        session_id=str(uuid4()), user_id=user.id, token_hash="original-session-hash",
+        expires_at=(datetime.now(UTC) + timedelta(hours=1)).replace(tzinfo=None),
+    )
+
+    await tenant_repository.create_tenant(
+        tenant_id=DEPLOYMENT_TENANT_ID, slug="preserve-test", name="Preserve Test Tenant",
+    )
+    await tenant_repository.backfill_memberships(
+        tenant_id=DEPLOYMENT_TENANT_ID, status=TenantMembershipStatus.ACTIVE,
+    )
+
+    persisted_user = await repository.find_user_by_id(user.id)
+    assert persisted_user is not None and persisted_user.password_hash == "original-hash"
+
+    persisted_session = await repository.find_auth_session(session.id, user.id)
+    assert persisted_session is not None and persisted_session.token_hash == "original-session-hash"
+
+
+async def test_tenant_mismatch_detected_on_existing_active_tenant(
+    repository: SqlAlchemyAuthRepository,
+    tenant_repository: SqlAlchemyTenantRepository,
+) -> None:
+    existing_tenant_id = str(uuid4())
+    await tenant_repository.create_tenant(
+        tenant_id=existing_tenant_id, slug="existing-tenant", name="Existing Tenant",
+    )
+
+    # A different configured ID does not find a match.
+    assert await tenant_repository.find_tenant_by_id(DEPLOYMENT_TENANT_ID) is None
+
+    active = await tenant_repository.find_active_tenant()
+    assert active is not None and active.id == existing_tenant_id
+
+
+async def test_cross_tenant_membership_isolation(
+    repository: SqlAlchemyAuthRepository,
+    tenant_repository: SqlAlchemyTenantRepository,
+) -> None:
+    tenant_a_id = str(uuid4())
+    tenant_b_id = str(uuid4())
+
+    await tenant_repository.create_tenant(tenant_id=tenant_a_id, slug="tenant-a", name="Tenant A")
+    await tenant_repository.create_tenant(tenant_id=tenant_b_id, slug="tenant-b", name="Tenant B")
+
+    user = await repository.create_user(
+        email="cross-tenant@example.com", password_hash="hash", name="Cross Tenant User",
+        role=UserRole.USER, status=UserStatus.ACTIVE, photo=None,
+    )
+
+    await tenant_repository.create_membership(
+        tenant_id=tenant_a_id, user_id=user.id, status=TenantMembershipStatus.ACTIVE,
+    )
+
+    assert await tenant_repository.find_active_membership(
+        tenant_id=tenant_a_id, user_id=user.id,
+    ) is not None
+    assert await tenant_repository.find_active_membership(
+        tenant_id=tenant_b_id, user_id=user.id,
+    ) is None
