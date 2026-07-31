@@ -7,7 +7,7 @@ Source of truth remains in `.agents/skills/`.
 
 ## Additional Principles for Claude
 
-- **Always apply current best practices** — use recommended patterns and APIs for every technology (Next.js App Router, Hono, BullMQ, Prisma, React Query, Zod). Don't use old patterns when better ones exist.
+- **Always apply current best practices** — use recommended patterns and APIs for every technology (Next.js App Router, FastAPI, SQLAlchemy async, Alembic, BullMQ, React Query, Zod). Don't use old patterns when better ones exist.
 - **Search the web if unsure** — if you don't know the latest approach, correct API, or best practice, **use WebSearch or WebFetch before writing code**. Better slow and correct than fast and wrong.
 - **Follow the established flow** — planning via OpenSpec (`/opsx:propose`), then implementation per task with the matching skill. Implementation order per feature: Slicing → Backend+OpenAPI → FE↔API Integration.
 - **Read skill before executing** — every task has its skill. Read `SKILL.md` + `references/context.md` + `templates/checklist.md` before starting.

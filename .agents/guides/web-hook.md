@@ -9,6 +9,8 @@
 - Return data, loading state, error state, and mutation handlers
 - Utility hooks in `hooks/utility/` (useQueryParam, etc.)
 
+Transaction hooks are the browser API boundary: route UI and reusable components must use these hooks rather than importing `axios` or calling `fetch` themselves.
+
 ❌ Forbidden:
 - Contains JSX or render logic
 - One hook for all operations — separate per file

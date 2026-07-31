@@ -37,6 +37,7 @@ jobs:
       fail-fast: false
       matrix:
         check:
+          - web:validate-network-boundaries
           - lint
           - typecheck
           - test
@@ -52,6 +53,16 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.32"
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -66,4 +77,5 @@ jobs:
           NEXT_PUBLIC_API_URL: http://127.0.0.1:3001
           API_PORT: 3001
           REDIS_URL: redis://127.0.0.1:6379
+          JWT_SECRET: test-secret-that-is-at-least-thirty-two-characters
         run: bun run ${{ matrix.check }}

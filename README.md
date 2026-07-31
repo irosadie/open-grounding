@@ -3,7 +3,7 @@
 Starter monorepo for building products with **vibe coding** — a workflow where AI agents (Claude Code / Codex) handle implementation tasks end-to-end, from feature planning to merge-ready PRs.
 
 This repo provides two things:
-1. **Production-ready starter monorepo** (Next.js + Hono + BullMQ + local PostgreSQL + local Redis)
+1. **Production-ready starter monorepo** (Next.js + FastAPI + BullMQ + shared Docker PostgreSQL + Redis)
 2. **Agent system** (`.agents/`) containing skills, guides, and code examples used by AI agents during coding
 
 Status:
@@ -29,9 +29,9 @@ Status:
 
 Stack:
 - `apps/web`: Next.js + Tailwind + Vitest
-- `apps/api`: Hono (clean architecture) + Prisma scaffold + Vitest
+- `apps/api`: FastAPI (Clean Architecture) + SQLAlchemy async + Alembic + Pytest
 - `apps/worker`: Worker scaffold + Redis + Vitest
-- `docker-compose.yml`: PostgreSQL + Redis for local development
+- Shared service compose: PostgreSQL + Redis for local development
 - `scripts/`: repo-level helper executables for bootstrap and operations
 - `Turbo` for task orchestration
 - `Bun` as package manager and script runner
@@ -49,9 +49,9 @@ This repo is intended for public use:
 
 ### Monorepo Runtime
 - `apps/web` — Next.js App Router frontend
-- `apps/api` — Hono backend with clean architecture layering
+- `apps/api` — FastAPI backend with clean architecture layering
 - `apps/worker` — Redis-based background worker
-- `docker-compose.yml` — local PostgreSQL + Redis
+- `/Users/binarydev/Program/General/service/docker-compose.yml` — shared PostgreSQL + Redis
 - `scripts/bootstrap-local.sh`, `scripts/compose.sh`, and other repo-level helpers
 
 ### Frontend Starter
@@ -86,7 +86,7 @@ This repo is intended for public use:
 - Domain service skeleton for token and storage
 - JWT / token blacklist foundation for future auth features
 - Example use case test scaffold for backend patterns
-- Prisma scaffold and database config ready for development
+- SQLAlchemy async persistence and Alembic migrations ready for development
 
 ### Worker Starter
 - Worker entrypoint connected to Redis
@@ -104,8 +104,7 @@ Utilities in `packages/utils`:
 - masking, number helpers, path variable, point converter, time helpers, to-camel-case
 
 ### Docs & DevEx
-- OpenAPI split source in `docs/openapi/`
-- Merged OpenAPI spec at `docs/openapi.json`
+- OpenAPI generated from FastAPI at `docs/openapi.json`
 - [Scalar](https://scalar.com/) config at `apps/api/scalar.config.json` pointing to the merged spec
 - GitHub Actions for app CI and skill hygiene
 
@@ -133,7 +132,7 @@ bun run dev
 - Copy `.env.example` to `.env` if it doesn't exist
 - Start PostgreSQL and Redis
 - Wait for services to be ready
-- Generate Prisma client
+- Apply the Alembic baseline migration
 - Generate merged OpenAPI spec
 
 After bootstrapping, initialize OpenSpec for the planning layer:
@@ -153,9 +152,8 @@ bun run stack:up
 bun run stack:down
 bun run stack:logs
 bun run session:status
-bun run prisma:generate
-bun run prisma:migrate:dev
-bun run prisma:studio
+bun run db:upgrade
+bun run db:stamp-baseline
 bun run openapi:generate
 ```
 
@@ -167,21 +165,20 @@ bun run openapi:generate
 - Web internal proxy: `http://localhost:3000/api/proxy/*`
 - API root: `http://localhost:3001/`
 - API health: `http://localhost:3001/health`
-- Prisma Studio: `http://localhost:5555`
 - Merged OpenAPI spec: `docs/openapi.json`
 - Scalar config source: `apps/api/scalar.config.json`
 
 ## OpenAPI & Scalar
 
 The OpenAPI workflow is ready for docs tooling:
-- Split JSON source of truth in `docs/openapi/base.json`, `docs/openapi/paths/*.json`, and `docs/openapi/schemas/*.json`
-- Merged artifact at `docs/openapi.json`
-- Merge generator runs via `bun run openapi:generate`
+- FastAPI routers and Pydantic models are the OpenAPI source of truth
+- Generated artifact at `docs/openapi.json`
+- Generator runs via `bun run openapi:generate`
 - Scalar config at `apps/api/scalar.config.json`
 
 This means:
 - Don't edit `docs/openapi.json` directly
-- Update specs in the split `docs/openapi/` folder
+- Update FastAPI routers or Pydantic models
 - Regenerate the merged spec afterward
 - The merged file is ready for Scalar since the repo config points to `./docs/openapi.json`
 
@@ -354,12 +351,12 @@ Output: page.tsx + [feature]-content.tsx
 #### 2b. Backend + OpenAPI
 > Skill: `api-feature` + `docs-openapi`
 
-Implement Clean Architecture in Hono: entity → use case → repository → controller → route.
-Write split OpenAPI documentation alongside.
+Implement Clean Architecture in FastAPI: entity → use case → repository → router.
+FastAPI routers and Pydantic models generate the OpenAPI artifact.
 
 ```
-Target: apps/api/src/
-         docs/openapi/
+Target: apps/api/app/
+         docs/openapi.json
 ```
 
 #### 2c. FE ↔ API Integration
@@ -410,9 +407,9 @@ Recommended workflow:
 7. Open a pull request
 
 For OpenAPI documentation changes:
-1. Edit split files in `docs/openapi/`
+1. Edit FastAPI routers and Pydantic models
 2. Run `bun run openapi:generate`
-3. Commit both split files and `docs/openapi.json`
+3. Commit the generated `docs/openapi.json`
 
 For skill changes:
 1. Edit source of truth in `.agents/skills/*`

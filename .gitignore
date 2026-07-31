@@ -26,3 +26,12 @@ coverage
 
 # vscode
 .vscode/
+apps/api/.venv/
+apps/api/.pytest_cache/
+apps/api/.mypy_cache/
+apps/api/.ruff_cache/
+
+# python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/

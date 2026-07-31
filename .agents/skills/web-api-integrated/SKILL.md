@@ -40,7 +40,7 @@ Integrate APIs into the frontend with a consistent architecture.
 
 ## Prohibitions
 
-- **FORBIDDEN** to call `axios`/`fetch` directly inside JSX/TSX components.
+- **FORBIDDEN** for UI files in `app/**` (except `app/api/**`) or `components/**` to import `axios` or call `fetch`; expose a transaction hook instead. BFF route handlers and server-side auth are explicit exceptions.
 - **FORBIDDEN** to use `any` as a type.
 - **FORBIDDEN** to skip Zod schema — every payload must be validated.
 - **FORBIDDEN** to hardcode API URLs — use `apiRouters` from constants.
@@ -54,6 +54,6 @@ Integrate APIs into the frontend with a consistent architecture.
 - [ ] Query key registered in `constants/query-keys.ts` (flat strings)
 - [ ] Custom hooks created: `useDataTable`, `useGetOne`, `useInsertOne`, `useUpdateOne`, `useDeleteOne`
 - [ ] `index.ts` re-exports all hooks
-- [ ] No direct `axios`/`fetch` in components
+- [ ] Route UI and reusable components use transaction hooks rather than direct `axios`/`fetch`
 - [ ] No `any`
 - [ ] Every file ends with a newline (EOF)

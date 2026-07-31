@@ -33,7 +33,7 @@ export default function HomeContent() {
         <PanelCard
           className="rounded-3xl"
           title="API"
-          description="Hono + Clean Architecture"
+          description="FastAPI + Clean Architecture"
         >
           <p className="text-xl font-semibold text-slate-900">
             Baseline route ` / ` dan ` /health ` aktif

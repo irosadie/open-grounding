@@ -26,7 +26,7 @@ You have access to these tools' functions. Use them when appropriate for better 
 vibecoding-starter/
 ├── apps/
 │   ├── web/      → Next.js frontend (App Router)
-│   ├── api/      → Hono backend (Clean Architecture)
+│   ├── api/      → FastAPI backend (Clean Architecture)
 │   └── worker/   → BullMQ background worker
 └── packages/
     ├── schemas/  → Zod validation schemas (shared FE + BE)
@@ -130,7 +130,7 @@ vibecoding-starter/
 - **Precision over speed** — be fast, but results must be correct and match requirements.
 - **Don't assume** — if something is ambiguous or unclear, ask first. Don't silently pick.
 - **Suggest simpler alternatives** — push back if warranted.
-- **Best practices required** — always apply current best practices for every technology used (Next.js App Router, Hono, BullMQ, Prisma, React Query, Zod, etc.).
+- **Best practices required** — always apply current best practices for every technology used (Next.js App Router, FastAPI, SQLAlchemy async, Alembic, BullMQ, React Query, Zod, etc.).
 - **Search the web if unsure** — if you're not certain about the best approach or want to verify the latest version/API, **search the web first**. Don't guess, don't use old patterns when better ones exist.
 - **Follow the established flow** — don't skip phases. The vibe coding flow has an order: propose → implement → verify. Each phase has its skill, follow it.
 
@@ -204,9 +204,9 @@ Execution order per feature — **don't reverse**:
 
 #### 2b. Backend + OpenAPI
 > Skill: `api-feature` + `docs-openapi`
-- Implement Clean Architecture: entity → use case → repository → controller → route
-- Write split OpenAPI documentation alongside
-- Target: `apps/api/src/` + `docs/openapi/`
+- Implement Clean Architecture: entity → use case → repository → service → router
+- Generate OpenAPI from FastAPI routers and Pydantic models
+- Target: `apps/api/app/` + `docs/openapi.json`
 
 #### 2c. FE ↔ API Integration
 > Skill: `web-api-integrated`
@@ -253,8 +253,8 @@ export const statuses = ['ACTIVE', 'INACTIVE', 'ON_PROGRESS'] as const
 export type Status = (typeof statuses)[number]
 ```
 
-- **Prisma**: don't declare enum separately — use `String` + `@default()`, validate via Zod schema
-- **BE entity/DTO**: import type from `@vibecoding-starter/schemas`
+- **SQLAlchemy**: map persisted enum values explicitly and keep them compatible with the shared schema contract
+- **BE entity/DTO**: define Python enum/model types within the FastAPI domain boundary
 - **FE schema/form**: import `as const` array + `z.enum()` from `@vibecoding-starter/schemas`
 
 One declaration, one import, all layers use the same.
@@ -316,20 +316,19 @@ Typing:
   General      → apps/web/types/generals/
 ```
 
-**FORBIDDEN:** JSX components calling axios/fetch directly — must go through hooks.
+**API boundary (required):** UI files under `apps/web/app/**` (except `app/api/**`) and `apps/web/components/**` must not import `axios` or call `fetch` directly. Route UI consumes transaction hooks from `apps/web/hooks/transactions/use-{domain}/`; only those hooks may issue browser API requests. BFF route handlers in `app/api/**` and server-side auth remain explicit exceptions.
 **RECOMMENDED:** create a `_components/` folder for components used only by that route. Keep `*-page-content.tsx` beside `page.tsx` as the route orchestrator. Move components used by multiple routes to `apps/web/components/`.
 
-### apps/api (Hono Backend — Clean Architecture)
+### apps/api (FastAPI Backend — Clean Architecture)
 
 ```
 HTTP Request
-  → apps/api/src/interfaces/http/routes/    (Zod validation, delegate to controller)
-  → apps/api/src/interfaces/http/controllers/ (parse request, call service, format response)
-  → apps/api/src/application/services/       (orchestrate use case, transform Entity → DTO)
-  → apps/api/src/application/use-cases/      (business logic, throw DomainError)
-  → apps/api/src/infrastructure/database/    (query Prisma, return Entity)
+  → apps/api/app/interfaces/http/            (Pydantic validation, dependency injection, routers)
+  → apps/api/app/application/                (orchestrate use case, transform domain models)
+  → apps/api/app/domain/                     (business rules and repository protocols)
+  → apps/api/app/infrastructure/             (SQLAlchemy async repositories)
   ↑
-  bubbles up → errorHandler middleware → HTTP Response
+  bubbles up → FastAPI exception handlers → HTTP Response
 
 Error Handling:
   DomainError → errorHandler middleware
@@ -341,7 +340,7 @@ Error Handling:
     └── INTERNAL     → 500
 ```
 
-**FORBIDDEN:** business logic in Controller, Prisma/HTTP in Use Case, HTTPException from Use Case.
+**FORBIDDEN:** business logic in routers, SQLAlchemy/HTTP in application use cases, HTTP exceptions outside the HTTP interface.
 
 ### apps/worker (BullMQ Worker)
 
@@ -435,7 +434,7 @@ packages/utils/    → Pure TS utilities (used by all)
 - DTO: `.agents/guides/api-dto.md`
 - Validator: `.agents/guides/api-validator.md`
 - Error: `.agents/guides/api-error.md`
-- Prisma Repository: `.agents/guides/api-db-repository.md`
+- SQLAlchemy Repository: `.agents/guides/api-db-repository.md`
 
 **packages:**
 - Shared schema: `.agents/guides/shared-schema.md`

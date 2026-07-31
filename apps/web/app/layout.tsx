@@ -6,7 +6,7 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "vibecoding-starter",
   description:
-    "Monorepo boilerplate with Next.js, Hono, worker, and agent flow",
+    "Monorepo boilerplate with Next.js, FastAPI, worker, and agent flow",
 }
 
 export default function RootLayout({

@@ -8,10 +8,12 @@
 - Import from `utils/`, `types/`, `constants/`
 
 ❌ Forbidden:
-- Call `axios` or `fetch` directly
+- Import `axios` or call `fetch` directly — reusable components accept data and callbacks as props
 - Import data-fetching hooks from `hooks/`
 - Hardcode API URL or query key
 - Business logic
+
+Components never own network access. A route's `*-page-content.tsx` obtains data and mutations from a transaction hook, then passes the necessary data and callbacks into reusable components.
 
 ---
 

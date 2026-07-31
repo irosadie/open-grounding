@@ -69,11 +69,14 @@ printf '[bootstrap] starting local stack\n'
 wait_for_postgres
 wait_for_redis
 
-printf '[bootstrap] generating prisma client\n'
-(cd apps/api && bun run prisma:generate)
+printf '[bootstrap] installing API Python dependencies\n'
+(cd apps/api && uv sync --all-groups)
+
+printf '[bootstrap] applying API database migrations\n'
+(cd apps/api && uv run alembic upgrade head)
 
 printf '[bootstrap] generating merged openapi spec\n'
-bun apps/api/scripts/generate-openapi.ts
+(cd apps/api && uv run python -m app.export_openapi)
 
 printf '[bootstrap] local development infrastructure is ready\n'
 "$COMPOSE" ps
