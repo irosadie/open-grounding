@@ -4,6 +4,7 @@ from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.auth_service import AuthService
+from app.application.ingestion_intake_service import IngestionIntakeService
 from app.core.security import decode_access_token
 from app.core.settings import Settings, get_settings
 from app.domain.errors import DomainError
@@ -35,8 +36,16 @@ async def get_auth_context(
     return {**payload, "accessToken": token}
 
 
+def get_ingestion_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> IngestionIntakeService:
+    return IngestionIntakeService(session, settings)
+
+
 AuthServiceDependency = Annotated[AuthService, Depends(get_auth_service)]
 AuthContextDependency = Annotated[dict[str, str], Depends(get_auth_context)]
+IngestionServiceDependency = Annotated[IngestionIntakeService, Depends(get_ingestion_service)]
 
 
 async def get_tenant_context(

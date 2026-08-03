@@ -183,6 +183,9 @@ authority.
 
 - Which parser adapter is officially supported first for digital PDFs, and what
   production malware scanner is acceptable for the open-source profile?
+  **Resolved:** docling is the first officially supported parser adapter, provided
+  by the `rag-docling-parser-adapter` change behind the provider-neutral
+  `DocumentParser` port. The malware scanner question remains open.
 - What maximum source size, pages, tokens, batch size, and concurrent jobs match the
   target hardware profile?
 - Which dense and sparse model profiles become the first supported local defaults?

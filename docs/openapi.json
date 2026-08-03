@@ -28,6 +28,30 @@
         }
       }
     },
+    "/ready": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Get Readiness",
+        "description": "Readiness diagnostic for RAG platform dependencies.\n\nReports PostgreSQL, Redis, Qdrant, object storage, deployment tenant, and\nactive index-profile availability without exposing credentials, internal\nURLs, or raw provider errors. This is not a retrieval endpoint.",
+        "operationId": "get_readiness_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Readiness Ready Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -341,10 +365,337 @@
           }
         }
       }
+    },
+    "/rag/ingestion/intake": {
+      "post": {
+        "tags": [
+          "RAG Ingestion"
+        ],
+        "summary": "Create Intake",
+        "description": "Create a pending document version and return an upload target.",
+        "operationId": "create_intake_rag_ingestion_intake_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateIntakeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Intake Rag Ingestion Intake Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/ingestion/complete": {
+      "post": {
+        "tags": [
+          "RAG Ingestion"
+        ],
+        "summary": "Complete Intake",
+        "description": "Validate upload completion and transition to STORED.",
+        "operationId": "complete_intake_rag_ingestion_complete_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteIntakeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Complete Intake Rag Ingestion Complete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/ingestion/status/{document_version_id}": {
+      "get": {
+        "tags": [
+          "RAG Ingestion"
+        ],
+        "summary": "Get Ingestion Status",
+        "description": "Return tenant-scoped ingestion status for a document version.",
+        "operationId": "get_ingestion_status_rag_ingestion_status__document_version_id__get",
+        "parameters": [
+          {
+            "name": "document_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Ingestion Status Rag Ingestion Status  Document Version Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/ingestion/{document_version_id}": {
+      "delete": {
+        "tags": [
+          "RAG Ingestion"
+        ],
+        "summary": "Delete Version",
+        "description": "Soft-delete a document version (removes from active retrieval).",
+        "operationId": "delete_version_rag_ingestion__document_version_id__delete",
+        "parameters": [
+          {
+            "name": "document_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Version Rag Ingestion  Document Version Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "CompleteIntakeRequest": {
+        "properties": {
+          "document_version_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Document Version Id"
+          },
+          "content_checksum": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Content Checksum"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_version_id",
+          "content_checksum"
+        ],
+        "title": "CompleteIntakeRequest"
+      },
+      "CreateIntakeRequest": {
+        "properties": {
+          "knowledge_base_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Knowledge Base Id"
+          },
+          "filename": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Filename"
+          },
+          "mime_type": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Mime Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Size Bytes"
+          },
+          "source_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Revision"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "knowledge_base_id",
+          "filename",
+          "mime_type",
+          "size_bytes"
+        ],
+        "title": "CreateIntakeRequest"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {

@@ -12,6 +12,7 @@ any RAG infrastructure is built.
 
 from typing import Protocol
 
+from app.domain.rag.elements import ParsedDocument
 from app.domain.rag.tenant_namespace import TenantNamespace
 from app.domain.tenant_context import TenantContext
 
@@ -89,6 +90,104 @@ class GraphAdapter(Protocol):
     async def traverse(
         self, *, tenant: TenantContext, start_node_id: str, max_depth: int
     ) -> list[dict[str, object]]:
+        ...
+
+
+class GenerationAdapter(Protocol):
+    """Port for LLM answer generation.
+
+    Generation requests MUST carry tenant context and a generation model
+    profile reference. The adapter MUST NOT persist secrets and returns only
+    the generated text and usage metadata.
+    """
+
+    async def generate(
+        self,
+        *,
+        tenant: TenantContext,
+        prompt: str,
+        model_profile_id: str,
+        max_tokens: int | None = None,
+    ) -> dict[str, object]:
+        """Generate text for the tenant. Returns text and usage metadata."""
+        ...
+
+
+class EmbeddingAdapter(Protocol):
+    """Port for dense vector embedding.
+
+    Embedding requests MUST carry tenant context and an embedding model
+    profile reference. The adapter returns ordered dense vectors matching the
+    declared profile dimensions.
+    """
+
+    async def embed(
+        self, *, tenant: TenantContext, texts: list[str], model_profile_id: str
+    ) -> list[list[float]]:
+        """Return one dense vector per input text in order."""
+        ...
+
+
+class SparseEncoderAdapter(Protocol):
+    """Port for sparse vector encoding.
+
+    Sparse encoding requests MUST carry tenant context and a sparse profile
+    reference. The adapter returns ordered sparse representations compatible
+    with the active index profile.
+    """
+
+    async def encode(
+        self, *, tenant: TenantContext, texts: list[str], sparse_profile_id: str
+    ) -> list[dict[str, object]]:
+        """Return one sparse representation per input text in order."""
+        ...
+
+
+class RerankerAdapter(Protocol):
+    """Port for cross-encoder reranking.
+
+    Reranking requests MUST carry tenant context. The adapter returns the
+    candidates reordered by relevance score without discarding the original
+    query or exceeding the configured candidate budget.
+    """
+
+    async def rerank(
+        self,
+        *,
+        tenant: TenantContext,
+        query: str,
+        candidates: list[dict[str, object]],
+        reranker_profile_id: str,
+        top_k: int | None = None,
+    ) -> list[dict[str, object]]:
+        """Return candidates annotated with reranker scores, ordered."""
+        ...
+
+
+class DocumentParser(Protocol):
+    """Port for tenant-aware document parsing.
+
+    The parser accepts a tenant context and a source reference (object-store
+    key or bytes) and returns ordered canonical ``DocumentElement`` records
+    plus a bounded quality summary. The port is provider-neutral; concrete
+    adapters (e.g. docling) live in infrastructure and MUST NOT be imported
+    by domain or application code.
+
+    The port MUST reject missing or mismatched tenant scope before any
+    parser operation executes, and MUST reject unsupported MIME types for
+    the v1 officially supported set (PDF, Markdown, TXT) without attempting
+    conversion.
+    """
+
+    async def parse(
+        self,
+        *,
+        tenant: TenantContext,
+        source: bytes,
+        mime_type: str,
+        parser_profile_id: str,
+    ) -> ParsedDocument:
+        """Parse a source into ordered canonical elements + quality summary."""
         ...
 
 

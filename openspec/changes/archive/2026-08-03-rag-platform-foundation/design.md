@@ -165,3 +165,27 @@ a rollback source.
 - Which local embedding profile is officially supported first, and what dimension and
   sparse encoder does it require?
 - Should operator readiness be a protected HTTP route, CLI-only command, or both?
+
+## Handoff to `rag-ingestion-foundation`
+
+This change is complete. The platform foundation provides the durable,
+secure boundaries that ingestion requires:
+
+- Provider-neutral ports (object storage, vector, embedding, sparse, reranker,
+  generation) and tenant namespace primitives are ready for ingestion to use.
+- The tenant-scoped PostgreSQL catalog (knowledge bases, sources, documents,
+  versions, model/index profiles, index generations, ingestion jobs, outbox
+  events) is migrated and repository-tested.
+- The transactional outbox application service creates pending generations
+  atomically; ingestion will dispatch and validate them.
+- Qdrant and object-store runtime profiles are pinned, health-checked, and
+  recoverable.
+
+`rag-ingestion-foundation` now owns: source intake, versioning, parser
+routing, canonical document elements, normalization, quality gates,
+chunking, BullMQ orchestration, embedding, indexing, validation, and
+operations. It consumes the catalog tables, provider ports, and outbox
+service added here. The `rag-docling-parser-adapter` change provides the
+first concrete parser adapter behind the `DocumentParser` port to be added by
+ingestion task 3.1.
+

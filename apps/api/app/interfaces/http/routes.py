@@ -7,12 +7,19 @@ from app.core.settings import Settings, get_settings
 from app.interfaces.http.dependencies import (
     AuthContextDependency,
     AuthServiceDependency,
+    IngestionServiceDependency,
     TenantContextDependency,
 )
-from app.interfaces.http.schemas import LoginRequest, RegisterRequest
+from app.interfaces.http.schemas import (
+    CompleteIntakeRequest,
+    CreateIntakeRequest,
+    LoginRequest,
+    RegisterRequest,
+)
 
 system_router = APIRouter(tags=["System"])
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
+rag_router = APIRouter(prefix="/rag", tags=["RAG Ingestion"])
 
 
 def success(message: str, data: object | None = None, meta: object | None = None) -> dict[str, object]:
@@ -27,6 +34,21 @@ def success(message: str, data: object | None = None, meta: object | None = None
 @system_router.get("/")
 async def get_app_info() -> dict[str, object]:
     return success("Application info loaded", {"name": "vibecoding-starter-api", "message": "FastAPI clean architecture API is ready"})
+
+
+@system_router.get("/ready")
+async def get_readiness(settings: Annotated[Settings, Depends(get_settings)]) -> dict[str, object]:
+    """Readiness diagnostic for RAG platform dependencies.
+
+    Reports PostgreSQL, Redis, Qdrant, object storage, deployment tenant, and
+    active index-profile availability without exposing credentials, internal
+    URLs, or raw provider errors. This is not a retrieval endpoint.
+    """
+    from app.infrastructure.rag_health import build_readiness_report
+
+    report = await build_readiness_report(settings)
+    status_code_label = "ready" if report.status == "ready" else "degraded"
+    return success(f"Readiness {status_code_label}", report.to_dict())
 
 
 @system_router.get("/health")
@@ -96,3 +118,67 @@ async def get_tenant_context(tenant: TenantContextDependency) -> dict[str, objec
         "Tenant context loaded",
         {"tenantId": tenant.tenant_id, "membershipId": tenant.membership_id, "userId": tenant.user_id},
     )
+
+
+# --- RAG ingestion routes -----------------------------------------------------
+
+
+@rag_router.post("/ingestion/intake", status_code=status.HTTP_201_CREATED)
+async def create_intake(
+    payload: CreateIntakeRequest,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    """Create a pending document version and return an upload target."""
+    result = await service.create_intake(
+        tenant=tenant, knowledge_base_id=payload.knowledge_base_id,
+        filename=payload.filename, mime_type=payload.mime_type,
+        size_bytes=payload.size_bytes, title=payload.title,
+        source_revision=payload.source_revision,
+    )
+    return success("Intake created", {
+        "documentId": result.document_id, "documentVersionId": result.document_version_id,
+        "uploadKey": result.upload_key, "expiresIn": 3600,
+    })
+
+
+@rag_router.post("/ingestion/complete")
+async def complete_intake(
+    payload: CompleteIntakeRequest,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    """Validate upload completion and transition to STORED."""
+    result = await service.complete_intake(
+        tenant=tenant, document_version_id=payload.document_version_id,
+        content_checksum=payload.content_checksum,
+    )
+    return success("Intake completed", {
+        "documentVersionId": result.document_version_id,
+        "lifecycleState": result.lifecycle_state, "enqueued": result.enqueued,
+    })
+
+
+@rag_router.get("/ingestion/status/{document_version_id}")
+async def get_ingestion_status(
+    document_version_id: str,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    """Return tenant-scoped ingestion status for a document version."""
+    status_data = await service.get_status(
+        tenant=tenant, document_version_id=document_version_id,
+    )
+    return success("Ingestion status loaded", status_data)
+
+
+@rag_router.delete("/ingestion/{document_version_id}")
+async def delete_version(
+    document_version_id: str,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    """Soft-delete a document version (removes from active retrieval)."""
+    await service.soft_delete(tenant=tenant, document_version_id=document_version_id)
+    return success("Document version scheduled for deletion")
+
