@@ -153,9 +153,7 @@ def map_docling_to_elements(doc: object, *, profile_version: str) -> ParsedDocum
             pages_seen.add(page)
         if canonical_type == ElementType.TITLE and text:
             headings.append(text)
-        element_id = deterministic_element_id(
-            version=profile_version, element_index=idx, text=text, page=page
-        )
+        element_id = deterministic_element_id(version=profile_version, element_index=idx, text=text, page=page)
         elements.append(
             DocumentElement(
                 id=element_id,

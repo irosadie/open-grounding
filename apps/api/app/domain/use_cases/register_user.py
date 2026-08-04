@@ -5,9 +5,7 @@ from app.domain.models import User, UserRole, UserStatus
 from app.domain.repositories import AuthRepository
 
 
-async def register_user(
-    repo: AuthRepository, *, email: str, password_hash: str, name: str
-) -> User:
+async def register_user(repo: AuthRepository, *, email: str, password_hash: str, name: str) -> User:
     """Create a new user after checking for duplicate email.
 
     Raises DomainError.duplicate_email if the email is already registered.

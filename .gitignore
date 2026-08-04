@@ -24,6 +24,9 @@ coverage
 # Serena cache
 .serena/
 
+# Qoder
+.qoder/
+
 # vscode
 .vscode/
 apps/api/.venv/

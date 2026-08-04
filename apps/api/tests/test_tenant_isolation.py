@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 
 from app.domain.errors import DomainError
+from app.domain.models import UserRole
 from app.domain.rag.adapter_ports import assert_tenant_scope
 from app.domain.rag.tenant_namespace import TenantNamespace
 from app.domain.tenant_context import TenantContext
@@ -20,12 +21,12 @@ TENANT_B_ID = str(uuid4())
 
 @pytest.fixture
 def tenant_a() -> TenantContext:
-    return TenantContext(tenant_id=TENANT_A_ID, membership_id=str(uuid4()), user_id=str(uuid4()))
+    return TenantContext(tenant_id=TENANT_A_ID, membership_id=str(uuid4()), user_id=str(uuid4()), role=UserRole.USER)
 
 
 @pytest.fixture
 def tenant_b() -> TenantContext:
-    return TenantContext(tenant_id=TENANT_B_ID, membership_id=str(uuid4()), user_id=str(uuid4()))
+    return TenantContext(tenant_id=TENANT_B_ID, membership_id=str(uuid4()), user_id=str(uuid4()), role=UserRole.USER)
 
 
 def test_object_keys_are_tenant_namespaced(tenant_a: TenantContext, tenant_b: TenantContext) -> None:

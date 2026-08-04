@@ -190,9 +190,7 @@ class SqlAlchemyTenantRepository:
         return _to_tenant(row) if row else None
 
     async def find_active_tenant(self) -> Tenant | None:
-        result = await self._session.execute(
-            select(TenantRecord).where(TenantRecord.status == TenantStatus.ACTIVE).order_by(TenantRecord.created_at).limit(1)
-        )
+        result = await self._session.execute(select(TenantRecord).where(TenantRecord.status == TenantStatus.ACTIVE).order_by(TenantRecord.created_at).limit(1))
         row = result.scalar_one_or_none()
         return _to_tenant(row) if row else None
 
@@ -213,9 +211,7 @@ class SqlAlchemyTenantRepository:
         row = result.scalar_one_or_none()
         return _to_membership(row) if row else None
 
-    async def create_membership(
-        self, *, tenant_id: str, user_id: str, status: TenantMembershipStatus
-    ) -> TenantMembership:
+    async def create_membership(self, *, tenant_id: str, user_id: str, status: TenantMembershipStatus) -> TenantMembership:
         row = TenantMembershipRecord(id=str(uuid4()), tenant_id=tenant_id, user_id=user_id, status=status)
         self._session.add(row)
         await self._session.commit()

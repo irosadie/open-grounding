@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -54,3 +54,48 @@ class IngestionStatusResponse(BaseModel):
     attempts: int = 0
     quality: dict[str, Any] | None = None
 
+
+class RagQueryRequest(BaseModel):
+    conversation_id: str | None = Field(default=None, max_length=120, description="Optional server-owned conversation identifier")
+    message: str = Field(min_length=1, max_length=8_000, description="Question to answer from permitted evidence")
+    knowledge_base_ids: list[str] = Field(min_length=1, max_length=20, description="Knowledge bases the caller may select")
+    mode: str = Field(default="grounded", pattern="^(grounded)$", description="Only grounded mode is supported")
+    stream: bool = Field(default=False, description="Request an SSE response when enabled")
+
+    model_config = {
+        "extra": "forbid",
+        "json_schema_extra": {"examples": [{"message": "What is the retention policy?", "knowledge_base_ids": ["knowledge-base-id"], "stream": False}]},
+    }
+
+
+class RagQueryStreamRequest(RagQueryRequest):
+    stream: Literal[True] = Field(default=True, description="SSE requests always stream")
+
+
+class RagQueryCitationResponse(BaseModel):
+    citation_id: str
+    document_version_id: str
+    title: str
+    locator: str | None = None
+    snippet: str
+
+
+class RagQueryResponse(BaseModel):
+    answer: dict[str, object] | None = None
+    route: Literal["grounded", "clarify", "abstain"]
+    evidence_level: Literal["high", "medium", "low", "none"]
+    citations: list[RagQueryCitationResponse]
+    limitations: list[str]
+    trace_id: str
+
+    model_config = {"populate_by_name": True}
+
+
+class RagAnswerFeedbackRequest(BaseModel):
+    rating: int | None = Field(default=None, ge=1, le=5, description="Optional 1-5 rating for the retained answer")
+    comment: str | None = Field(default=None, max_length=2_000, description="Optional bounded feedback comment")
+
+    model_config = {
+        "extra": "forbid",
+        "json_schema_extra": {"examples": [{"rating": 5, "comment": "The answer cited the relevant policy."}]},
+    }

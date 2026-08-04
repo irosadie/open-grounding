@@ -105,22 +105,26 @@ def test_mapping_preserves_page_and_bbox() -> None:
 
 
 def test_mapping_derives_hierarchy_from_titles() -> None:
-    doc = _MockDoclingDocument([
-        _MockItem("title", "Chapter 1", page=1),
-        _MockItem("paragraph", "Body", page=1),
-        _MockItem("title", "Section 1.1", page=1),
-        _MockItem("paragraph", "More body", page=2),
-    ])
+    doc = _MockDoclingDocument(
+        [
+            _MockItem("title", "Chapter 1", page=1),
+            _MockItem("paragraph", "Body", page=1),
+            _MockItem("title", "Section 1.1", page=1),
+            _MockItem("paragraph", "More body", page=2),
+        ]
+    )
     result = map_docling_to_elements(doc, profile_version="1")
     assert result.elements[1].hierarchy_path == ("Chapter 1",)
     assert result.elements[3].hierarchy_path == ("Chapter 1", "Section 1.1")
 
 
 def test_mapping_preserves_reading_order() -> None:
-    doc = _MockDoclingDocument([
-        _MockItem("paragraph", "page2", page=2, index=0),
-        _MockItem("paragraph", "page1", page=1, index=0),
-    ])
+    doc = _MockDoclingDocument(
+        [
+            _MockItem("paragraph", "page2", page=2, index=0),
+            _MockItem("paragraph", "page1", page=1, index=0),
+        ]
+    )
     result = map_docling_to_elements(doc, profile_version="1")
     assert result.elements[0].page == 1
     assert result.elements[1].page == 2

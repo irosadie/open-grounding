@@ -51,8 +51,13 @@ def default_token_counter(text: str) -> int:
 
 
 def _deterministic_chunk_id(
-    *, version: str, hierarchy_path: tuple[str, ...], text: str,
-    content_type: str, chunker_version: str, chunk_index: int,
+    *,
+    version: str,
+    hierarchy_path: tuple[str, ...],
+    text: str,
+    content_type: str,
+    chunker_version: str,
+    chunk_index: int,
 ) -> str:
     raw = f"{version}:{'/'.join(hierarchy_path)}:{chunk_index}:{content_type}:{chunker_version}:{text[:200]}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
@@ -89,39 +94,72 @@ def chunk_document(
         ppage = parent_buffer[0].page
         pctype = parent_buffer[0].type
         pid = _deterministic_chunk_id(
-            version=chunker_version, hierarchy_path=ppath, text=ptext,
-            content_type=pctype, chunker_version=chunker_version, chunk_index=parent_idx,
+            version=chunker_version,
+            hierarchy_path=ppath,
+            text=ptext,
+            content_type=pctype,
+            chunker_version=chunker_version,
+            chunk_index=parent_idx,
         )
-        chunks.append(ChunkResult(
-            id=pid, chunk_type="PARENT", parent_id=None, hierarchy_path=ppath,
-            page=ppage, content_type=pctype, text=ptext, token_count=ptokens,
-            source_offsets_start=None, source_offsets_end=None,
-        ))
+        chunks.append(
+            ChunkResult(
+                id=pid,
+                chunk_type="PARENT",
+                parent_id=None,
+                hierarchy_path=ppath,
+                page=ppage,
+                content_type=pctype,
+                text=ptext,
+                token_count=ptokens,
+                source_offsets_start=None,
+                source_offsets_end=None,
+            )
+        )
         parent_idx += 1
         words = ptext.split()
         total = len(words)
         pos = 0
         while pos < total:
-            cw = words[pos:pos + child_token_max]
+            cw = words[pos : pos + child_token_max]
             ctext = " ".join(cw)
             ctokens = token_counter(ctext)
             if ctokens < child_token_min and pos + child_token_max >= total and chunks and chunks[-1].chunk_type == "CHILD":
                 merged = chunks[-1].text + " " + ctext
                 chunks[-1] = ChunkResult(
-                    id=chunks[-1].id, chunk_type="CHILD", parent_id=pid, hierarchy_path=ppath,
-                    page=ppage, content_type=pctype, text=merged, token_count=token_counter(merged),
-                    source_offsets_start=pos, source_offsets_end=pos + len(cw),
+                    id=chunks[-1].id,
+                    chunk_type="CHILD",
+                    parent_id=pid,
+                    hierarchy_path=ppath,
+                    page=ppage,
+                    content_type=pctype,
+                    text=merged,
+                    token_count=token_counter(merged),
+                    source_offsets_start=pos,
+                    source_offsets_end=pos + len(cw),
                 )
                 break
             cid = _deterministic_chunk_id(
-                version=chunker_version, hierarchy_path=ppath, text=ctext,
-                content_type=pctype, chunker_version=chunker_version, chunk_index=child_idx,
+                version=chunker_version,
+                hierarchy_path=ppath,
+                text=ctext,
+                content_type=pctype,
+                chunker_version=chunker_version,
+                chunk_index=child_idx,
             )
-            chunks.append(ChunkResult(
-                id=cid, chunk_type="CHILD", parent_id=pid, hierarchy_path=ppath,
-                page=ppage, content_type=pctype, text=ctext, token_count=ctokens,
-                source_offsets_start=pos, source_offsets_end=pos + len(cw),
-            ))
+            chunks.append(
+                ChunkResult(
+                    id=cid,
+                    chunk_type="CHILD",
+                    parent_id=pid,
+                    hierarchy_path=ppath,
+                    page=ppage,
+                    content_type=pctype,
+                    text=ctext,
+                    token_count=ctokens,
+                    source_offsets_start=pos,
+                    source_offsets_end=pos + len(cw),
+                )
+            )
             child_idx += 1
             pos += child_token_max
         parent_buffer = []
@@ -140,17 +178,30 @@ def chunk_document(
             pos = 0
             overlap = max(1, child_token_max // 5)
             while pos < total:
-                cw = words[pos:pos + child_token_max]
+                cw = words[pos : pos + child_token_max]
                 ctext = " ".join(cw)
                 cid = _deterministic_chunk_id(
-                    version=chunker_version, hierarchy_path=element.hierarchy_path, text=ctext,
-                    content_type=element.type, chunker_version=chunker_version, chunk_index=pos,
+                    version=chunker_version,
+                    hierarchy_path=element.hierarchy_path,
+                    text=ctext,
+                    content_type=element.type,
+                    chunker_version=chunker_version,
+                    chunk_index=pos,
                 )
-                chunks.append(ChunkResult(
-                    id=cid, chunk_type="CHILD", parent_id=None, hierarchy_path=element.hierarchy_path,
-                    page=element.page, content_type=element.type, text=ctext,
-                    token_count=token_counter(ctext), source_offsets_start=pos, source_offsets_end=pos + len(cw),
-                ))
+                chunks.append(
+                    ChunkResult(
+                        id=cid,
+                        chunk_type="CHILD",
+                        parent_id=None,
+                        hierarchy_path=element.hierarchy_path,
+                        page=element.page,
+                        content_type=element.type,
+                        text=ctext,
+                        token_count=token_counter(ctext),
+                        source_offsets_start=pos,
+                        source_offsets_end=pos + len(cw),
+                    )
+                )
                 pos += max(1, child_token_max - overlap)
         else:
             if parent_tokens + etoks > parent_token_max and parent_buffer:

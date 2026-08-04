@@ -15,9 +15,7 @@ from app.domain.models import User, UserStatus
 from app.domain.repositories import AuthRepository
 
 
-async def login_user(
-    repo: AuthRepository, settings: Settings, *, email: str, password: str
-) -> tuple[User, dict[str, str | int]]:
+async def login_user(repo: AuthRepository, settings: Settings, *, email: str, password: str) -> tuple[User, dict[str, str | int]]:
     """Verify credentials, build a token pair, and persist a new auth session.
 
     Deletes any existing sessions for the user before creating the new one.

@@ -25,9 +25,7 @@ from app.domain.rag.profiles import IndexProfile, ModelProfile
 
 class KnowledgeBaseRepository(Protocol):
     async def find_by_id(self, *, tenant_id: str, knowledge_base_id: str) -> KnowledgeBase | None: ...
-    async def create(
-        self, *, tenant_id: str, slug: str, name: str, status: str
-    ) -> KnowledgeBase: ...
+    async def create(self, *, tenant_id: str, slug: str, name: str, status: str) -> KnowledgeBase: ...
 
 
 class KnowledgeSourceRepository(Protocol):
@@ -44,9 +42,7 @@ class KnowledgeSourceRepository(Protocol):
 
 class DocumentRepository(Protocol):
     async def find_by_id(self, *, tenant_id: str, document_id: str) -> Document | None: ...
-    async def create(
-        self, *, tenant_id: str, knowledge_base_id: str, source_id: str, title: str | None
-    ) -> Document: ...
+    async def create(self, *, tenant_id: str, knowledge_base_id: str, source_id: str, title: str | None) -> Document: ...
 
 
 class DocumentVersionRepository(Protocol):
@@ -63,10 +59,10 @@ class DocumentVersionRepository(Protocol):
         pipeline_fingerprint: str | None,
         size_bytes: int | None,
         mime_type: str | None,
+        classification: str = "INTERNAL",
+        acl_principals: tuple[str, ...] = (),
     ) -> DocumentVersion: ...
-    async def update_lifecycle_state(
-        self, *, tenant_id: str, version_id: str, lifecycle_state: str
-    ) -> DocumentVersion | None: ...
+    async def update_lifecycle_state(self, *, tenant_id: str, version_id: str, lifecycle_state: str) -> DocumentVersion | None: ...
 
 
 class ModelProfileRepository(Protocol):
@@ -96,13 +92,15 @@ class IndexProfileRepository(Protocol):
         distance_metric: str,
         version: str,
     ) -> IndexProfile: ...
+    async def activate(self, *, tenant_id: str, profile_id: str) -> IndexProfile | None: ...
 
 
 class IndexGenerationRepository(Protocol):
     async def find_by_id(self, *, tenant_id: str, generation_id: str) -> IndexGeneration | None: ...
-    async def find_active_for_version(
-        self, *, tenant_id: str, document_version_id: str
-    ) -> IndexGeneration | None: ...
+    async def find_active_for_version(self, *, tenant_id: str, document_version_id: str) -> IndexGeneration | None: ...
+    async def find_active_for_knowledge_bases(
+        self, *, tenant_id: str, knowledge_base_ids: tuple[str, ...]
+    ) -> list[IndexGeneration]: ...
     async def create(
         self,
         *,
@@ -111,15 +109,11 @@ class IndexGenerationRepository(Protocol):
         index_profile_id: str,
         status: str,
     ) -> IndexGeneration: ...
-    async def update_status(
-        self, *, tenant_id: str, generation_id: str, status: str
-    ) -> IndexGeneration | None: ...
+    async def update_status(self, *, tenant_id: str, generation_id: str, status: str) -> IndexGeneration | None: ...
 
 
 class IngestionJobRepository(Protocol):
-    async def find_by_idempotency_key(
-        self, *, tenant_id: str, idempotency_key: str
-    ) -> IngestionJob | None: ...
+    async def find_by_idempotency_key(self, *, tenant_id: str, idempotency_key: str) -> IngestionJob | None: ...
     async def create(
         self,
         *,
@@ -149,19 +143,13 @@ class OutboxEventRepository(Protocol):
 
 
 class ChunkRepository(Protocol):
-    async def find_by_generation(
-        self, *, tenant_id: str, generation_id: str
-    ) -> list[Chunk]: ...
-    async def create_many(
-        self, *, tenant_id: str, chunks: list[dict[str, object]]
-    ) -> int: ...
+    async def find_by_generation(self, *, tenant_id: str, generation_id: str) -> list[Chunk]: ...
+    async def create_many(self, *, tenant_id: str, chunks: list[dict[str, object]]) -> int: ...
     async def delete_by_generation(self, *, tenant_id: str, generation_id: str) -> None: ...
 
 
 class StageCheckpointRepository(Protocol):
-    async def find_by_stage(
-        self, *, tenant_id: str, document_version_id: str, stage: str
-    ) -> StageCheckpoint | None: ...
+    async def find_by_stage(self, *, tenant_id: str, document_version_id: str, stage: str) -> StageCheckpoint | None: ...
     async def upsert(
         self,
         *,
@@ -175,4 +163,3 @@ class StageCheckpointRepository(Protocol):
         trace_id: str | None,
         checkpoint_data: dict[str, object],
     ) -> StageCheckpoint: ...
-

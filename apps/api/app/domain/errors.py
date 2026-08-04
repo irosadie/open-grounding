@@ -47,8 +47,7 @@ class DomainError(Exception):
     def tenant_mismatch(cls, *, configured_id: str, persisted_id: str) -> "DomainError":
         return cls(
             "TENANT_MISMATCH",
-            "Configured DEPLOYMENT_TENANT_ID does not match the persisted deployment tenant. "
-            "Changing the tenant ID in place is not supported; provision a new deployment instead.",
+            "Configured DEPLOYMENT_TENANT_ID does not match the persisted deployment tenant. Changing the tenant ID in place is not supported; provision a new deployment instead.",
             500,
             {"configuredTenantId": configured_id, "persistedTenantId": persisted_id},
         )
@@ -84,3 +83,15 @@ class DomainError(Exception):
             "Operation tenant scope does not match the active deployment tenant.",
             403,
         )
+
+    @classmethod
+    def query_payload_too_large(cls) -> "DomainError":
+        return cls("QUERY_PAYLOAD_TOO_LARGE", "Query payload exceeds the configured limit.", 413)
+
+    @classmethod
+    def query_rate_limited(cls) -> "DomainError":
+        return cls("QUERY_RATE_LIMITED", "Query rate limit exceeded. Try again shortly.", 429)
+
+    @classmethod
+    def query_concurrency_limited(cls) -> "DomainError":
+        return cls("QUERY_CONCURRENCY_LIMITED", "Too many concurrent queries. Try again shortly.", 429)

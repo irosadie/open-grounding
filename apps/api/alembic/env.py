@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from app.core.settings import get_settings
 from app.infrastructure import rag_catalog  # noqa: F401  (register ORM records with Base.metadata)
+from app.infrastructure import rag_answer_trace  # noqa: F401  (register ORM records with Base.metadata)
+from app.infrastructure import rag_conversations  # noqa: F401  (register ORM records with Base.metadata)
 from app.infrastructure.database import Base
 
 config = context.config

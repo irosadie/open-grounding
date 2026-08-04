@@ -23,20 +23,29 @@ TENANT_ID = str(uuid4())
 
 def test_intake_unsupported_mime_rejected(client: TestClient) -> None:
     """Unsupported MIME types are rejected before issuing an upload target."""
-    response = client.post("/rag/ingestion/intake", json={
-        "knowledgeBaseId": str(uuid4()), "filename": "test.xlsx",
-        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "sizeBytes": 1024,
-    })
+    response = client.post(
+        "/rag/ingestion/intake",
+        json={
+            "knowledgeBaseId": str(uuid4()),
+            "filename": "test.xlsx",
+            "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "sizeBytes": 1024,
+        },
+    )
     assert response.status_code in (400, 401, 403)
 
 
 def test_intake_requires_auth(client: TestClient) -> None:
     """Intake endpoints require authentication (tenant context)."""
-    response = client.post("/rag/ingestion/intake", json={
-        "knowledgeBaseId": str(uuid4()), "filename": "test.pdf",
-        "mimeType": "application/pdf", "sizeBytes": 1024,
-    })
+    response = client.post(
+        "/rag/ingestion/intake",
+        json={
+            "knowledgeBaseId": str(uuid4()),
+            "filename": "test.pdf",
+            "mimeType": "application/pdf",
+            "sizeBytes": 1024,
+        },
+    )
     assert response.status_code in (401, 403)
 
 

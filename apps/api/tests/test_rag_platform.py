@@ -68,13 +68,24 @@ def test_rag_development_permits_missing_secrets() -> None:
     assert settings.qdrant_api_key is None
 
 
+def test_query_retry_and_repair_are_bounded_to_one() -> None:
+    settings = Settings(_env_file=None, rag_query_max_retrieval_retries=1, rag_query_max_validation_repairs=0)
+    assert settings.rag_query_max_retrieval_retries == 1
+    assert settings.rag_query_max_validation_repairs == 0
+    with pytest.raises(ValidationError, match="zero or one"):
+        Settings(_env_file=None, rag_query_max_retrieval_retries=2)
+
+
+def test_query_candidate_budgets_must_be_ordered() -> None:
+    with pytest.raises(ValidationError, match="RAG_RETRIEVAL_RERANKER_CANDIDATES"):
+        Settings(_env_file=None, rag_retrieval_fused_candidates=10, rag_retrieval_reranker_candidates=11)
+
+
 # --- Profile compatibility ----------------------------------------------------
 
 
 def _embedding_profile(pid: str = "emb-1", dims: int = 768) -> ModelProfile:
-    return ModelProfile(
-        id=pid, profile_kind="embedding", provider="local", model="bge", dimensions=dims, version="1"
-    )
+    return ModelProfile(id=pid, profile_kind="embedding", provider="local", model="bge", dimensions=dims, version="1")
 
 
 def _index_profile(eid: str = "emb-1", dims: int = 768) -> IndexProfile:
@@ -96,26 +107,20 @@ def test_index_profile_compatible_when_dimensions_match() -> None:
 
 
 def test_index_profile_rejects_dimension_mismatch() -> None:
-    result = validate_index_profile_compatibility(
-        index=_index_profile(dims=1024), embedding=_embedding_profile(dims=768)
-    )
+    result = validate_index_profile_compatibility(index=_index_profile(dims=1024), embedding=_embedding_profile(dims=768))
     assert not result.is_compatible
     assert "1024" in (result.reason or "")
 
 
 def test_index_profile_rejects_missing_embedding_dimensions() -> None:
-    emb = ModelProfile(
-        id="emb-1", profile_kind="embedding", provider="local", model="bge", dimensions=None, version="1"
-    )
+    emb = ModelProfile(id="emb-1", profile_kind="embedding", provider="local", model="bge", dimensions=None, version="1")
     result = validate_index_profile_compatibility(index=_index_profile(), embedding=emb)
     assert not result.is_compatible
     assert "dimensions" in (result.reason or "").lower()
 
 
 def test_index_profile_rejects_profile_reference_mismatch() -> None:
-    result = validate_index_profile_compatibility(
-        index=_index_profile(eid="emb-1"), embedding=_embedding_profile(pid="emb-other")
-    )
+    result = validate_index_profile_compatibility(index=_index_profile(eid="emb-1"), embedding=_embedding_profile(pid="emb-other"))
     assert not result.is_compatible
     assert "reference" in (result.reason or "").lower()
 
@@ -124,6 +129,7 @@ def test_profile_compatibility_ok_factory() -> None:
     result = ProfileCompatibility.ok()
     assert result.is_compatible
     assert result.reason is None
+
 
 # --- Readiness redaction ------------------------------------------------------
 
@@ -196,9 +202,7 @@ def test_embedding_adapter_stub_satisfies_protocol() -> None:
     from app.domain.rag.adapter_ports import EmbeddingAdapter
 
     class StubEmbeddingAdapter:
-        async def embed(
-            self, *, tenant: object, texts: list[str], model_profile_id: str
-        ) -> list[list[float]]:
+        async def embed(self, *, tenant: object, texts: list[str], model_profile_id: str) -> list[list[float]]:
             return [[0.1, 0.2] for _ in texts]
 
     stub: EmbeddingAdapter = StubEmbeddingAdapter()  # type: ignore[assignment]

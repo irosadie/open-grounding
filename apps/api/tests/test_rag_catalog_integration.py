@@ -89,33 +89,57 @@ async def _seed_catalog_chain(s: AsyncSession, tenant_id: str, slug: str) -> tup
 
     kb = await _seed_kb(s, tenant_id, slug)
     src = KnowledgeSourceRecord(
-        id=str(uuid4()), tenant_id=tenant_id, knowledge_base_id=kb.id,
-        source_type="UPLOAD", name=f"Source {slug}", config_ref=None,
+        id=str(uuid4()),
+        tenant_id=tenant_id,
+        knowledge_base_id=kb.id,
+        source_type="UPLOAD",
+        name=f"Source {slug}",
+        config_ref=None,
     )
     s.add(src)
     await s.flush()
     doc = DocumentRecord(
-        id=str(uuid4()), tenant_id=tenant_id, knowledge_base_id=kb.id,
-        source_id=src.id, title=f"Doc {slug}",
+        id=str(uuid4()),
+        tenant_id=tenant_id,
+        knowledge_base_id=kb.id,
+        source_id=src.id,
+        title=f"Doc {slug}",
     )
     s.add(doc)
     await s.flush()
     version = DocumentVersionRecord(
-        id=str(uuid4()), tenant_id=tenant_id, document_id=doc.id, version_number=1,
-        content_checksum=f"sha256:{slug}", object_key_raw=f"tenants/{tenant_id}/docs/{doc.id}/raw",
-        size_bytes=1024, mime_type="application/pdf",
+        id=str(uuid4()),
+        tenant_id=tenant_id,
+        document_id=doc.id,
+        version_number=1,
+        content_checksum=f"sha256:{slug}",
+        object_key_raw=f"tenants/{tenant_id}/docs/{doc.id}/raw",
+        size_bytes=1024,
+        mime_type="application/pdf",
     )
     s.add(version)
     emb = ModelProfileRecord(
-        id=str(uuid4()), tenant_id=tenant_id, profile_kind="embedding",
-        provider="local", model="bge", dimensions=768, version="1", is_active=True,
+        id=str(uuid4()),
+        tenant_id=tenant_id,
+        profile_kind="embedding",
+        provider="local",
+        model="bge",
+        dimensions=768,
+        version="1",
+        is_active=True,
     )
     s.add(emb)
     await s.flush()
     idx = IndexProfileRecord(
-        id=str(uuid4()), tenant_id=tenant_id, embedding_profile_id=emb.id,
-        sparse_profile_id=None, collection="rag", dimensions=768,
-        distance_metric="cosine", version="1", is_active=True,
+        id=str(uuid4()),
+        tenant_id=tenant_id,
+        embedding_profile_id=emb.id,
+        sparse_profile_id=None,
+        collection="rag",
+        dimensions=768,
+        distance_metric="cosine",
+        version="1",
+        is_active=True,
     )
     s.add(idx)
     await s.commit()
@@ -142,8 +166,10 @@ async def test_index_generation_lineage_and_failed_recovery(session: AsyncSessio
     version_id, profile_id = await _seed_catalog_chain(session, TENANT_A_ID, "lin")
     repo = SqlAlchemyIndexGenerationRepository(session)
     gen = await repo.create(
-        tenant_id=TENANT_A_ID, document_version_id=version_id,
-        index_profile_id=profile_id, status="PENDING",
+        tenant_id=TENANT_A_ID,
+        document_version_id=version_id,
+        index_profile_id=profile_id,
+        status="PENDING",
     )
     assert gen.status is IndexGenerationStatus.PENDING
     failed = await repo.update_status(tenant_id=TENANT_A_ID, generation_id=gen.id, status="FAILED")
@@ -160,8 +186,10 @@ async def test_atomic_outbox_creation_with_generation(session: AsyncSession) -> 
     version_id, profile_id = await _seed_catalog_chain(session, TENANT_A_ID, "outbox")
     service = RagPublicationService(session)
     result = await service.create_pending_publication(
-        tenant_id=TENANT_A_ID, document_version_id=version_id,
-        index_profile_id=profile_id, trace_id="trace-1",
+        tenant_id=TENANT_A_ID,
+        document_version_id=version_id,
+        index_profile_id=profile_id,
+        trace_id="trace-1",
     )
     assert result.generation.status is IndexGenerationStatus.PENDING
     assert result.outbox_event.event_type == "GENERATION_PUBLISHED"

@@ -17,8 +17,11 @@ def _make_doc(elements: list[DocumentElement]) -> ParsedDocument:
     return ParsedDocument(
         elements=elements,
         quality=ParserQualitySummary(
-            element_count=len(elements), text_coverage=1.0, empty_element_ratio=0.0,
-            page_coverage=None, aggregate_confidence=None,
+            element_count=len(elements),
+            text_coverage=1.0,
+            empty_element_ratio=0.0,
+            page_coverage=None,
+            aggregate_confidence=None,
         ),
     )
 
@@ -35,12 +38,14 @@ def test_chunker_produces_parent_and_children() -> None:
 
 
 def test_chunker_respects_title_boundary() -> None:
-    doc = _make_doc([
-        DocumentElement(id="e1", type=ElementType.TITLE, text="Chapter 1"),
-        DocumentElement(id="e2", type=ElementType.NARRATIVE, text="para " * 100),
-        DocumentElement(id="e3", type=ElementType.TITLE, text="Chapter 2"),
-        DocumentElement(id="e4", type=ElementType.NARRATIVE, text="para " * 100),
-    ])
+    doc = _make_doc(
+        [
+            DocumentElement(id="e1", type=ElementType.TITLE, text="Chapter 1"),
+            DocumentElement(id="e2", type=ElementType.NARRATIVE, text="para " * 100),
+            DocumentElement(id="e3", type=ElementType.TITLE, text="Chapter 2"),
+            DocumentElement(id="e4", type=ElementType.NARRATIVE, text="para " * 100),
+        ]
+    )
     manifest = chunk_document(doc)
     parents = [c for c in manifest.chunks if c.chunk_type == "PARENT"]
     assert len(parents) >= 2
@@ -55,12 +60,16 @@ def test_chunker_deterministic_ids_on_retry() -> None:
 
 
 def test_chunker_preserves_hierarchy_path() -> None:
-    doc = _make_doc([
-        DocumentElement(
-            id="e1", type=ElementType.NARRATIVE, text="para " * 200,
-            hierarchy_path=("Chapter 1", "Section 1"),
-        ),
-    ])
+    doc = _make_doc(
+        [
+            DocumentElement(
+                id="e1",
+                type=ElementType.NARRATIVE,
+                text="para " * 200,
+                hierarchy_path=("Chapter 1", "Section 1"),
+            ),
+        ]
+    )
     manifest = chunk_document(doc)
     assert all(c.hierarchy_path == ("Chapter 1", "Section 1") for c in manifest.chunks)
 
@@ -74,11 +83,13 @@ def test_chunker_splits_oversized_element_with_overlap() -> None:
 
 
 def test_chunker_preserves_code_block_boundary() -> None:
-    doc = _make_doc([
-        DocumentElement(id="e1", type=ElementType.NARRATIVE, text="intro " * 100),
-        DocumentElement(id="e2", type=ElementType.CODE, text="print('hello')"),
-        DocumentElement(id="e3", type=ElementType.NARRATIVE, text="outro " * 100),
-    ])
+    doc = _make_doc(
+        [
+            DocumentElement(id="e1", type=ElementType.NARRATIVE, text="intro " * 100),
+            DocumentElement(id="e2", type=ElementType.CODE, text="print('hello')"),
+            DocumentElement(id="e3", type=ElementType.NARRATIVE, text="outro " * 100),
+        ]
+    )
     manifest = chunk_document(doc)
     parents = [c for c in manifest.chunks if c.chunk_type == "PARENT"]
     assert len(parents) >= 2

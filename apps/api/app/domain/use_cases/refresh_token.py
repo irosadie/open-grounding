@@ -11,9 +11,7 @@ from app.domain.models import UserStatus
 from app.domain.repositories import AuthRepository
 
 
-async def refresh_tokens(
-    repo: AuthRepository, settings: Settings, refresh_token: str
-) -> dict[str, str | int]:
+async def refresh_tokens(repo: AuthRepository, settings: Settings, refresh_token: str) -> dict[str, str | int]:
     """Validate the refresh token and return a new token pair.
 
     Raises DomainError.invalid_token if the token is expired, the user is

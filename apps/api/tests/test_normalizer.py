@@ -19,8 +19,12 @@ def test_normalize_repairs_whitespace_and_hyphenation() -> None:
 
 def test_normalize_preserves_page_and_hierarchy() -> None:
     el = DocumentElement(
-        id="e1", type=ElementType.TITLE, text="Title", page=3,
-        hierarchy_path=("Ch1",), extraction_confidence=0.9,
+        id="e1",
+        type=ElementType.TITLE,
+        text="Title",
+        page=3,
+        hierarchy_path=("Ch1",),
+        extraction_confidence=0.9,
     )
     result = normalize_element(el)
     assert result.page == 3

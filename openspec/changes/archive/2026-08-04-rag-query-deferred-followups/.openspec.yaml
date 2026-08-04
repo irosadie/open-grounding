@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-08-04
+goal: Track deferred
+  graph/tool/decomposition/long-term-memory/numeric-confidence work as explicit
+  follow-up changes

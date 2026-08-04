@@ -611,6 +611,205 @@
           }
         }
       }
+    },
+    "/rag/query": {
+      "post": {
+        "tags": [
+          "RAG Query"
+        ],
+        "summary": "Query permitted RAG evidence",
+        "description": "Uses only server-derived tenant and authorization scope. Set stream=true for text/event-stream.",
+        "operationId": "query_rag_rag_query_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagQueryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/query/traces/{trace_id}": {
+      "get": {
+        "tags": [
+          "RAG Query"
+        ],
+        "summary": "Inspect a retained RAG answer trace",
+        "description": "Requires tenant ADMIN access. Expired and cross-tenant traces are not disclosed.",
+        "operationId": "get_rag_trace_rag_query_traces__trace_id__get",
+        "parameters": [
+          {
+            "name": "trace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Trace Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Rag Trace Rag Query Traces  Trace Id  Get"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operator access required"
+          },
+          "404": {
+            "description": "Trace is unavailable or expired"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/query/traces/{trace_id}/feedback": {
+      "post": {
+        "tags": [
+          "RAG Query"
+        ],
+        "summary": "Record answer feedback",
+        "description": "Records tenant-scoped feedback only while the referenced trace is retained.",
+        "operationId": "create_rag_feedback_rag_query_traces__trace_id__feedback_post",
+        "parameters": [
+          {
+            "name": "trace_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Trace Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RagAnswerFeedbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Create Rag Feedback Rag Query Traces  Trace Id  Feedback Post"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Trace is unavailable or expired"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -730,6 +929,109 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "RagAnswerFeedbackRequest": {
+        "properties": {
+          "rating": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating",
+            "description": "Optional 1-5 rating for the retained answer"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment",
+            "description": "Optional bounded feedback comment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RagAnswerFeedbackRequest",
+        "examples": [
+          {
+            "comment": "The answer cited the relevant policy.",
+            "rating": 5
+          }
+        ]
+      },
+      "RagQueryRequest": {
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id",
+            "description": "Optional server-owned conversation identifier"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Message",
+            "description": "Question to answer from permitted evidence"
+          },
+          "knowledge_base_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Knowledge Base Ids",
+            "description": "Knowledge bases the caller may select"
+          },
+          "mode": {
+            "type": "string",
+            "pattern": "^(grounded)$",
+            "title": "Mode",
+            "description": "Only grounded mode is supported",
+            "default": "grounded"
+          },
+          "stream": {
+            "type": "boolean",
+            "title": "Stream",
+            "description": "Request an SSE response when enabled",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "message",
+          "knowledge_base_ids"
+        ],
+        "title": "RagQueryRequest",
+        "examples": [
+          {
+            "knowledge_base_ids": [
+              "knowledge-base-id"
+            ],
+            "message": "What is the retention policy?",
+            "stream": false
+          }
+        ]
       },
       "RegisterRequest": {
         "properties": {

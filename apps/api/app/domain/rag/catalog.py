@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
+from app.domain.rag.policy import Classification
+
 
 class KnowledgeBaseStatus(StrEnum):
     ACTIVE = "ACTIVE"
@@ -118,6 +120,10 @@ class DocumentVersion:
     object_key_raw: str
     size_bytes: int | None
     mime_type: str | None
+    classification: Classification
+    acl_principals: tuple[str, ...]
+    effective_from: datetime | None
+    effective_to: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -213,4 +219,3 @@ class StageCheckpoint:
     checkpoint_data: dict[str, object]
     created_at: datetime
     updated_at: datetime
-

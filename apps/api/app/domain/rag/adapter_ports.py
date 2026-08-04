@@ -24,9 +24,7 @@ class ObjectStoreAdapter(Protocol):
     ``TenantNamespace.object_key``. Tenant-neutral keys are prohibited.
     """
 
-    async def put_object(
-        self, *, tenant: TenantContext, key_suffix: str, data: bytes, content_type: str
-    ) -> str:
+    async def put_object(self, *, tenant: TenantContext, key_suffix: str, data: bytes, content_type: str) -> str:
         """Store an object beneath the tenant namespace. Returns the full key."""
         ...
 
@@ -47,9 +45,7 @@ class QueueAdapter(Protocol):
     tenant ID is missing or does not match the deployment tenant.
     """
 
-    async def enqueue(
-        self, *, tenant: TenantContext, queue: str, job_name: str, payload: dict[str, object]
-    ) -> str:
+    async def enqueue(self, *, tenant: TenantContext, queue: str, job_name: str, payload: dict[str, object]) -> str:
         """Enqueue a tenant-scoped job. Returns the job ID."""
         ...
 
@@ -63,19 +59,37 @@ class VectorStoreAdapter(Protocol):
     ``TenantNamespace.qdrant_point_payload``.
     """
 
-    async def upsert_points(
-        self, *, tenant: TenantContext, collection: str, points: list[dict[str, object]]
-    ) -> None:
-        ...
+    async def upsert_points(self, *, tenant: TenantContext, collection: str, points: list[dict[str, object]]) -> None: ...
 
-    async def search(
-        self, *, tenant: TenantContext, collection: str, vector: list[float], limit: int
+    async def search(self, *, tenant: TenantContext, collection: str, vector: list[float], limit: int) -> list[dict[str, object]]: ...
+
+    async def search_permitted(
+        self,
+        *,
+        tenant: TenantContext,
+        collection: str,
+        vector: list[float],
+        limit: int,
+        knowledge_base_ids: tuple[str, ...],
+        active_generation_ids: tuple[str, ...],
     ) -> list[dict[str, object]]:
+        """Search only evidence allowed by server-derived policy inputs."""
         ...
 
-    async def delete_points(
-        self, *, tenant: TenantContext, collection: str, document_version_id: str
-    ) -> None:
+    async def search_sparse_permitted(
+        self,
+        *,
+        tenant: TenantContext,
+        collection: str,
+        vector: dict[str, object],
+        limit: int,
+        knowledge_base_ids: tuple[str, ...],
+        active_generation_ids: tuple[str, ...],
+    ) -> list[dict[str, object]]:
+        """Sparse search using the identical server-derived policy inputs."""
+        ...
+
+    async def delete_points(self, *, tenant: TenantContext, collection: str, document_version_id: str) -> None:
         """Delete only points matching both the tenant ID and document-version ID."""
         ...
 
@@ -87,10 +101,7 @@ class GraphAdapter(Protocol):
     ``TenantNamespace.graph_predicate`` and tenant-scoped node IDs.
     """
 
-    async def traverse(
-        self, *, tenant: TenantContext, start_node_id: str, max_depth: int
-    ) -> list[dict[str, object]]:
-        ...
+    async def traverse(self, *, tenant: TenantContext, start_node_id: str, max_depth: int) -> list[dict[str, object]]: ...
 
 
 class GenerationAdapter(Protocol):
@@ -121,9 +132,7 @@ class EmbeddingAdapter(Protocol):
     declared profile dimensions.
     """
 
-    async def embed(
-        self, *, tenant: TenantContext, texts: list[str], model_profile_id: str
-    ) -> list[list[float]]:
+    async def embed(self, *, tenant: TenantContext, texts: list[str], model_profile_id: str) -> list[list[float]]:
         """Return one dense vector per input text in order."""
         ...
 
@@ -136,9 +145,7 @@ class SparseEncoderAdapter(Protocol):
     with the active index profile.
     """
 
-    async def encode(
-        self, *, tenant: TenantContext, texts: list[str], sparse_profile_id: str
-    ) -> list[dict[str, object]]:
+    async def encode(self, *, tenant: TenantContext, texts: list[str], sparse_profile_id: str) -> list[dict[str, object]]:
         """Return one sparse representation per input text in order."""
         ...
 

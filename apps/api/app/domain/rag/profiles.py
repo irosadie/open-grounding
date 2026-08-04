@@ -91,15 +91,9 @@ def validate_index_profile_compatibility(
     dimensions as the index profile. Does not make any model inference call.
     """
     if embedding.dimensions is None:
-        return ProfileCompatibility.incompatible(
-            "Embedding profile does not declare vector dimensions"
-        )
+        return ProfileCompatibility.incompatible("Embedding profile does not declare vector dimensions")
     if index.embedding_profile_id != embedding.id:
-        return ProfileCompatibility.incompatible(
-            "Index profile does not reference the supplied embedding profile"
-        )
+        return ProfileCompatibility.incompatible("Index profile does not reference the supplied embedding profile")
     if index.dimensions != embedding.dimensions:
-        return ProfileCompatibility.incompatible(
-            f"Index dimensions {index.dimensions} do not match embedding dimensions {embedding.dimensions}"
-        )
+        return ProfileCompatibility.incompatible(f"Index dimensions {index.dimensions} do not match embedding dimensions {embedding.dimensions}")
     return ProfileCompatibility.ok()

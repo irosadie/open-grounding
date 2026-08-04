@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # Active index profile identifier. Profiles are resolved from the catalog;
     # secrets stay in environment configuration and are never persisted.
     rag_active_index_profile_id: str | None = None
+    rag_query_embedding_profile_id: str | None = None
+    rag_query_sparse_profile_id: str | None = None
 
     # Provider references for embedding, sparse, reranker, and generation.
     rag_embedding_provider: str | None = None
@@ -60,6 +62,27 @@ class Settings(BaseSettings):
     rag_reranker_model: str | None = None
     rag_generation_provider: str | None = None
     rag_generation_model: str | None = None
+
+    rag_query_enabled: bool = False
+    rag_query_profile_id: str = "default-v1"
+    rag_query_max_message_chars: int = 8_000
+    rag_query_max_payload_bytes: int = 16_384
+    rag_query_recent_messages: int = 6
+    rag_query_requests_per_minute: int = 60
+    rag_query_max_concurrency: int = 8
+    rag_query_timeout_seconds: float = 30.0
+    rag_retrieval_timeout_seconds: float = 8.0
+    rag_generation_timeout_seconds: float = 20.0
+    rag_retrieval_dense_candidates: int = 50
+    rag_retrieval_sparse_candidates: int = 50
+    rag_retrieval_fused_candidates: int = 40
+    rag_retrieval_reranker_candidates: int = 24
+    rag_context_max_chunks: int = 12
+    rag_context_token_budget: int = 8_000
+    rag_generation_max_output_tokens: int = 1_024
+    rag_query_trace_retention_days: int = 30
+    rag_query_max_retrieval_retries: int = 1
+    rag_query_max_validation_repairs: int = 1
 
     # --- Ingestion pipeline configuration -------------------------------------
     # Supported MIME types for v1 source intake. Unsupported types are rejected.
@@ -100,27 +123,48 @@ class Settings(BaseSettings):
     @classmethod
     def validate_tenant_mode(cls, value: str) -> str:
         if value != TENANT_MODE_SINGLE_DEPLOYMENT:
-            raise ValueError(
-                f"Unsupported tenant mode '{value}'. Only '{TENANT_MODE_SINGLE_DEPLOYMENT}' is supported."
-            )
+            raise ValueError(f"Unsupported tenant mode '{value}'. Only '{TENANT_MODE_SINGLE_DEPLOYMENT}' is supported.")
         return value
 
     @field_validator("rag_runtime_mode")
     @classmethod
     def validate_rag_runtime_mode(cls, value: str) -> str:
         if value not in (RAG_RUNTIME_DEVELOPMENT, RAG_RUNTIME_PRODUCTION):
-            raise ValueError(
-                f"Unsupported RAG runtime mode '{value}'. Only '{RAG_RUNTIME_DEVELOPMENT}' or '{RAG_RUNTIME_PRODUCTION}' is supported."
-            )
+            raise ValueError(f"Unsupported RAG runtime mode '{value}'. Only '{RAG_RUNTIME_DEVELOPMENT}' or '{RAG_RUNTIME_PRODUCTION}' is supported.")
         return value
 
     @field_validator("rag_ingestion_malware_scan_mode")
     @classmethod
     def validate_malware_scan_mode(cls, value: str) -> str:
         if value not in ("required", "development-bypass"):
-            raise ValueError(
-                f"Unsupported malware-scan mode '{value}'. Only 'required' or 'development-bypass' is supported."
-            )
+            raise ValueError(f"Unsupported malware-scan mode '{value}'. Only 'required' or 'development-bypass' is supported.")
+        return value
+
+    @field_validator(
+        "rag_query_max_message_chars", "rag_query_max_payload_bytes", "rag_query_recent_messages",
+        "rag_query_requests_per_minute", "rag_query_max_concurrency", "rag_retrieval_dense_candidates",
+        "rag_retrieval_sparse_candidates", "rag_retrieval_fused_candidates", "rag_retrieval_reranker_candidates",
+        "rag_context_max_chunks", "rag_context_token_budget", "rag_generation_max_output_tokens",
+        "rag_query_trace_retention_days",
+    )
+    @classmethod
+    def validate_positive_query_budget(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("RAG query budgets and limits must be greater than zero")
+        return value
+
+    @field_validator("rag_query_timeout_seconds", "rag_retrieval_timeout_seconds", "rag_generation_timeout_seconds")
+    @classmethod
+    def validate_positive_query_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("RAG query timeouts must be greater than zero")
+        return value
+
+    @field_validator("rag_query_max_retrieval_retries", "rag_query_max_validation_repairs")
+    @classmethod
+    def validate_bounded_query_retry(cls, value: int) -> int:
+        if value not in (0, 1):
+            raise ValueError("RAG query retry and repair limits must be zero or one")
         return value
 
     @model_validator(mode="after")
@@ -131,9 +175,11 @@ class Settings(BaseSettings):
             if not self.qdrant_api_key:
                 raise ValueError("QDRANT_API_KEY is required when RAG is enabled in production")
             if not self.object_store_access_key or not self.object_store_secret_key:
-                raise ValueError(
-                    "OBJECT_STORE_ACCESS_KEY and OBJECT_STORE_SECRET_KEY are required when RAG is enabled in production"
-                )
+                raise ValueError("OBJECT_STORE_ACCESS_KEY and OBJECT_STORE_SECRET_KEY are required when RAG is enabled in production")
+        if self.rag_retrieval_fused_candidates > self.rag_retrieval_dense_candidates + self.rag_retrieval_sparse_candidates:
+            raise ValueError("RAG_RETRIEVAL_FUSED_CANDIDATES cannot exceed combined retrieval candidates")
+        if self.rag_retrieval_reranker_candidates > self.rag_retrieval_fused_candidates:
+            raise ValueError("RAG_RETRIEVAL_RERANKER_CANDIDATES cannot exceed fused candidates")
         return self
 
     @property

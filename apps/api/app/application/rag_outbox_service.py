@@ -81,26 +81,18 @@ class RagPublicationService:
         )
         return PendingPublication(generation=generation, outbox_event=outbox_event)
 
-    async def promote_generation(
-        self, *, tenant_id: str, generation_id: str
-    ) -> IndexGeneration | None:
+    async def promote_generation(self, *, tenant_id: str, generation_id: str) -> IndexGeneration | None:
         """Promote a validated generation to ACTIVE.
 
         The prior active generation (if any) is superseded by the caller, not
         mutated in place. This method only flips the target generation; the
         caller is responsible for validating derived state first.
         """
-        return await self._generations.update_status(
-            tenant_id=tenant_id, generation_id=generation_id, status="ACTIVE"
-        )
+        return await self._generations.update_status(tenant_id=tenant_id, generation_id=generation_id, status="ACTIVE")
 
-    async def fail_generation(
-        self, *, tenant_id: str, generation_id: str
-    ) -> IndexGeneration | None:
+    async def fail_generation(self, *, tenant_id: str, generation_id: str) -> IndexGeneration | None:
         """Mark a generation FAILED without affecting the active generation."""
-        return await self._generations.update_status(
-            tenant_id=tenant_id, generation_id=generation_id, status="FAILED"
-        )
+        return await self._generations.update_status(tenant_id=tenant_id, generation_id=generation_id, status="FAILED")
 
     @staticmethod
     def new_idempotency_key(tenant_id: str, generation_id: str) -> str:

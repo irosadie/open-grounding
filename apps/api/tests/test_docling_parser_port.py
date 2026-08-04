@@ -80,8 +80,11 @@ def test_supported_mime_types_for_v1() -> None:
 
 def test_parser_quality_summary_fields() -> None:
     q = ParserQualitySummary(
-        element_count=10, text_coverage=0.85, empty_element_ratio=0.05,
-        page_coverage=0.90, aggregate_confidence=0.88,
+        element_count=10,
+        text_coverage=0.85,
+        empty_element_ratio=0.05,
+        page_coverage=0.90,
+        aggregate_confidence=0.88,
     )
     assert q.element_count == 10
     assert q.text_coverage == 0.85
@@ -120,14 +123,15 @@ def test_document_parser_is_protocol() -> None:
 
 def test_document_parser_stub_satisfies_protocol() -> None:
     class StubParser:
-        async def parse(
-            self, *, tenant: object, source: bytes, mime_type: str, parser_profile_id: str
-        ) -> ParsedDocument:
+        async def parse(self, *, tenant: object, source: bytes, mime_type: str, parser_profile_id: str) -> ParsedDocument:
             return ParsedDocument(
                 elements=[DocumentElement(id="e1", type=ElementType.NARRATIVE, text=source.decode())],
                 quality=ParserQualitySummary(
-                    element_count=1, text_coverage=1.0, empty_element_ratio=0.0,
-                    page_coverage=None, aggregate_confidence=None,
+                    element_count=1,
+                    text_coverage=1.0,
+                    empty_element_ratio=0.0,
+                    page_coverage=None,
+                    aggregate_confidence=None,
                 ),
             )
 

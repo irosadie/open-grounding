@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Header, Request
@@ -5,11 +6,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.auth_service import AuthService
 from app.application.ingestion_intake_service import IngestionIntakeService
+from app.application.rag_query_admission import RagQueryAdmission
+from app.application.rag_query_service import RagQueryService
+from app.application.rag_trace_service import RagTraceService
 from app.core.security import decode_access_token
 from app.core.settings import Settings, get_settings
 from app.domain.errors import DomainError
+from app.domain.models import UserRole
 from app.domain.tenant_context import TenantContext
 from app.infrastructure.database import SqlAlchemyAuthRepository, SqlAlchemyTenantRepository, get_session
+from app.infrastructure.rag_answer_trace import SqlAlchemyAnswerFeedbackRepository, SqlAlchemyAnswerRunRepository, SqlAlchemyAnswerTraceDetailRepository
+from app.infrastructure.rag_catalog import SqlAlchemyIndexGenerationRepository, SqlAlchemyKnowledgeBaseRepository
+from app.infrastructure.rag_conversations import SqlAlchemyConversationHistoryRepository
 
 
 def get_auth_service(
@@ -43,9 +51,38 @@ def get_ingestion_service(
     return IngestionIntakeService(session, settings)
 
 
+def get_rag_query_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RagQueryService:
+    return RagQueryService(
+        settings,
+        SqlAlchemyAnswerRunRepository(session),
+        get_rag_query_admission(),
+        SqlAlchemyKnowledgeBaseRepository(session),
+        SqlAlchemyConversationHistoryRepository(session),
+        SqlAlchemyIndexGenerationRepository(session),
+        SqlAlchemyAnswerTraceDetailRepository(session),
+    )
+
+
+def get_rag_trace_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RagTraceService:
+    return RagTraceService(settings, SqlAlchemyAnswerRunRepository(session), SqlAlchemyAnswerFeedbackRepository(session))
+
+
+@lru_cache
+def get_rag_query_admission() -> RagQueryAdmission:
+    return RagQueryAdmission(get_settings())
+
+
 AuthServiceDependency = Annotated[AuthService, Depends(get_auth_service)]
 AuthContextDependency = Annotated[dict[str, str], Depends(get_auth_context)]
 IngestionServiceDependency = Annotated[IngestionIntakeService, Depends(get_ingestion_service)]
+RagQueryServiceDependency = Annotated[RagQueryService, Depends(get_rag_query_service)]
+RagTraceServiceDependency = Annotated[RagTraceService, Depends(get_rag_trace_service)]
 
 
 async def get_tenant_context(
@@ -80,6 +117,7 @@ async def get_tenant_context(
         tenant_id=bootstrap.tenant_id,
         membership_id=membership.id,
         user_id=auth_context["id"],
+        role=UserRole.ADMIN if auth_context["type"] == "admin" else UserRole.USER,
     )
 
 

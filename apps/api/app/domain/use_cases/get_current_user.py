@@ -5,9 +5,7 @@ from app.domain.models import AuthSession, User, UserStatus
 from app.domain.repositories import AuthRepository
 
 
-async def get_current_user(
-    repo: AuthRepository, *, user_id: str, session_id: str
-) -> tuple[User, AuthSession | None]:
+async def get_current_user(repo: AuthRepository, *, user_id: str, session_id: str) -> tuple[User, AuthSession | None]:
     """Find the user by ID and verify their session is still active.
 
     Raises DomainError.user_not_found if the user does not exist.

@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from app.domain.models import UserRole
+
 
 @dataclass(frozen=True)
 class TenantContext:
@@ -13,3 +15,4 @@ class TenantContext:
     tenant_id: str
     membership_id: str
     user_id: str
+    role: UserRole = UserRole.USER

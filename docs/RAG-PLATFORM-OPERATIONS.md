@@ -275,3 +275,94 @@ with canonical chunks, parser quality, provider profiles, and operational
 traces. `rag-grounded-query` turns that corpus into grounded answers with
 evidence, citations, and safe abstention.
 
+## Grounded Query Operations
+
+### Query Profile And Security Boundary
+
+`POST /rag/query` accepts `message`, one or more `knowledge_base_ids`, an
+optional server-owned `conversation_id`, and `stream`. `mode` is fixed to
+`grounded`. The request rejects extra fields, including tenant IDs, ACL
+principals, clearance, active generation IDs, and raw vector filters.
+
+Tenant context is derived from the authenticated membership and deployment
+configuration. The service validates the selected knowledge bases for that
+tenant, applies rate, payload, and concurrency limits, and constructs the
+mandatory policy scope server-side. The same scope is required for dense,
+sparse, canonical-context, and parent-expansion access. Clients must never
+treat a response as authorization to fetch a chunk, Qdrant point, source
+object, or another tenant's trace directly.
+
+The initial query profile is controlled through `RAG_QUERY_*`,
+`RAG_RETRIEVAL_*`, `RAG_CONTEXT_*`, and `RAG_GENERATION_*` settings. Candidate
+budgets, timeouts, conversation window, retention period, and one bounded
+retrieval/repair attempt are configuration, not client controls. Numeric
+confidence is intentionally not exposed.
+
+### Blocking And SSE Contract
+
+With `stream: false` (the default), the API returns the normal success
+envelope with an answer result containing `answer`, `route`, `evidenceLevel`,
+`citations`, `limitations`, and `traceId`.
+
+With `stream: true`, the response content type is `text/event-stream` and
+events appear in this order:
+
+1. `response.started` with `traceId`
+2. `response.route` with `route`
+3. `response.retrieval_summary` with `evidenceLevel`
+4. `response.delta` with the final answer, only when there is a validated answer
+5. `response.citations` with final citations
+6. `response.completed` with `traceId`, `evidenceLevel`, and `limitations`
+
+An execution failure produces only `response.failed` with `QUERY_FAILED`.
+Events never expose raw vectors, mandatory filters, provider errors, prompts,
+hidden reasoning, provider secrets, or cross-tenant metadata. The release
+model validates final output before emitting `response.delta`; it does not
+stream provisional model tokens.
+
+### Evidence Levels And Abstention
+
+`high`, `medium`, `low`, and `none` describe evidence sufficiency, not a
+calibrated probability. A response can route to `grounded`, `clarify`, or
+`abstain`. When a permitted active generation or validated evidence is not
+available, the service returns a safe `abstain` outcome with a user-safe
+limitation and no citations.
+
+The current deployment path records retrieval, reranking, and generation as
+`skipped` when it takes this safe-abstention fallback. Operators must not
+interpret that trace as a successful model execution. Full retrieval and
+generation adapters remain subject to the same server-built policy scope and
+validation-before-release rule.
+
+### Trace, Feedback, Retention, And Debugging
+
+Every query receives a trace ID and persists tenant-scoped query forms,
+profile snapshot, route, evidence level, limitations, bounded retrieval
+summary, and validation outcome. It does not persist raw source duplication,
+hidden reasoning, prompts, vectors, or provider credentials.
+
+`GET /rag/query/traces/{trace_id}` is available only to tenant `ADMIN` users.
+The endpoint returns 404 for a non-existent, cross-tenant, or expired trace.
+Trace retention is set by `RAG_QUERY_TRACE_RETENTION_DAYS` (30 days by
+default). Operators should retain the trace ID from query/SSE completion,
+inspect the route and bounded stage outcomes, then correlate structured
+`rag_query_stage` metrics and tenant audit records by trace ID.
+
+Any tenant member can submit bounded feedback through
+`POST /rag/query/traces/{trace_id}/feedback` with an optional 1-5 rating and
+optional comment. Feedback is allowed only while the tenant-scoped trace is
+within retention.
+
+### Evaluation And Profile Promotion
+
+Evaluate a candidate profile using labeled fixtures containing expected chunk
+and citation IDs plus the expected abstention behavior. The evaluation runner
+records retrieval recall, citation correctness and coverage, groundedness,
+abstention quality, latency, and failure rate in `rag_evaluation_results`.
+
+An advanced index profile must be activated through
+`RagProfilePromotionService`. The service rejects promotion unless the tenant
+has a passing labeled result for that profile: full recall, citation
+correctness/coverage, groundedness, and abstention quality with zero failure
+rate. Do not promote by setting `is_active` directly or by using an
+unreviewed evaluation result.

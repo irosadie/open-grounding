@@ -129,8 +129,12 @@ async def test_catalog_lifecycle_intake_to_deletion(session: AsyncSession) -> No
 
     service = IngestionIntakeService(session, Settings(_env_file=None))
     intake = await service.create_intake(
-        tenant=tenant, knowledge_base_id=kb.id, filename="test.pdf",
-        mime_type="application/pdf", size_bytes=1024, title="E2E Test",
+        tenant=tenant,
+        knowledge_base_id=kb.id,
+        filename="test.pdf",
+        mime_type="application/pdf",
+        size_bytes=1024,
+        title="E2E Test",
     )
     assert intake.document_id is not None
     assert intake.upload_key.startswith(f"tenants/{TENANT_ID}/")
@@ -139,7 +143,8 @@ async def test_catalog_lifecycle_intake_to_deletion(session: AsyncSession) -> No
     assert status["lifecycleState"] == "RECEIVED"
 
     completion = await service.complete_intake(
-        tenant=tenant, document_version_id=intake.document_version_id,
+        tenant=tenant,
+        document_version_id=intake.document_version_id,
         content_checksum="sha256:abc123",
     )
     assert completion.lifecycle_state == "STORED"

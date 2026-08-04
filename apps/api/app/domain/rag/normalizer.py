@@ -23,9 +23,14 @@ def normalize_element(element: DocumentElement) -> DocumentElement:
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"-\s+", "", text)  # repair broken hyphenation
     return DocumentElement(
-        id=element.id, type=element.type, text=text, page=element.page,
-        bounding_box=element.bounding_box, hierarchy_path=element.hierarchy_path,
-        source_offsets=element.source_offsets, structured_payload=element.structured_payload,
+        id=element.id,
+        type=element.type,
+        text=text,
+        page=element.page,
+        bounding_box=element.bounding_box,
+        hierarchy_path=element.hierarchy_path,
+        source_offsets=element.source_offsets,
+        structured_payload=element.structured_payload,
         extraction_confidence=element.extraction_confidence,
     )
 
@@ -39,14 +44,14 @@ def normalize_document(doc: ParsedDocument) -> ParsedDocument:
 _INVALID_CHAR_RE = re.compile(r"[\x00-\x08\x0e-\x1f\x7f-\x9f]")
 
 
-def compute_quality(
-    elements: list[DocumentElement], *, is_pdf: bool = False, pages_expected: int = 0
-) -> ParserQualitySummary:
+def compute_quality(elements: list[DocumentElement], *, is_pdf: bool = False, pages_expected: int = 0) -> ParserQualitySummary:
     """Compute a bounded quality summary from a list of elements."""
     total = len(elements)
     if total == 0:
         return ParserQualitySummary(
-            element_count=0, text_coverage=0.0, empty_element_ratio=1.0,
+            element_count=0,
+            text_coverage=0.0,
+            empty_element_ratio=1.0,
             page_coverage=0.0 if is_pdf and pages_expected > 0 else None,
             aggregate_confidence=None,
         )
@@ -61,8 +66,10 @@ def compute_quality(
             pages_seen.add(e.page)
     page_coverage = len(pages_seen) / pages_expected if is_pdf and pages_expected > 0 else None
     return ParserQualitySummary(
-        element_count=total, text_coverage=text_coverage,
-        empty_element_ratio=empty_ratio, page_coverage=page_coverage,
+        element_count=total,
+        text_coverage=text_coverage,
+        empty_element_ratio=empty_ratio,
+        page_coverage=page_coverage,
         aggregate_confidence=aggregate_conf,
     )
 
@@ -88,9 +95,7 @@ class QualityGate:
         self._min_confidence = min_aggregate_confidence
         self._min_page_coverage = min_page_coverage
 
-    def evaluate(
-        self, quality: ParserQualitySummary, *, is_pdf: bool = False, pages_expected: int = 0
-    ) -> str:
+    def evaluate(self, quality: ParserQualitySummary, *, is_pdf: bool = False, pages_expected: int = 0) -> str:
         """Return 'READY', 'NEEDS_REVIEW', or 'FAILED' based on quality signals."""
         if quality.element_count == 0 or quality.text_coverage < 0.05:
             return "FAILED"

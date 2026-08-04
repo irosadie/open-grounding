@@ -42,9 +42,7 @@ class ReadinessReport:
             "ragEnabled": self.rag_enabled,
             "ragRuntimeMode": self.rag_runtime_mode,
             "deploymentTenantId": self.deployment_tenant_id,
-            "components": [
-                {"name": c.name, "available": c.available, "detail": c.detail} for c in self.components
-            ],
+            "components": [{"name": c.name, "available": c.available, "detail": c.detail} for c in self.components],
         }
 
 
