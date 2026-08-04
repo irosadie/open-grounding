@@ -42,17 +42,31 @@ once their gating conditions are met:
 
 ### New Capabilities
 
-None yet. Each follow-up item above will become its own capability and change proposal
-when its gating condition is met. Promoting any item requires labeled evaluation
-evidence and a separate spec before it becomes default behavior.
+- `rag-graph-retrieval`: Traverse tenant- and ACL-scoped entity/relationship graphs
+  alongside dense/sparse vector retrieval (deferred; gated on a versioned graph schema
+  and mandatory ACL predicates on every hop).
+- `rag-live-tool-execution`: Let the query planner call sandboxed external tools, web
+  search, and transactional systems under a per-tenant permission and audit model
+  (deferred; gated on an execution sandbox, permission model, and audit trail).
+- `rag-query-decomposition`: LLM-driven multi-query, HyDE, step-back, and multi-hop
+  planning as opt-in behavior (deferred; gated on an evaluation set proving recall
+  improvement without degrading groundedness or abstention quality).
+- `rag-conversation-memory`: Persist bounded user preferences and retrieved context as
+  memory under retention/redaction and explicit opt-in (deferred; gated on a
+  retention/redaction policy and opt-in model).
+- `rag-numeric-confidence`: Emit a calibrated numeric confidence score with each answer
+  (deferred; gated on a versioned labeled calibration dataset and abstention threshold).
 
 ### Modified Capabilities
 
-None. This change only records deferred work; it touches no capability specification.
+None. This change only records deferred work; it adds new capability target specs and
+touches no existing capability specification.
 
 ## Impact
 
-- No code, schema, migration, endpoint, or spec is modified by this change.
+- No code, schema, migration, or endpoint is modified by this change. It adds deferred
+  capability target specs (behavior and gating conditions) so future implementation
+  changes can reference a reviewed baseline.
 - It exists solely to prevent the deferred items from being lost: future changes that
   propose graph retrieval, live tools, decomposition, long-term memory, or numeric
   confidence must reference this record and satisfy their gating condition before
