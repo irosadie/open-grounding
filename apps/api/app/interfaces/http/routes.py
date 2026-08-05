@@ -11,16 +11,20 @@ from app.core.settings import Settings, get_settings
 from app.interfaces.http.dependencies import (
     AuthContextDependency,
     AuthServiceDependency,
+    IndexProfileServiceDependency,
     IngestionServiceDependency,
     KnowledgeBaseServiceDependency,
+    ModelProfileServiceDependency,
     RagQueryServiceDependency,
     RagTraceServiceDependency,
     TenantContextDependency,
 )
 from app.interfaces.http.schemas import (
     CompleteIntakeRequest,
+    CreateIndexProfileRequest,
     CreateIntakeRequest,
     CreateKnowledgeBaseRequest,
+    CreateModelProfileRequest,
     LoginRequest,
     RagAnswerFeedbackRequest,
     RagQueryRequest,
@@ -32,6 +36,8 @@ auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 rag_router = APIRouter(prefix="/rag", tags=["RAG Ingestion"])
 rag_query_router = APIRouter(prefix="/rag/query", tags=["RAG Query"])
 kb_router = APIRouter(prefix="/rag/knowledge-bases", tags=["Knowledge Bases"])
+model_profile_router = APIRouter(prefix="/rag/model-profiles", tags=["Model Profiles"])
+index_profile_router = APIRouter(prefix="/rag/index-profiles", tags=["Index Profiles"])
 
 
 def success(message: str, data: object | None = None, meta: object | None = None) -> dict[str, object]:
@@ -374,3 +380,110 @@ async def delete_knowledge_base(
         "id": result.id,
         "status": result.status,
     })
+
+
+# --- Model profile routes ---------------------------------------------------
+
+@model_profile_router.post("", status_code=status.HTTP_201_CREATED)
+async def create_model_profile(
+    payload: CreateModelProfileRequest,
+    svc: ModelProfileServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.create(
+        tenant=tenant,
+        name=payload.name,
+        profile_kind=payload.profile_kind,
+        provider=payload.provider,
+        model=payload.model,
+        modality=payload.modality,
+        dimensions=payload.dimensions,
+        config_json=payload.config_json,
+    )
+    return success("Model profile created", {
+        "id": result.id, "name": result.name, "profileKind": result.profile_kind,
+        "provider": result.provider, "model": result.model, "modality": result.modality,
+        "dimensions": result.dimensions, "version": result.version,
+        "isActive": result.is_active, "createdAt": result.created_at,
+    })
+
+
+@model_profile_router.get("")
+async def list_model_profiles(
+    svc: ModelProfileServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    results = await svc.list_all(tenant=tenant)
+    return success("Model profiles loaded", [
+        {"id": r.id, "name": r.name, "profileKind": r.profile_kind,
+         "provider": r.provider, "model": r.model, "modality": r.modality,
+         "dimensions": r.dimensions, "version": r.version,
+         "isActive": r.is_active, "createdAt": r.created_at}
+        for r in results
+    ])
+
+
+@model_profile_router.delete("/{profile_id}", status_code=status.HTTP_200_OK)
+async def delete_model_profile(
+    profile_id: str,
+    svc: ModelProfileServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.archive(tenant=tenant, profile_id=profile_id)
+    return success("Model profile archived", {"id": result.id, "isActive": result.is_active})
+
+
+# --- Index profile routes ---------------------------------------------------
+
+@index_profile_router.post("", status_code=status.HTTP_201_CREATED)
+async def create_index_profile(
+    payload: CreateIndexProfileRequest,
+    svc: IndexProfileServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.create(
+        tenant=tenant,
+        name=payload.name,
+        embedding_profile_id=payload.embedding_profile_id,
+        sparse_profile_id=payload.sparse_profile_id,
+        reranker_profile_id=payload.reranker_profile_id,
+        collection=payload.collection,
+        dimensions=payload.dimensions,
+        distance_metric=payload.distance_metric,
+        chunking_strategy=payload.chunking_strategy,
+        chunk_size_tokens=payload.chunk_size_tokens,
+        chunk_overlap_tokens=payload.chunk_overlap_tokens,
+        parent_chunk_size=payload.parent_chunk_size,
+    )
+    return success("Index profile created", {
+        "id": result.id, "name": result.name, "collection": result.collection,
+        "dimensions": result.dimensions, "distanceMetric": result.distance_metric,
+        "chunkingStrategy": result.chunking_strategy, "chunkSizeTokens": result.chunk_size_tokens,
+        "isActive": result.is_active, "createdAt": result.created_at,
+    })
+
+
+@index_profile_router.get("")
+async def list_index_profiles(
+    svc: IndexProfileServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    results = await svc.list_all(tenant=tenant)
+    return success("Index profiles loaded", [
+        {"id": r.id, "name": r.name, "collection": r.collection,
+         "dimensions": r.dimensions, "distanceMetric": r.distance_metric,
+         "chunkingStrategy": r.chunking_strategy, "chunkSizeTokens": r.chunk_size_tokens,
+         "embeddingProfileId": r.embedding_profile_id, "isActive": r.is_active,
+         "createdAt": r.created_at}
+        for r in results
+    ])
+
+
+@index_profile_router.post("/{profile_id}/activate")
+async def activate_index_profile(
+    profile_id: str,
+    svc: IndexProfileServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.set_active(tenant=tenant, profile_id=profile_id)
+    return success("Index profile activated", {"id": result.id, "isActive": result.is_active})

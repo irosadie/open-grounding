@@ -23,40 +23,44 @@ class DistanceMetric:
 
 @dataclass(frozen=True)
 class ModelProfile:
-    """Immutable metadata for an embedding, sparse, reranker, or generation model.
-
-    Stores the provider reference, model identifier, and capability metadata
-    without secrets. Used to validate provider compatibility before any model
-    inference call is made.
-    """
+    """Immutable metadata for an embedding, sparse, reranker, or generation model."""
 
     id: str
+    tenant_id: str
+    name: str
     profile_kind: str
     provider: str
     model: str
+    modality: str
     dimensions: int | None
+    config_json: str | None
     version: str
     is_active: bool = False
+    created_at: str = ""
+    updated_at: str = ""
 
 
 @dataclass(frozen=True)
 class IndexProfile:
-    """Immutable metadata for a vector index collection configuration.
-
-    References a compatible embedding model profile, declares vector
-    dimensions, distance metric, sparse profile reference, and the Qdrant
-    collection identity. An active index generation MUST reference a
-    compatible immutable index profile.
-    """
+    """Immutable metadata for a vector index collection configuration."""
 
     id: str
+    tenant_id: str
+    name: str
     embedding_profile_id: str
     sparse_profile_id: str | None
+    reranker_profile_id: str | None
     collection: str
     dimensions: int
     distance_metric: str
+    chunking_strategy: str
+    chunk_size_tokens: int
+    chunk_overlap_tokens: int
+    parent_chunk_size: int
     version: str
     is_active: bool = False
+    created_at: str = ""
+    updated_at: str = ""
 
 
 @dataclass(frozen=True)

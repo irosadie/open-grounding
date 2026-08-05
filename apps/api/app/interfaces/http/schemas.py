@@ -120,3 +120,35 @@ class KnowledgeBaseResponse(BaseModel):
 
     model_config = {"populate_by_name": True}
 
+
+# --- Model profile schemas --------------------------------------------------
+
+class CreateModelProfileRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    profile_kind: str = Field(pattern=r"^(DENSE_EMBEDDING|SPARSE_EMBEDDING|RERANKER|GENERATION)$")
+    provider: str = Field(min_length=1, max_length=255)
+    model: str = Field(min_length=1, max_length=255)
+    modality: str = Field(default="TEXT", pattern=r"^(TEXT|IMAGE|MULTIMODAL)$")
+    dimensions: int | None = Field(default=None, ge=1)
+    config_json: str | None = Field(default=None)
+
+    model_config = {"extra": "forbid"}
+
+
+# --- Index profile schemas --------------------------------------------------
+
+class CreateIndexProfileRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    embedding_profile_id: str = Field(min_length=1)
+    sparse_profile_id: str | None = Field(default=None)
+    reranker_profile_id: str | None = Field(default=None)
+    collection: str = Field(min_length=1, max_length=255)
+    dimensions: int = Field(ge=1)
+    distance_metric: str = Field(default="cosine", pattern=r"^(cosine|dot|euclid)$")
+    chunking_strategy: str = Field(default="RECURSIVE", pattern=r"^(RECURSIVE|SENTENCE|FIXED|PARAGRAPH)$")
+    chunk_size_tokens: int = Field(default=400, ge=50, le=2000)
+    chunk_overlap_tokens: int = Field(default=50, ge=0, le=500)
+    parent_chunk_size: int = Field(default=1500, ge=100, le=5000)
+
+    model_config = {"extra": "forbid"}
+

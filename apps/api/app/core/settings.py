@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     qdrant_strict_mode: bool = True
 
     # S3-compatible object store for raw sources and parser artifacts.
-    object_store_endpoint: str = "http://127.0.0.1:9000"
+    object_store_endpoint: str = "http://127.0.0.1:9100"
     object_store_access_key: str | None = None
     object_store_secret_key: str | None = None
     object_store_bucket: str = "rag-artifacts"
@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     # When set, a local filesystem path is used instead of the S3 endpoint
     # for simple development. Production MUST use a real S3-compatible store.
     object_store_local_path: str | None = None
+
+    # Redis URL for BullMQ worker
+    redis_url: str = "redis://127.0.0.1:6379"
+
+    # Embedding provider credentials (set here, profile config in DB)
+    openai_api_key: str | None = None
+    ollama_base_url: str = "http://localhost:11434"
+    fastembed_cache_dir: str | None = None
 
     # Active index profile identifier. Profiles are resolved from the catalog;
     # secrets stay in environment configuration and are never persisted.

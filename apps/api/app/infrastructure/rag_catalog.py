@@ -130,10 +130,13 @@ class ModelProfileRecord(Base):
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     profile_kind: Mapped[str] = mapped_column(String(60), nullable=False)
     provider: Mapped[str] = mapped_column(String(255), nullable=False)
     model: Mapped[str] = mapped_column(String(255), nullable=False)
+    modality: Mapped[str] = mapped_column(String(60), nullable=False, default="TEXT")
     dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    config_json: Mapped[str | None] = mapped_column(String, nullable=True)
     version: Mapped[str] = mapped_column(String(120), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
@@ -145,11 +148,17 @@ class IndexProfileRecord(Base):
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     embedding_profile_id: Mapped[str] = mapped_column("embedding_profile_id", Uuid(as_uuid=False), ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=False)
     sparse_profile_id: Mapped[str | None] = mapped_column("sparse_profile_id", Uuid(as_uuid=False), ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=True)
+    reranker_profile_id: Mapped[str | None] = mapped_column("reranker_profile_id", Uuid(as_uuid=False), ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=True)
     collection: Mapped[str] = mapped_column(String(255), nullable=False)
     dimensions: Mapped[int] = mapped_column(Integer, nullable=False)
     distance_metric: Mapped[str] = mapped_column(String(50), nullable=False)
+    chunking_strategy: Mapped[str] = mapped_column(String(60), nullable=False, default="RECURSIVE")
+    chunk_size_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=400)
+    chunk_overlap_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    parent_chunk_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1500)
     version: Mapped[str] = mapped_column(String(120), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
@@ -269,25 +278,40 @@ def _to_document_version(row: DocumentVersionRecord) -> DocumentVersion:
 def _to_model_profile(row: ModelProfileRecord) -> ModelProfile:
     return ModelProfile(
         id=row.id,
+        tenant_id=row.tenant_id,
+        name=row.name,
         profile_kind=row.profile_kind,
         provider=row.provider,
         model=row.model,
+        modality=row.modality,
         dimensions=row.dimensions,
+        config_json=row.config_json,
         version=row.version,
         is_active=row.is_active,
+        created_at=row.created_at.isoformat(),
+        updated_at=row.updated_at.isoformat(),
     )
 
 
 def _to_index_profile(row: IndexProfileRecord) -> IndexProfile:
     return IndexProfile(
         id=row.id,
+        tenant_id=row.tenant_id,
+        name=row.name,
         embedding_profile_id=row.embedding_profile_id,
         sparse_profile_id=row.sparse_profile_id,
+        reranker_profile_id=row.reranker_profile_id,
         collection=row.collection,
         dimensions=row.dimensions,
         distance_metric=row.distance_metric,
+        chunking_strategy=row.chunking_strategy,
+        chunk_size_tokens=row.chunk_size_tokens,
+        chunk_overlap_tokens=row.chunk_overlap_tokens,
+        parent_chunk_size=row.parent_chunk_size,
         version=row.version,
         is_active=row.is_active,
+        created_at=row.created_at.isoformat(),
+        updated_at=row.updated_at.isoformat(),
     )
 
 
@@ -533,24 +557,55 @@ class SqlAlchemyModelProfileRepository:
         row = result.scalar_one_or_none()
         return _to_model_profile(row) if row else None
 
+    async def list_by_tenant(self, *, tenant_id: str) -> list[ModelProfile]:
+        result = await self._session.execute(
+            select(ModelProfileRecord).where(
+                ModelProfileRecord.tenant_id == tenant_id,
+                ModelProfileRecord.is_active == True,  # noqa: E712
+            ).order_by(ModelProfileRecord.created_at.desc())
+        )
+        return [_to_model_profile(row) for row in result.scalars().all()]
+
+    async def archive(self, *, tenant_id: str, profile_id: str) -> ModelProfile | None:
+        result = await self._session.execute(
+            select(ModelProfileRecord).where(
+                ModelProfileRecord.tenant_id == tenant_id,
+                ModelProfileRecord.id == profile_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        row.is_active = False
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_model_profile(row)
+
     async def create(
         self,
         *,
         tenant_id: str,
+        name: str,
         profile_kind: str,
         provider: str,
         model: str,
+        modality: str = "TEXT",
         dimensions: int | None,
+        config_json: str | None = None,
         version: str,
     ) -> ModelProfile:
         row = ModelProfileRecord(
             id=str(uuid4()),
             tenant_id=tenant_id,
+            name=name,
             profile_kind=profile_kind,
             provider=provider,
             model=model,
+            modality=modality,
             dimensions=dimensions,
+            config_json=config_json,
             version=version,
+            is_active=True,
         )
         self._session.add(row)
         await self._session.commit()
@@ -572,33 +627,34 @@ class SqlAlchemyIndexProfileRepository:
         row = result.scalar_one_or_none()
         return _to_index_profile(row) if row else None
 
-    async def create(
-        self,
-        *,
-        tenant_id: str,
-        embedding_profile_id: str,
-        sparse_profile_id: str | None,
-        collection: str,
-        dimensions: int,
-        distance_metric: str,
-        version: str,
-    ) -> IndexProfile:
-        row = IndexProfileRecord(
-            id=str(uuid4()),
-            tenant_id=tenant_id,
-            embedding_profile_id=embedding_profile_id,
-            sparse_profile_id=sparse_profile_id,
-            collection=collection,
-            dimensions=dimensions,
-            distance_metric=distance_metric,
-            version=version,
+    async def find_active(self, *, tenant_id: str) -> IndexProfile | None:
+        result = await self._session.execute(
+            select(IndexProfileRecord).where(
+                IndexProfileRecord.tenant_id == tenant_id,
+                IndexProfileRecord.is_active == True,  # noqa: E712
+            ).limit(1)
         )
-        self._session.add(row)
-        await self._session.commit()
-        await self._session.refresh(row)
-        return _to_index_profile(row)
+        row = result.scalar_one_or_none()
+        return _to_index_profile(row) if row else None
 
-    async def activate(self, *, tenant_id: str, profile_id: str) -> IndexProfile | None:
+    async def list_by_tenant(self, *, tenant_id: str) -> list[IndexProfile]:
+        result = await self._session.execute(
+            select(IndexProfileRecord).where(
+                IndexProfileRecord.tenant_id == tenant_id,
+            ).order_by(IndexProfileRecord.created_at.desc())
+        )
+        return [_to_index_profile(row) for row in result.scalars().all()]
+
+    async def set_active(self, *, tenant_id: str, profile_id: str) -> IndexProfile | None:
+        # Deactivate all profiles for tenant
+        all_result = await self._session.execute(
+            select(IndexProfileRecord).where(
+                IndexProfileRecord.tenant_id == tenant_id,
+            )
+        )
+        for r in all_result.scalars().all():
+            r.is_active = False
+        # Activate selected profile
         result = await self._session.execute(
             select(IndexProfileRecord).where(
                 IndexProfileRecord.tenant_id == tenant_id,
@@ -612,6 +668,49 @@ class SqlAlchemyIndexProfileRepository:
         await self._session.commit()
         await self._session.refresh(row)
         return _to_index_profile(row)
+
+    async def create(
+        self,
+        *,
+        tenant_id: str,
+        name: str,
+        embedding_profile_id: str,
+        sparse_profile_id: str | None,
+        reranker_profile_id: str | None = None,
+        collection: str,
+        dimensions: int,
+        distance_metric: str,
+        chunking_strategy: str = "RECURSIVE",
+        chunk_size_tokens: int = 400,
+        chunk_overlap_tokens: int = 50,
+        parent_chunk_size: int = 1500,
+        version: str,
+        is_active: bool = False,
+    ) -> IndexProfile:
+        row = IndexProfileRecord(
+            id=str(uuid4()),
+            tenant_id=tenant_id,
+            name=name,
+            embedding_profile_id=embedding_profile_id,
+            sparse_profile_id=sparse_profile_id,
+            reranker_profile_id=reranker_profile_id,
+            collection=collection,
+            dimensions=dimensions,
+            distance_metric=distance_metric,
+            chunking_strategy=chunking_strategy,
+            chunk_size_tokens=chunk_size_tokens,
+            chunk_overlap_tokens=chunk_overlap_tokens,
+            parent_chunk_size=parent_chunk_size,
+            version=version,
+            is_active=is_active,
+        )
+        self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_index_profile(row)
+
+    async def activate(self, *, tenant_id: str, profile_id: str) -> IndexProfile | None:
+        return await self.set_active(tenant_id=tenant_id, profile_id=profile_id)
 
 
 class SqlAlchemyIndexGenerationRepository:

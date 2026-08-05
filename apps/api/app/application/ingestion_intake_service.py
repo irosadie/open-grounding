@@ -6,8 +6,11 @@ lifecycle transitions. Does not dispatch parser, embedding, or retrieval work.
 """
 
 import hashlib
+import json
+import logging
 from dataclasses import dataclass
 
+import redis.asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
@@ -20,6 +23,8 @@ from app.infrastructure.rag_catalog import (
     SqlAlchemyKnowledgeBaseRepository,
     SqlAlchemyKnowledgeSourceRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -132,12 +137,46 @@ class IngestionIntakeService:
             lifecycle_state=DocumentVersionLifecycleState.STORED.value,
         )
         state = updated.lifecycle_state.value if updated else "STORED"
+
+        # Enqueue parse job to BullMQ via Redis
+        try:
+            await self._enqueue_parse(
+                document_version_id=document_version_id,
+                tenant_id=tenant.tenant_id,
+            )
+            await self._version_repo.update_lifecycle_state(
+                tenant_id=tenant.tenant_id,
+                version_id=document_version_id,
+                lifecycle_state=DocumentVersionLifecycleState.QUEUED.value,
+            )
+            state = "QUEUED"
+        except Exception as e:
+            logger.warning("Failed to enqueue parse job for %s: %s", document_version_id, e)
+
         return CompletionResult(
             document_version_id=document_version_id,
             lifecycle_state=state,
             content_checksum=content_checksum,
-            enqueued=True,
+            enqueued=state == "QUEUED",
         )
+
+    async def _enqueue_parse(self, document_version_id: str, tenant_id: str) -> None:
+        """Enqueue parse job to BullMQ ingestion.parse queue."""
+        redis_url = getattr(self._settings, "redis_url", "redis://127.0.0.1:6379")
+        job_id = f"auto:{document_version_id}"
+        queue_name = "ingestion.parse"
+        job_key = f"bull:{queue_name}:{job_id}"
+        data = json.dumps({
+            "documentVersionId": document_version_id,
+            "tenantId": tenant_id,
+        })
+        client = aioredis.from_url(redis_url, decode_responses=True)
+        try:
+            await client.hset(job_key, "data", data)
+            await client.lpush(f"bull:{queue_name}:wait", job_id)
+            logger.info("Enqueued parse job for %s", document_version_id)
+        finally:
+            await client.aclose()
 
     async def get_status(
         self,

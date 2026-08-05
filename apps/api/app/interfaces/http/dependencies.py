@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.auth_service import AuthService
 from app.application.ingestion_intake_service import IngestionIntakeService
 from app.application.knowledge_base_service import KnowledgeBaseService
+from app.application.profile_service import IndexProfileService, ModelProfileService
 from app.application.rag_query_admission import RagQueryAdmission
 from app.application.rag_query_service import RagQueryService
 from app.application.rag_trace_service import RagTraceService
@@ -132,3 +133,19 @@ def get_knowledge_base_service(
 
 
 KnowledgeBaseServiceDependency = Annotated[KnowledgeBaseService, Depends(get_knowledge_base_service)]
+
+
+def get_model_profile_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ModelProfileService:
+    return ModelProfileService(session)
+
+
+def get_index_profile_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IndexProfileService:
+    return IndexProfileService(session)
+
+
+ModelProfileServiceDependency = Annotated[ModelProfileService, Depends(get_model_profile_service)]
+IndexProfileServiceDependency = Annotated[IndexProfileService, Depends(get_index_profile_service)]
