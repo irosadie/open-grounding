@@ -1,6 +1,7 @@
 import {
   Cpu,
   Database,
+  KeyRound,
   LayoutDashboard,
   LayoutList,
   MessageSquareText,
@@ -59,6 +60,13 @@ export const consoleNavItems: ConsoleNavItem[] = [
     href: "/console/settings/index-profiles",
     icon: LayoutList,
     description: "Vector index configuration",
+    indent: true,
+  },
+  {
+    label: "Providers",
+    href: "/console/settings/providers",
+    icon: KeyRound,
+    description: "API keys and provider credentials",
     indent: true,
   },
 ]

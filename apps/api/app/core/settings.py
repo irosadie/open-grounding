@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     # Redis URL for BullMQ worker
     redis_url: str = "redis://127.0.0.1:6379"
 
+    # Secret key for encrypting provider credentials at rest
+    # CRITICAL: do not lose this key — credentials cannot be decrypted without it
+    # Falls back to jwt_secret if not set (dev only)
+    secret_key: str | None = None
+
     # Embedding provider credentials (set here, profile config in DB)
     openai_api_key: str | None = None
     ollama_base_url: str = "http://localhost:11434"

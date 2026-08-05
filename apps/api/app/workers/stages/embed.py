@@ -51,16 +51,14 @@ async def embed_chunks(
         raise ValueError(f"Embedding profile {index_profile.embedding_profile_id} not found.")
 
     registry = ProviderRegistry(settings)
-    provider = registry.get_embedding_provider(emb_profile.provider, emb_profile.model)
+    vectors = await registry.embed_with_fallback(
+        texts=chunks,
+        primary_provider=emb_profile.provider,
+        primary_model=emb_profile.model,
+        tenant_id=tenant_id,
+        session=session,
+    )
 
-    # Embed in batches
-    all_vectors: list[list[float]] = []
-    for i in range(0, len(chunks), EMBED_BATCH_SIZE):
-        batch = chunks[i : i + EMBED_BATCH_SIZE]
-        vectors = await provider.embed(batch)  # type: ignore[union-attr]
-        all_vectors.extend(vectors)
-        logger.info("[embed] batch %d/%d for %s", i // EMBED_BATCH_SIZE + 1, -(-len(chunks) // EMBED_BATCH_SIZE), document_version_id)
-
-    _vectors_cache[document_version_id] = all_vectors
-    logger.info("[embed] %d vectors (dim=%d) for %s", len(all_vectors), len(all_vectors[0]) if all_vectors else 0, document_version_id)
-    return all_vectors
+    _vectors_cache[document_version_id] = vectors
+    logger.info("[embed] %d vectors (dim=%d) for %s", len(vectors), len(vectors[0]) if vectors else 0, document_version_id)
+    return vectors

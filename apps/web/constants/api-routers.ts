@@ -29,6 +29,11 @@ export const apiRouters = {
       create: "/rag/index-profiles",
       activate: "/rag/index-profiles/:id/activate",
     },
+    providerCredentials: {
+      list: "/rag/provider-credentials",
+      set: "/rag/provider-credentials",
+      revoke: "/rag/provider-credentials/:provider/:keyName",
+    },
     ingestion: {
       intake: "/rag/ingestion/intake",
       complete: "/rag/ingestion/complete",

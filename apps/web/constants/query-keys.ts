@@ -29,6 +29,11 @@ export const queryKeys = {
       create: "ragIndexProfilesCreate",
       activate: "ragIndexProfilesActivate",
     },
+    providerCredentials: {
+      list: "ragProviderCredentialsList",
+      set: "ragProviderCredentialsSet",
+      revoke: "ragProviderCredentialsRevoke",
+    },
     ingestion: {
       intake: "ragIngestionIntake",
       complete: "ragIngestionComplete",

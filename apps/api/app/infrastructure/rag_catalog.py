@@ -1079,3 +1079,101 @@ class SqlAlchemyStageCheckpointRepository:
         await self._session.commit()
         await self._session.refresh(row)
         return _to_stage_checkpoint(row)
+
+
+class ProviderCredentialRecord(Base):
+    __tablename__ = "rag_provider_credentials"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    provider: Mapped[str] = mapped_column(String(60), nullable=False)
+    key_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    value_enc: Mapped[str] = mapped_column(String, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+
+
+class SqlAlchemyProviderCredentialRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def set_credential(
+        self,
+        *,
+        tenant_id: str,
+        provider: str,
+        key_name: str,
+        value_enc: str,
+    ) -> ProviderCredentialRecord:
+        result = await self._session.execute(
+            select(ProviderCredentialRecord).where(
+                ProviderCredentialRecord.tenant_id == tenant_id,
+                ProviderCredentialRecord.provider == provider,
+                ProviderCredentialRecord.key_name == key_name,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            row.value_enc = value_enc
+            row.is_active = True
+        else:
+            row = ProviderCredentialRecord(
+                id=str(uuid4()),
+                tenant_id=tenant_id,
+                provider=provider,
+                key_name=key_name,
+                value_enc=value_enc,
+                is_active=True,
+            )
+            self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return row
+
+    async def find_credential(
+        self,
+        *,
+        tenant_id: str,
+        provider: str,
+        key_name: str,
+    ) -> ProviderCredentialRecord | None:
+        result = await self._session.execute(
+            select(ProviderCredentialRecord).where(
+                ProviderCredentialRecord.tenant_id == tenant_id,
+                ProviderCredentialRecord.provider == provider,
+                ProviderCredentialRecord.key_name == key_name,
+                ProviderCredentialRecord.is_active == True,  # noqa: E712
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def list_by_tenant(self, *, tenant_id: str) -> list[ProviderCredentialRecord]:
+        result = await self._session.execute(
+            select(ProviderCredentialRecord).where(
+                ProviderCredentialRecord.tenant_id == tenant_id,
+            ).order_by(ProviderCredentialRecord.provider, ProviderCredentialRecord.key_name)
+        )
+        return list(result.scalars().all())
+
+    async def revoke(
+        self,
+        *,
+        tenant_id: str,
+        provider: str,
+        key_name: str,
+    ) -> bool:
+        result = await self._session.execute(
+            select(ProviderCredentialRecord).where(
+                ProviderCredentialRecord.tenant_id == tenant_id,
+                ProviderCredentialRecord.provider == provider,
+                ProviderCredentialRecord.key_name == key_name,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        row.is_active = False
+        row.value_enc = ""
+        await self._session.commit()
+        return True

@@ -152,3 +152,13 @@ class CreateIndexProfileRequest(BaseModel):
 
     model_config = {"extra": "forbid"}
 
+
+# --- Provider credential schemas --------------------------------------------
+
+class SetProviderCredentialRequest(BaseModel):
+    provider: str = Field(min_length=1, max_length=60)
+    key_name: str = Field(min_length=1, max_length=120)
+    value: str = Field(min_length=1, max_length=4096, description="Credential value — never returned in responses")
+
+    model_config = {"extra": "forbid"}
+

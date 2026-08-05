@@ -1323,6 +1323,188 @@
           }
         }
       }
+    },
+    "/rag/provider-credentials": {
+      "post": {
+        "tags": [
+          "Provider Credentials"
+        ],
+        "summary": "Set Provider Credential",
+        "description": "Set or update a provider credential. Value is never returned.",
+        "operationId": "set_provider_credential_rag_provider_credentials_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProviderCredentialRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Set Provider Credential Rag Provider Credentials Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Provider Credentials"
+        ],
+        "summary": "List Provider Credentials",
+        "description": "List credential status for all supported providers. Values are never returned.",
+        "operationId": "list_provider_credentials_rag_provider_credentials_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Provider Credentials Rag Provider Credentials Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/provider-credentials/{provider}/{key_name}": {
+      "delete": {
+        "tags": [
+          "Provider Credentials"
+        ],
+        "summary": "Revoke Provider Credential",
+        "description": "Revoke a provider credential.",
+        "operationId": "revoke_provider_credential_rag_provider_credentials__provider___key_name__delete",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "key_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key Name"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Revoke Provider Credential Rag Provider Credentials  Provider   Key Name  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1747,6 +1929,37 @@
           "password"
         ],
         "title": "RegisterRequest"
+      },
+      "SetProviderCredentialRequest": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Provider"
+          },
+          "key_name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Key Name"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Value",
+            "description": "Credential value \u2014 never returned in responses"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "key_name",
+          "value"
+        ],
+        "title": "SetProviderCredentialRequest"
       },
       "ValidationError": {
         "properties": {

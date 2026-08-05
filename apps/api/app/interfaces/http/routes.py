@@ -15,6 +15,7 @@ from app.interfaces.http.dependencies import (
     IngestionServiceDependency,
     KnowledgeBaseServiceDependency,
     ModelProfileServiceDependency,
+    ProviderCredentialServiceDependency,
     RagQueryServiceDependency,
     RagTraceServiceDependency,
     TenantContextDependency,
@@ -29,6 +30,7 @@ from app.interfaces.http.schemas import (
     RagAnswerFeedbackRequest,
     RagQueryRequest,
     RegisterRequest,
+    SetProviderCredentialRequest,
 )
 
 system_router = APIRouter(tags=["System"])
@@ -38,6 +40,7 @@ rag_query_router = APIRouter(prefix="/rag/query", tags=["RAG Query"])
 kb_router = APIRouter(prefix="/rag/knowledge-bases", tags=["Knowledge Bases"])
 model_profile_router = APIRouter(prefix="/rag/model-profiles", tags=["Model Profiles"])
 index_profile_router = APIRouter(prefix="/rag/index-profiles", tags=["Index Profiles"])
+provider_credential_router = APIRouter(prefix="/rag/provider-credentials", tags=["Provider Credentials"])
 
 
 def success(message: str, data: object | None = None, meta: object | None = None) -> dict[str, object]:
@@ -487,3 +490,60 @@ async def activate_index_profile(
 ) -> dict[str, object]:
     result = await svc.set_active(tenant=tenant, profile_id=profile_id)
     return success("Index profile activated", {"id": result.id, "isActive": result.is_active})
+
+
+# --- Provider credential routes ---------------------------------------------
+
+@provider_credential_router.post("", status_code=status.HTTP_200_OK)
+async def set_provider_credential(
+    payload: SetProviderCredentialRequest,
+    svc: ProviderCredentialServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Set or update a provider credential. Value is never returned."""
+    result = await svc.set_credential(
+        tenant=tenant,
+        provider=payload.provider,
+        key_name=payload.key_name,
+        value=payload.value,
+    )
+    return success("Credential configured", {
+        "provider": result.provider,
+        "keyName": result.key_name,
+        "isConfigured": result.is_configured,
+        "updatedAt": result.updated_at,
+    })
+
+
+@provider_credential_router.get("")
+async def list_provider_credentials(
+    svc: ProviderCredentialServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """List credential status for all supported providers. Values are never returned."""
+    results = await svc.list_status(tenant=tenant)
+    return success("Provider credentials loaded", [
+        {
+            "provider": r.provider,
+            "keyName": r.key_name,
+            "isConfigured": r.is_configured,
+            "updatedAt": r.updated_at,
+        }
+        for r in results
+    ])
+
+
+@provider_credential_router.delete("/{provider}/{key_name}", status_code=status.HTTP_200_OK)
+async def revoke_provider_credential(
+    provider: str,
+    key_name: str,
+    svc: ProviderCredentialServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Revoke a provider credential."""
+    result = await svc.revoke(tenant=tenant, provider=provider, key_name=key_name)
+    return success("Credential revoked", {
+        "provider": result.provider,
+        "keyName": result.key_name,
+        "isConfigured": result.is_configured,
+    })
