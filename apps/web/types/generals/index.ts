@@ -1,2 +1,2 @@
-export type { ErrorResponse } from "@vibecoding-starter/types"
+export type { ErrorResponse } from "@open-grounding/types"
 export * from "./data-table"

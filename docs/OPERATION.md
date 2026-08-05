@@ -5,9 +5,9 @@ This document explains how to run, verify, and maintain this starter in conditio
 ## Scope
 
 This repo currently supports the following baseline:
-- `apps/web`: Next.js App Router on port `3000`
+- `apps/web`: Next.js App Router on port `3010`
 - web auth foundation: NextAuth credentials + internal BFF proxy route
-- `apps/api`: FastAPI API on port `3001`
+- `apps/api`: FastAPI API on port `3011`
 - `apps/worker`: worker scaffold connected to Redis with no active default queue
 - `/Users/binarydev/Program/General/service/docker-compose.yml`: provides shared PostgreSQL and Redis
 - `scripts/`: repo-level helper executables for local bootstrap and supporting workflows
@@ -21,13 +21,13 @@ Structure conventions:
 
 | Component | URL / Port | Purpose |
 | --- | --- | --- |
-| Web | `http://localhost:3000` | UI starter with login, panel, and BFF proxy |
-| Web Auth | `http://localhost:3000/api/auth/*` | NextAuth route handler for session and credentials flow |
-| Web Proxy | `http://localhost:3000/api/proxy/*` | Internal proxy for all browser requests to backend |
-| API | `http://localhost:3001` | HTTP API for root and health check |
+| Web | `http://localhost:3010` | UI starter with login, panel, and BFF proxy |
+| Web Auth | `http://localhost:3010/api/auth/*` | NextAuth route handler for session and credentials flow |
+| Web Proxy | `http://localhost:3010/api/proxy/*` | Internal proxy for all browser requests to backend |
+| API | `http://localhost:3011` | HTTP API for root and health check |
 | Worker | n/a | Idle worker scaffold for background runtime |
-| PostgreSQL | `postgresql://postgres:postgres@127.0.0.1:5432/vibecoding_starter` | Local database for FastAPI |
-| Redis | `redis://127.0.0.1:6379` | Ready-to-use broker for next queue features |
+| PostgreSQL | `postgresql://postgres:postgres@127.0.0.1:5433/open_grounding` | Local database for FastAPI |
+| Redis | `redis://127.0.0.1:6380` | Ready-to-use broker for next queue features |
 
 ## Supported Baseline
 
@@ -36,7 +36,7 @@ Local baseline considered healthy for this repo:
 2. Local PostgreSQL and Redis are active.
 3. `bun run dev` runs web, api, and worker.
 4. `bun run check` passes.
-5. Starter login page can be opened at `http://localhost:3000/login`.
+5. Starter login page can be opened at `http://localhost:3010/login`.
 6. Default protected route `/panel` redirects to `/login` when no session exists.
 
 ## Environment Matrix
@@ -49,12 +49,12 @@ Repo does not use root `.env` as source of truth. Env is managed per app.
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `NEXT_PUBLIC_APP_URL` | no | `http://localhost:3000` | Web app base URL |
-| `NEXT_PUBLIC_API_URL` | no | `http://localhost:3001` | Fallback backend base URL for server-side auth config |
+| `NEXT_PUBLIC_APP_URL` | no | `http://localhost:3010` | Web app base URL |
+| `NEXT_PUBLIC_API_URL` | no | `http://localhost:3011` | Fallback backend base URL for server-side auth config |
 | `NEXT_PUBLIC_API_PROXY_BASE_URL` | no | `/api/proxy` | Internal proxy base path used by axios in browser |
-| `NEXTAUTH_URL` | no | `http://localhost:3000` | Canonical web URL for NextAuth |
+| `NEXTAUTH_URL` | no | `http://localhost:3010` | Canonical web URL for NextAuth |
 | `NEXTAUTH_SECRET` | yes for production | none | Secret for sign/encrypt session cookie |
-| `API_URL` | no | `http://localhost:3001` | Backend base URL used by proxy route server-side |
+| `API_URL` | no | `http://localhost:3011` | Backend base URL used by proxy route server-side |
 | `AUTH_LOGIN_PATH` | no | `/auth/login` | Backend path for credentials login |
 | `AUTH_REFRESH_PATH` | no | `/auth/refresh` | Backend path for token refresh |
 | `AUTH_LOGOUT_PATH` | no | `/auth/logout` | Backend path for logout token/session |
@@ -63,8 +63,8 @@ Repo does not use root `.env` as source of truth. Env is managed per app.
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `API_PORT` | no | `3001` | HTTP API port |
-| `DATABASE_URL` | no | `postgresql://postgres:postgres@127.0.0.1:5432/vibecoding_starter` | Default local PostgreSQL for SQLAlchemy |
+| `API_PORT` | no | `3011` | HTTP API port |
+| `DATABASE_URL` | no | `postgresql://postgres:postgres@127.0.0.1:5433/open_grounding` | Default local PostgreSQL for SQLAlchemy |
 | `DEPLOYMENT_TENANT_ID` | **yes** | none | Stable UUID identifier for the deployment tenant. Set before first startup. See `docs/TENANT-DEPLOYMENT.md`. |
 | `TENANT_MODE` | no | `single-deployment` | Only `single-deployment` is supported in v1. |
 
@@ -72,7 +72,7 @@ Repo does not use root `.env` as source of truth. Env is managed per app.
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `REDIS_URL` | no | `redis://127.0.0.1:6379` | Redis for BullMQ worker |
+| `REDIS_URL` | no | `redis://127.0.0.1:6380` | Redis for BullMQ worker |
 
 ## Fast Start
 
@@ -235,7 +235,7 @@ change.
 ### PostgreSQL not ready
 - check `bun run stack:ps`
 - check logs `bun run stack:logs`
-- check if port `5432` is used by another service
+- check if port `5433` is used by another service
 
 ### Worker fails to start
 - ensure Redis is active: `bun run stack:ps`

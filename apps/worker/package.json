@@ -1,5 +1,5 @@
 {
-  "name": "@vibecoding-starter/worker",
+  "name": "@open-grounding/worker",
   "private": true,
   "version": "0.1.0",
   "type": "module",

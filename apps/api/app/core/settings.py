@@ -10,7 +10,7 @@ RAG_RUNTIME_PRODUCTION = "production"
 
 class Settings(BaseSettings):
     api_port: int = 3001
-    database_url: str = "postgresql://postgres:postgres@127.0.0.1:5432/vibecoding_starter"
+    database_url: str = "postgresql://postgres:postgres@127.0.0.1:5432/open_grounding"
     jwt_secret: str = "development-only-secret"
     jwt_refresh_secret: str | None = None
     environment: str = "development"

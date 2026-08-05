@@ -4,7 +4,7 @@ import { Button } from "$/components/button"
 import { Input } from "$/components/input"
 import { PanelCard } from "$/components/panel-card"
 import { authConfig } from "$/configs/auth"
-import { type LoginProps, loginSchema } from "@vibecoding-starter/schemas"
+import { type LoginProps, loginSchema } from "@open-grounding/schemas"
 import { signIn, useSession } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -148,6 +148,16 @@ export default function LoginContent() {
           >
             Sign In
           </Button>
+
+          <p className="text-center text-sm text-slate-600">
+            Belum punya akun?{" "}
+            <a
+              href="/register"
+              className="font-semibold text-primary-600 underline-offset-4 hover:underline"
+            >
+              Daftar di sini
+            </a>
+          </p>
         </form>
       </PanelCard>
     </main>

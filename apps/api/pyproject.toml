@@ -1,5 +1,5 @@
 [project]
-name = "vibecoding-starter-api"
+name = "open-grounding-api"
 version = "0.1.0"
 description = "FastAPI service for vibecoding-starter"
 requires-python = ">=3.11"

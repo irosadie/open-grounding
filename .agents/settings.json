@@ -2,14 +2,14 @@
   "$schema": "Project-specific configuration for agents. Update this file when copying to another project.",
 
   "project": {
-    "name": "vibecoding-starter",
+    "name": "open-grounding",
     "description": "Public monorepo starter for vibe coding workflow",
     "version": "0.1.0"
   },
 
   "repo": {
     "owner": "",
-    "name": "vibecoding-starter"
+    "name": "open-grounding"
   },
 
   "stack": {

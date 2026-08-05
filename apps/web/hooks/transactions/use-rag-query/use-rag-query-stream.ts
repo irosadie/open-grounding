@@ -1,7 +1,7 @@
 "use client"
 
 import { authConfig } from "$/configs/auth"
-import type { RagCitationResponse } from "@vibecoding-starter/types"
+import type { RagCitationResponse } from "@open-grounding/types"
 import { useCallback, useRef, useState } from "react"
 
 const STREAM_BASE = `${authConfig.proxyApiBasePath}/stream`

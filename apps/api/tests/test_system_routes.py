@@ -11,7 +11,7 @@ def test_system_routes_keep_success_envelope() -> None:
 
     assert root.status_code == 200
     assert root.json()["success"] is True
-    assert root.json()["data"]["name"] == "vibecoding-starter-api"
+    assert root.json()["data"]["name"] == "open-grounding-api"
     assert health.status_code == 200
     assert health.json()["data"]["status"] == "ok"
 

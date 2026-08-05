@@ -3,9 +3,9 @@
 import { apiRouters, queryKeys } from "$/constants"
 import { axios } from "$/services/axios"
 import type { ErrorResponse } from "$/types/generals"
+import { type RagQueryProps, ragQuerySchema } from "@open-grounding/schemas"
+import type { RagQueryResponse } from "@open-grounding/types"
 import { useMutation } from "@tanstack/react-query"
-import { type RagQueryProps, ragQuerySchema } from "@vibecoding-starter/schemas"
-import type { RagQueryResponse } from "@vibecoding-starter/types"
 import type { AxiosError } from "axios"
 
 const askRag = async (payload: RagQueryProps) => {

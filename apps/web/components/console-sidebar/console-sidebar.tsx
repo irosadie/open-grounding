@@ -4,7 +4,11 @@ import { consoleNavItems } from "$/configs/console"
 import { cn } from "$/utils/cn"
 import { usePathname } from "next/navigation"
 
-export function ConsoleSidebar() {
+type ConsoleSidebarProps = {
+  onNavClick?: () => void
+}
+
+export function ConsoleSidebar({ onNavClick }: ConsoleSidebarProps) {
   const pathname = usePathname()
 
   return (
@@ -24,6 +28,7 @@ export function ConsoleSidebar() {
             key={item.href}
             href={item.href}
             aria-current={isActive ? "page" : undefined}
+            onClick={onNavClick}
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2",
               isActive

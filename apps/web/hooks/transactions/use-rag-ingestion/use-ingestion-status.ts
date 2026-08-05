@@ -4,9 +4,9 @@ import { apiRouters, queryKeys } from "$/constants"
 import { axios } from "$/services/axios"
 import type { ErrorResponse } from "$/types/generals"
 import { pathVariable } from "$/utils/path-variable"
+import { isTerminalLifecycleState } from "@open-grounding/schemas"
+import type { IngestionStatusResponse } from "@open-grounding/types"
 import { useQuery } from "@tanstack/react-query"
-import { isTerminalLifecycleState } from "@vibecoding-starter/schemas"
-import type { IngestionStatusResponse } from "@vibecoding-starter/types"
 import type { AxiosError } from "axios"
 
 const POLL_INTERVAL_MS = 3000

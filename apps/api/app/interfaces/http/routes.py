@@ -42,7 +42,7 @@ def success(message: str, data: object | None = None, meta: object | None = None
 
 @system_router.get("/")
 async def get_app_info() -> dict[str, object]:
-    return success("Application info loaded", {"name": "vibecoding-starter-api", "message": "FastAPI clean architecture API is ready"})
+    return success("Application info loaded", {"name": "open-grounding-api", "message": "FastAPI clean architecture API is ready"})
 
 
 @system_router.get("/ready")
@@ -72,7 +72,7 @@ async def get_health(request: Request) -> dict[str, object]:
         "Health status loaded",
         {
             "status": "ok",
-            "service": "vibecoding-starter-api",
+            "service": "open-grounding-api",
             "timestamp": datetime.now(UTC).isoformat(),
             "tenant": tenant_diagnostics(get_settings(), bootstrap_result),
         },

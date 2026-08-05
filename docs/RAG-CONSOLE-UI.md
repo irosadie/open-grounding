@@ -1,4 +1,4 @@
-# RAG Console UI
+# Open Grounding Console UI
 
 A simple, clean, and elegant console for the RAG platform: login, document ingestion
 through the worker pipeline, grounded retrieval with streaming and citations, and
@@ -68,8 +68,8 @@ authenticated users on `/login` to `/console`.
 
 ```bash
 # from repo root
-bun run --filter @vibecoding-starter/web dev    # web on :3000
-bun run --filter @vibecoding-starter/api dev    # api on :3001 (FastAPI)
+bun run --filter @open-grounding/web dev    # web on :3010
+bun run --filter @open-grounding/api dev    # api on :3011 (FastAPI)
 ```
 
 The web app proxies backend calls to the API using `API_URL` (see
@@ -78,8 +78,8 @@ The web app proxies backend calls to the API using `API_URL` (see
 
 ## Quality Gates
 
-- `bun run --filter @vibecoding-starter/web lint` — Biome (no `any`, no `console.*`,
+- `bun run --filter @open-grounding/web lint` — Biome (no `any`, no `console.*`,
   `const`, double quotes, no semicolons).
-- `bun run --filter @vibecoding-starter/web typecheck` — `next typegen && tsc --noEmit`.
-- `bun run --filter @vibecoding-starter/web test` — vitest smoke + unit tests.
+- `bun run --filter @open-grounding/web typecheck` — `next typegen && tsc --noEmit`.
+- `bun run --filter @open-grounding/web test` — vitest smoke + unit tests.
 - `openspec validate rag-console-ui` — OpenSpec change validation.

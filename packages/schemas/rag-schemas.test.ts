@@ -4,7 +4,7 @@ import {
   ingestionMimeTypes,
   ragAnswerFeedbackSchema,
   ragQuerySchema,
-} from "@vibecoding-starter/schemas"
+} from "@open-grounding/schemas"
 import { describe, expect, it } from "vitest"
 
 describe("RAG schemas", () => {

@@ -4,9 +4,8 @@ import type { Metadata } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "vibecoding-starter",
-  description:
-    "Monorepo boilerplate with Next.js, FastAPI, worker, and agent flow",
+  title: "open-grounding",
+  description: "Open Grounding — grounded retrieval platform powered by RAG",
 }
 
 export default function RootLayout({

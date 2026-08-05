@@ -1,4 +1,4 @@
-# vibecoding-starter
+# open-grounding
 
 Starter monorepo for building products with **vibe coding** — a workflow where AI agents (Claude Code / Codex) handle implementation tasks end-to-end, from feature planning to merge-ready PRs.
 
@@ -158,13 +158,13 @@ bun run openapi:generate
 ```
 
 ## Key Endpoints
-- Web: `http://localhost:3000`
-- Web login: `http://localhost:3000/login`
-- Web register: `http://localhost:3000/register`
-- Web auth route: `http://localhost:3000/api/auth/*`
-- Web internal proxy: `http://localhost:3000/api/proxy/*`
-- API root: `http://localhost:3001/`
-- API health: `http://localhost:3001/health`
+- Web: `http://localhost:3010`
+- Web login: `http://localhost:3010/login`
+- Web register: `http://localhost:3010/register`
+- Web auth route: `http://localhost:3010/api/auth/*`
+- Web internal proxy: `http://localhost:3010/api/proxy/*`
+- API root: `http://localhost:3011/`
+- API health: `http://localhost:3011/health`
 - Merged OpenAPI spec: `docs/openapi.json`
 - Scalar config source: `apps/api/scalar.config.json`
 

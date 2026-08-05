@@ -74,9 +74,9 @@ Target service:
 
 | Service | Wajib | Port internal | Persistence |
 | --- | --- | --- | --- |
-| PostgreSQL | Ya | `5432` | volume `postgres-data` |
-| Redis | Ya | `6379` | volume `redis-data` |
-| Qdrant | Ya untuk RAG | `6333`, `6334` | `qdrant-storage`, `qdrant-snapshots` |
+| PostgreSQL | Ya | `5433` | volume `postgres-data` |
+| Redis | Ya | `6380` | volume `redis-data` |
+| Qdrant | Ya untuk RAG | `6334`, `6334` | `qdrant-storage`, `qdrant-snapshots` |
 | SeaweedFS S3 gateway | Ya untuk production profile | service network only | `seaweed-data` |
 | Neo4j Community | Opsional profile `graph` | `7474`, `7687` | `neo4j-data` |
 | Local model runtime | Opsional profile `local-models` | provider-specific | model cache |

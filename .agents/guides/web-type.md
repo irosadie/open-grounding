@@ -6,7 +6,7 @@
 - TypeScript `type` and `interface` that are FE-specific
 - Types for local state, complex component props, route params
 - `DataTableResponse<T>` and other general types
-- Re-export `ErrorResponse<T>` from `@vibecoding-starter/types` if needed
+- Re-export `ErrorResponse<T>` from `@open-grounding/types` if needed
 - Re-export from `index.ts` per subfolder
 
 ❌ Forbidden:
@@ -60,7 +60,7 @@ export type DataTableResponse<T> = {
 
 ```typescript
 // types/generals/index.ts
-export type { ErrorResponse } from '@vibecoding-starter/types'
+export type { ErrorResponse } from '@open-grounding/types'
 export * from './data-table'
 ```
 

@@ -4,12 +4,12 @@ import { apiRouters, queryKeys } from "$/constants"
 import { axios } from "$/services/axios"
 import type { ErrorResponse } from "$/types/generals"
 import { pathVariable } from "$/utils/path-variable"
-import { useMutation } from "@tanstack/react-query"
 import {
   type RagAnswerFeedbackProps,
   ragAnswerFeedbackSchema,
-} from "@vibecoding-starter/schemas"
-import type { RagAnswerFeedbackResponse } from "@vibecoding-starter/types"
+} from "@open-grounding/schemas"
+import type { RagAnswerFeedbackResponse } from "@open-grounding/types"
+import { useMutation } from "@tanstack/react-query"
 import type { AxiosError } from "axios"
 
 const submitFeedback = async (args: {

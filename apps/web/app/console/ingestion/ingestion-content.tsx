@@ -6,9 +6,15 @@ import { Input } from "$/components/input"
 import { PanelCard } from "$/components/panel-card"
 import { useRagIngestionComplete } from "$/hooks/transactions/use-rag-ingestion"
 import { useRagIngestionIntake } from "$/hooks/transactions/use-rag-ingestion"
-import { ingestionMimeTypes } from "@vibecoding-starter/schemas"
-import { FileUp, Upload } from "lucide-react"
-import { type ChangeEvent, useId, useState } from "react"
+import { ingestionMimeTypes } from "@open-grounding/schemas"
+import { FileUp, Upload, X } from "lucide-react"
+import {
+  type ChangeEvent,
+  type DragEvent,
+  useId,
+  useRef,
+  useState,
+} from "react"
 import IngestionVersionCard from "./version-card"
 
 type UploadedVersion = {
@@ -34,30 +40,54 @@ export function IngestionContent() {
   const intake = useRagIngestionIntake()
   const complete = useRagIngestionComplete()
   const sourceFileInputId = useId()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [knowledgeBaseId, setKnowledgeBaseId] = useState("")
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [formError, setFormError] = useState("")
   const [versions, setVersions] = useState<UploadedVersion[]>([])
+  const [isDragging, setIsDragging] = useState(false)
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null
     setFormError("")
     if (file && !isSupportedFile(file)) {
-      setFormError("Only PDF, Markdown, and plain-text files are supported.")
+      setFormError("Hanya file PDF, Markdown, dan plain-text yang didukung.")
       setSelectedFile(null)
       return
     }
     setSelectedFile(file)
   }
 
+  const handleDrop = (event: DragEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    setIsDragging(false)
+    const file = event.dataTransfer.files?.[0] ?? null
+    setFormError("")
+    if (!file) return
+    if (!isSupportedFile(file)) {
+      setFormError("Hanya file PDF, Markdown, dan plain-text yang didukung.")
+      return
+    }
+    setSelectedFile(file)
+  }
+
+  const handleDragOver = (event: DragEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = () => {
+    setIsDragging(false)
+  }
+
   const handleUpload = async () => {
     setFormError("")
     if (!knowledgeBaseId.trim()) {
-      setFormError("Knowledge base id is required.")
+      setFormError("Knowledge Base ID wajib diisi.")
       return
     }
     if (!selectedFile) {
-      setFormError("Select a file to upload.")
+      setFormError("Pilih file yang akan di-upload.")
       return
     }
 
@@ -85,9 +115,10 @@ export function IngestionContent() {
         },
       ])
       setSelectedFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ""
     } catch (error) {
       const message =
-        (error as { message?: string })?.message ?? "Upload failed."
+        (error as { message?: string })?.message ?? "Upload gagal."
       setFormError(message)
     }
   }
@@ -104,41 +135,93 @@ export function IngestionContent() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-xl font-semibold text-gray-900">Ingestion</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Upload dokumen ke knowledge base untuk diproses dan diindeks oleh
+          pipeline RAG.
+        </p>
+      </div>
+
       <PanelCard
-        title="Upload Document"
-        description="Upload a PDF, Markdown, or plain-text file to ingest."
+        title="Upload Dokumen"
+        description="Dukung format PDF, Markdown (.md), dan plain-text (.txt)."
       >
         <div className="flex flex-col gap-4">
           <Input
-            label="Knowledge Base Id"
+            label="Knowledge Base ID"
             name="knowledgeBaseId"
-            placeholder="knowledge-base-id"
+            placeholder="contoh: kb-produk-2024"
             value={knowledgeBaseId}
             onChange={(event) => setKnowledgeBaseId(event.target.value)}
+            hint="ID unik knowledge base yang sudah dibuat. Gunakan ID yang sama saat bertanya di halaman Retrieval."
             required
           />
+
+          {/* Drop zone */}
           <div className="flex flex-col gap-1.5">
             <label
               htmlFor={sourceFileInputId}
               className="text-sm font-medium text-main-700"
             >
-              Source File <span className="text-danger-500">*</span>
+              File <span className="text-danger-500">*</span>
             </label>
-            <div className="flex items-center gap-3">
-              <input
-                id={sourceFileInputId}
-                type="file"
-                accept=".pdf,.md,.markdown,.txt,application/pdf,text/markdown,text/plain"
-                onChange={handleFileChange}
-                className="block w-full text-sm text-gray-500 file:mr-3 file:rounded-lg file:border-0 file:bg-primary-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-700 hover:file:bg-primary-100"
-              />
-            </div>
-            {selectedFile ? (
-              <span className="text-xs text-gray-500">
-                {selectedFile.name} · {(selectedFile.size / 1024).toFixed(1)} KB
-              </span>
-            ) : null}
+            <button
+              type="button"
+              aria-label="Area upload file"
+              onClick={() => fileInputRef.current?.click()}
+              onDrop={handleDrop}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              className={`flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors ${
+                isDragging
+                  ? "border-primary-400 bg-primary-50"
+                  : "border-gray-200 bg-gray-50 hover:border-primary-300 hover:bg-primary-50/50"
+              }`}
+            >
+              <Upload className="h-8 w-8 text-gray-400" />
+              <div>
+                <p className="text-sm font-medium text-gray-700">
+                  Klik untuk pilih file, atau drag &amp; drop ke sini
+                </p>
+                <p className="mt-0.5 text-xs text-gray-400">
+                  PDF, Markdown, TXT — maks. ukuran sesuai konfigurasi server
+                </p>
+              </div>
+            </button>
+            <input
+              ref={fileInputRef}
+              id={sourceFileInputId}
+              type="file"
+              accept=".pdf,.md,.markdown,.txt,application/pdf,text/markdown,text/plain"
+              onChange={handleFileChange}
+              className="sr-only"
+            />
           </div>
+
+          {/* Selected file chip */}
+          {selectedFile ? (
+            <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+              <FileUp className="h-4 w-4 shrink-0 text-primary-500" />
+              <span className="min-w-0 flex-1 truncate text-sm text-gray-700">
+                {selectedFile.name}
+              </span>
+              <span className="shrink-0 text-xs text-gray-400">
+                {(selectedFile.size / 1024).toFixed(1)} KB
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFile(null)
+                  if (fileInputRef.current) fileInputRef.current.value = ""
+                }}
+                className="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Hapus file"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : null}
 
           {formError ? (
             <p className="text-sm text-danger-500">{formError}</p>
@@ -148,23 +231,23 @@ export function IngestionContent() {
             intent="primary"
             onClick={handleUpload}
             loading={isBusy}
-            disabled={isBusy}
+            disabled={isBusy || !selectedFile || !knowledgeBaseId.trim()}
             leftIcon={<Upload className="h-4 w-4" />}
           >
-            {isBusy ? "Uploading..." : "Upload & Ingest"}
+            {isBusy ? "Mengupload..." : "Upload & Ingest"}
           </Button>
         </div>
       </PanelCard>
 
       <PanelCard
-        title="Ingestion Status"
-        description="Track documents through the worker pipeline to completion."
+        title="Status Ingestion"
+        description="Pantau dokumen yang sedang diproses melalui pipeline."
       >
         {versions.length === 0 ? (
           <EmptyState
             icon={FileUp}
-            title="No documents ingested yet"
-            description="Upload a document above to start the ingestion pipeline."
+            title="Belum ada dokumen"
+            description="Upload dokumen di atas untuk memulai pipeline ingestion."
           />
         ) : (
           <div className="flex flex-col gap-4">

@@ -9,7 +9,7 @@ import {
   type RegisterProps,
   registerPayloadSchema,
   registerSchema,
-} from "@vibecoding-starter/schemas"
+} from "@open-grounding/schemas"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { type FormEvent, useState } from "react"
@@ -110,7 +110,7 @@ export default function RegisterContent() {
       <PanelCard
         className="w-full rounded-3xl"
         title="Create Account"
-        description="Daftar akun user untuk mulai membeli dan mengikuti ujian"
+        description="Daftar akun untuk mulai menggunakan RAG Console"
       >
         <form className="space-y-4" onSubmit={handleSubmit}>
           <Input

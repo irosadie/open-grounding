@@ -2,7 +2,7 @@ import {
   type documentVersionLifecycleStates,
   getDocumentVersionLifecycleLabel,
   isTerminalLifecycleState,
-} from "@vibecoding-starter/schemas"
+} from "@open-grounding/schemas"
 
 export type IngestionStageId =
   | "intake"

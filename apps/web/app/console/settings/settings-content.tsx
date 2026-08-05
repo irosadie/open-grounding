@@ -5,7 +5,39 @@ import { PanelCard } from "$/components/panel-card"
 import { useReadiness } from "$/hooks/transactions/use-system"
 import { useTenantContext } from "$/hooks/transactions/use-system"
 import { cn } from "$/utils/cn"
-import { Activity, ShieldCheck } from "lucide-react"
+import { Activity, Check, Copy, ShieldCheck } from "lucide-react"
+import { useState } from "react"
+
+function CopyableId({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(value)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div>
+      <dt className="text-xs font-medium text-gray-500">{label}</dt>
+      <dd className="mt-0.5 flex items-center gap-1.5">
+        <span className="break-all text-sm text-gray-900">{value}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          aria-label={`Salin ${label}`}
+        >
+          {copied ? (
+            <Check className="h-3.5 w-3.5 text-success-600" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
+        </button>
+      </dd>
+    </div>
+  )
+}
 
 export function SettingsContent() {
   const readiness = useReadiness()
@@ -15,9 +47,16 @@ export function SettingsContent() {
 
   return (
     <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Status platform dan informasi tenant untuk keperluan diagnostik.
+        </p>
+      </div>
+
       <PanelCard
-        title="Platform Readiness"
-        description="Dependency health for PostgreSQL, Redis, Qdrant, object storage, and tenant."
+        title="Status Platform"
+        description="Kesehatan dependensi: PostgreSQL, Redis, Qdrant, object storage, dan tenant."
       >
         {readiness.isLoading ? (
           <LoadingSpinner />
@@ -38,10 +77,10 @@ export function SettingsContent() {
                     : "bg-warning-100 text-warning-700",
                 )}
               >
-                {isReady ? "Ready" : "Degraded"}
+                {isReady ? "Siap" : "Terdegradasi"}
               </span>
               <span className="text-xs text-gray-500">
-                RAG {readiness.data.ragEnabled ? "enabled" : "disabled"} ·{" "}
+                RAG {readiness.data.ragEnabled ? "aktif" : "nonaktif"} ·{" "}
                 {readiness.data.ragRuntimeMode}
               </span>
             </div>
@@ -49,7 +88,7 @@ export function SettingsContent() {
               {readiness.data.components.map((component) => (
                 <li
                   key={component.name}
-                  className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-2"
+                  className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-2.5"
                 >
                   <span className="text-sm font-medium text-gray-900 capitalize">
                     {component.name}
@@ -57,16 +96,23 @@ export function SettingsContent() {
                   <div className="flex items-center gap-2">
                     <span
                       className={cn(
-                        "inline-flex h-2.5 w-2.5 rounded-full",
+                        "inline-flex h-2 w-2 rounded-full",
                         component.available
                           ? "bg-success-500"
                           : "bg-danger-500",
                       )}
                     />
-                    <span className="text-xs text-gray-500">
+                    <span
+                      className={cn(
+                        "text-xs",
+                        component.available
+                          ? "text-success-700"
+                          : "text-danger-600",
+                      )}
+                    >
                       {component.available
-                        ? "available"
-                        : (component.detail ?? "unavailable")}
+                        ? "Tersedia"
+                        : (component.detail ?? "Tidak tersedia")}
                     </span>
                   </div>
                 </li>
@@ -75,60 +121,45 @@ export function SettingsContent() {
           </div>
         ) : (
           <p className="text-sm text-gray-500">
-            Unable to load readiness report.
+            Tidak dapat memuat laporan status.
           </p>
         )}
       </PanelCard>
 
       <PanelCard
-        title="Tenant Context"
-        description="Server-derived tenant, membership, and user identity (read-only)."
+        title="Informasi Tenant"
+        description="Data tenant, membership, dan identitas user yang aktif (read-only)."
       >
         {tenant.isLoading ? (
           <LoadingSpinner />
         ) : tenant.data ? (
           <div className="flex items-start gap-3">
-            <ShieldCheck className="mt-0.5 h-5 w-5 text-primary-600" />
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div>
-                <dt className="text-xs font-medium text-gray-500">Tenant Id</dt>
-                <dd className="mt-0.5 break-all text-sm text-gray-900">
-                  {tenant.data.tenantId}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-gray-500">
-                  Membership Id
-                </dt>
-                <dd className="mt-0.5 break-all text-sm text-gray-900">
-                  {tenant.data.membershipId}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs font-medium text-gray-500">User Id</dt>
-                <dd className="mt-0.5 break-all text-sm text-gray-900">
-                  {tenant.data.userId}
-                </dd>
-              </div>
+            <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" />
+            <dl className="grid w-full grid-cols-1 gap-4 sm:grid-cols-3">
+              <CopyableId label="Tenant ID" value={tenant.data.tenantId} />
+              <CopyableId
+                label="Membership ID"
+                value={tenant.data.membershipId}
+              />
+              <CopyableId label="User ID" value={tenant.data.userId} />
             </dl>
           </div>
         ) : (
           <p className="text-sm text-gray-500">
-            Unable to load tenant context.
+            Tidak dapat memuat informasi tenant.
           </p>
         )}
       </PanelCard>
 
       <PanelCard
-        title="Knowledge Bases & Profiles"
-        description="Tenant-scoped knowledge bases and model/index profile metadata (read-only)."
+        title="Knowledge Bases & Profil"
+        description="Metadata knowledge base dan profil model/indeks milik tenant (read-only)."
       >
         <div className="rounded-lg bg-gray-50 p-4">
           <p className="text-sm text-gray-600">
-            Knowledge base and profile management surfaces depend on catalog
-            write endpoints. They are shown read-only until those endpoints are
-            available. Use the Ingestion workbench to upload documents into an
-            existing knowledge base.
+            Manajemen knowledge base dan profil menunggu endpoint catalog write
+            tersedia. Untuk saat ini, gunakan halaman <strong>Ingestion</strong>{" "}
+            untuk mengupload dokumen ke knowledge base yang sudah ada.
           </p>
         </div>
       </PanelCard>

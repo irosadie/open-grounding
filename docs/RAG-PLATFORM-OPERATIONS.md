@@ -1,4 +1,4 @@
-# RAG Platform Operations
+# Open Grounding Platform Operations
 
 This document explains how to configure, run, verify, and recover the RAG
 platform runtime added by the `rag-platform-foundation` change. It covers
@@ -28,10 +28,10 @@ lifecycle, and audit.
 | --- | --- | --- |
 | `RAG_ENABLED` | `false` | Feature flag; disabled by default so existing behavior is unchanged |
 | `RAG_RUNTIME_MODE` | `development` | `development` or `production` |
-| `QDRANT_URL` | `http://127.0.0.1:6333` | Qdrant endpoint |
+| `QDRANT_URL` | `http://127.0.0.1:6334` | Qdrant endpoint |
 | `QDRANT_API_KEY` | (none) | Required when `RAG_ENABLED=true` in production |
 | `QDRANT_STRICT_MODE` | `true` | Rejects writes without a valid API key |
-| `OBJECT_STORE_ENDPOINT` | `http://127.0.0.1:9000` | S3-compatible endpoint (MinIO default) |
+| `OBJECT_STORE_ENDPOINT` | `http://127.0.0.1:9100` | S3-compatible endpoint (MinIO default) |
 | `OBJECT_STORE_ACCESS_KEY` | (none) | Required in production |
 | `OBJECT_STORE_SECRET_KEY` | (none) | Required in production |
 | `OBJECT_STORE_BUCKET` | `rag-artifacts` | Bucket for raw sources and parser artifacts |
@@ -62,10 +62,10 @@ docker compose ps               # verify all healthy
 
 | Service | Image (pinned) | Port | Volume |
 | --- | --- | --- | --- |
-| PostgreSQL | `postgres:16-alpine` | 5432 | `postgres-data` |
-| Redis | `redis:7-alpine` | 6379 | `redis-data` |
-| Qdrant | `qdrant/qdrant:v1.12.0` | 6333 | `qdrant-data`, `qdrant-snapshots` |
-| MinIO | `minio/minio:RELEASE.2024-10-13T13-34-11Z` | 9000 / 9001 | `minio-data` |
+| PostgreSQL | `postgres:16-alpine` | 5433 | `postgres-data` |
+| Redis | `redis:7-alpine` | 6380 | `redis-data` |
+| Qdrant | `qdrant/qdrant:v1.12.0` | 6334 | `qdrant-data`, `qdrant-snapshots` |
+| MinIO | `minio/minio:RELEASE.2024-10-13T13-34-11Z` | 9100 / 9101 | `minio-data` |
 
 No `latest` tags are used. Persistent volumes survive container restarts.
 Qdrant ships with an API key (`QDRANT_API_KEY`), strict mode, and snapshot
@@ -112,9 +112,9 @@ foundation.
 ### PostgreSQL backup / restore
 
 ```bash
-docker exec vibecoding-starter-postgres pg_dump -U postgres vibecoding_starter > backup.sql
+docker exec open-grounding-postgres pg_dump -U postgres open_grounding > backup.sql
 # restore
-docker exec -i vibecoding-starter-postgres psql -U postgres vibecoding_starter < backup.sql
+docker exec -i open-grounding-postgres psql -U postgres open_grounding < backup.sql
 ```
 
 PostgreSQL is the source of truth; catalog records survive a Qdrant loss.
@@ -123,7 +123,7 @@ PostgreSQL is the source of truth; catalog records survive a Qdrant loss.
 
 ```bash
 # MinIO: mirror the bucket to a local directory
-mc alias set local http://127.0.0.1:9000 minioadmin minioadmin
+mc alias set local http://127.0.0.1:9100 minioadmin minioadmin
 mc mirror local/rag-artifacts ./rag-artifacts-backup
 # restore
 mc mirror ./rag-artifacts-backup local/rag-artifacts
@@ -133,7 +133,7 @@ mc mirror ./rag-artifacts-backup local/rag-artifacts
 
 ```bash
 # create a snapshot
-curl -X POST http://127.0.0.1:6333/collections/rag/cluster -H "api-key: $QDRANT_API_KEY"
+curl -X POST http://127.0.0.1:6334/collections/rag/cluster -H "api-key: $QDRANT_API_KEY"
 # snapshots are stored in the qdrant-snapshots volume
 ```
 

@@ -23,7 +23,7 @@ You have access to these tools' functions. Use them when appropriate for better 
 ## Monorepo Structure
 
 ```
-vibecoding-starter/
+open-grounding/
 ├── apps/
 │   ├── web/      → Next.js frontend (App Router)
 │   ├── api/      → FastAPI backend (Clean Architecture)
@@ -255,7 +255,7 @@ export type Status = (typeof statuses)[number]
 
 - **SQLAlchemy**: map persisted enum values explicitly and keep them compatible with the shared schema contract
 - **BE entity/DTO**: define Python enum/model types within the FastAPI domain boundary
-- **FE schema/form**: import `as const` array + `z.enum()` from `@vibecoding-starter/schemas`
+- **FE schema/form**: import `as const` array + `z.enum()` from `@open-grounding/schemas`
 
 One declaration, one import, all layers use the same.
 

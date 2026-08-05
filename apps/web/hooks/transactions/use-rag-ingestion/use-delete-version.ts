@@ -4,8 +4,8 @@ import { apiRouters, queryKeys } from "$/constants"
 import { axios } from "$/services/axios"
 import type { ErrorResponse } from "$/types/generals"
 import { pathVariable } from "$/utils/path-variable"
+import type { IngestionDeleteResponse } from "@open-grounding/types"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import type { IngestionDeleteResponse } from "@vibecoding-starter/types"
 import type { AxiosError } from "axios"
 
 const deleteVersion = async (documentVersionId: string) => {

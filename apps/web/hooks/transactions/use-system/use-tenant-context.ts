@@ -3,8 +3,8 @@
 import { apiRouters, queryKeys } from "$/constants"
 import { axios } from "$/services/axios"
 import type { ErrorResponse } from "$/types/generals"
+import type { TenantContextResponse } from "@open-grounding/types"
 import { useQuery } from "@tanstack/react-query"
-import type { TenantContextResponse } from "@vibecoding-starter/types"
 import type { AxiosError } from "axios"
 
 const fetchTenantContext = async () => {

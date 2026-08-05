@@ -8,8 +8,8 @@
     "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
-      "@vibecoding-starter/schemas": ["../../packages/schemas/index.ts"],
-      "@vibecoding-starter/schemas/*": ["../../packages/schemas/*"]
+      "@open-grounding/schemas": ["../../packages/schemas/index.ts"],
+      "@open-grounding/schemas/*": ["../../packages/schemas/*"]
     }
   },
   "include": ["src/**/*.ts"],
