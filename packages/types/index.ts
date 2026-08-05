@@ -1,3 +1,6 @@
 export * from "./auth-response"
 export * from "./error-response"
+export * from "./rag-ingestion-response"
+export * from "./rag-query-response"
+export * from "./rag-system-response"
 export * from "./success-response"

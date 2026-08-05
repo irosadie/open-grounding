@@ -32,6 +32,7 @@ export default function LoginContent() {
   const [isPending, startTransition] = useTransition()
   const [formError, setFormError] = useState("")
   const [fieldErrors, setFieldErrors] = useState<LoginErrors>({})
+  const sessionExpired = searchParams.get("sessionExpired") === "1"
   const [form, setForm] = useState<LoginProps>({
     email: "",
     password: "",
@@ -132,6 +133,12 @@ export default function LoginContent() {
 
           {formError ? (
             <p className="text-sm text-danger-500">{formError}</p>
+          ) : null}
+
+          {sessionExpired && !formError ? (
+            <p className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700">
+              Your session has expired. Please sign in again.
+            </p>
           ) : null}
 
           <Button
