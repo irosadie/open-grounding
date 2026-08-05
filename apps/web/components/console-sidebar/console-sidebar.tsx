@@ -31,6 +31,7 @@ export function ConsoleSidebar({ onNavClick }: ConsoleSidebarProps) {
             onClick={onNavClick}
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2",
+              item.indent ? "ml-4 text-[13px]" : "",
               isActive
                 ? "bg-primary-50 text-primary-700"
                 : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",

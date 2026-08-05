@@ -19,6 +19,16 @@ export const queryKeys = {
       create: "ragKnowledgeBasesCreate",
       delete: "ragKnowledgeBasesDelete",
     },
+    modelProfiles: {
+      list: "ragModelProfilesList",
+      create: "ragModelProfilesCreate",
+      delete: "ragModelProfilesDelete",
+    },
+    indexProfiles: {
+      list: "ragIndexProfilesList",
+      create: "ragIndexProfilesCreate",
+      activate: "ragIndexProfilesActivate",
+    },
     ingestion: {
       intake: "ragIngestionIntake",
       complete: "ragIngestionComplete",

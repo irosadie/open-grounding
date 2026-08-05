@@ -1,8 +1,11 @@
 import {
+  Cpu,
   Database,
   LayoutDashboard,
+  LayoutList,
   MessageSquareText,
   Settings,
+  Upload,
 } from "lucide-react"
 
 export type ConsoleNavItem = {
@@ -10,6 +13,7 @@ export type ConsoleNavItem = {
   href: string
   icon: typeof Database
   description: string
+  indent?: boolean
 }
 
 export const consoleNavItems: ConsoleNavItem[] = [
@@ -28,7 +32,7 @@ export const consoleNavItems: ConsoleNavItem[] = [
   {
     label: "Ingestion",
     href: "/console/ingestion",
-    icon: Database,
+    icon: Upload,
     description: "Upload and track documents",
   },
   {
@@ -42,5 +46,19 @@ export const consoleNavItems: ConsoleNavItem[] = [
     href: "/console/settings",
     icon: Settings,
     description: "Platform configuration",
+  },
+  {
+    label: "Model Profiles",
+    href: "/console/settings/models",
+    icon: Cpu,
+    description: "Embedding and generation models",
+    indent: true,
+  },
+  {
+    label: "Index Profiles",
+    href: "/console/settings/index-profiles",
+    icon: LayoutList,
+    description: "Vector index configuration",
+    indent: true,
   },
 ]

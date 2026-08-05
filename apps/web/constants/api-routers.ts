@@ -19,6 +19,16 @@ export const apiRouters = {
       create: "/rag/knowledge-bases",
       delete: "/rag/knowledge-bases/:id",
     },
+    modelProfiles: {
+      list: "/rag/model-profiles",
+      create: "/rag/model-profiles",
+      delete: "/rag/model-profiles/:id",
+    },
+    indexProfiles: {
+      list: "/rag/index-profiles",
+      create: "/rag/index-profiles",
+      activate: "/rag/index-profiles/:id/activate",
+    },
     ingestion: {
       intake: "/rag/ingestion/intake",
       complete: "/rag/ingestion/complete",

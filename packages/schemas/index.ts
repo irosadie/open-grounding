@@ -1,5 +1,6 @@
 export * from "./knowledge-base"
 export * from "./login"
+export * from "./profiles"
 export * from "./rag-ingestion"
 export * from "./rag-query"
 export * from "./register"
