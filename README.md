@@ -1,34 +1,34 @@
 # open-grounding
 
-**Open Grounding** adalah platform RAG open-source yang menangani prompt dari MCP client — memutuskan apakah sebuah pertanyaan dijawab dari knowledge base (RAG grounded) atau langsung diteruskan ke LLM general.
+**Open Grounding** is an open-source RAG platform that handles prompts from MCP clients — deciding whether a question should be answered from a knowledge base (RAG grounded) or passed directly to a general LLM.
 
-Platform ini menerima dokumen, memrosesnya melalui pipeline ingestion (parse → chunk → embed → index), lalu menjawab pertanyaan dengan jawaban yang dikutip langsung dari dokumen — bukan dari halusinasi model.
+The platform ingests documents through a versioned pipeline (parse → chunk → embed → index), then answers questions with responses grounded in and cited from those documents — not from model hallucination.
 
 ---
 
-## Cara Kerja
+## How It Works
 
 ```
-Prompt dari MCP client
+Prompt from MCP client
         │
         ▼
   Query Router
-  ┌─────────────────────────────┐
-  │  RAG route?                 │
-  │  → hybrid retrieval         │
-  │  → reranking                │
-  │  → confidence gate          │
-  │  → grounded answer + citations │
-  │                             │
-  │  General route?             │
-  │  → langsung ke LLM          │
-  └─────────────────────────────┘
+  ┌─────────────────────────────────┐
+  │  RAG route?                     │
+  │  → hybrid retrieval             │
+  │  → reranking                    │
+  │  → confidence gate              │
+  │  → grounded answer + citations  │
+  │                                 │
+  │  General route?                 │
+  │  → pass directly to LLM         │
+  └─────────────────────────────────┘
         │
         ▼
-  Streaming answer ke client
+  Streaming answer to client
 ```
 
-Routing diputuskan oleh query analyzer berdasarkan intent, ketersediaan evidence, dan confidence threshold. Jika evidence tidak cukup, platform abstain — tidak mengarang jawaban.
+Routing is decided by a query analyzer based on intent, evidence availability, and confidence threshold. If evidence is insufficient, the platform abstains — it does not fabricate answers.
 
 ---
 
@@ -61,21 +61,21 @@ open-grounding/
 
 ---
 
-## Arsitektur Singkat
+## Architecture Overview
 
 ### Offline knowledge plane (Ingestion)
 
 ```
-Upload dokumen (PDF / Markdown / TXT)
-  → Intake & validasi
-  → Object store (file mentah + parser artefak)
+Upload document (PDF / Markdown / TXT)
+  → Intake & validation
+  → Object store (raw file + parser artifacts)
   → BullMQ pipeline: Parse → Normalize → Chunk → Embed → Index
   → Qdrant (dense + sparse vectors + payload index)
   → PostgreSQL (manifest, lifecycle, version, trace)
 ```
 
-Pipeline bersifat idempotent dan versioned. Setiap document version punya state machine:
-`RECEIVED → STORED → QUEUED → PARSING → ... → READY` (atau `FAILED`).
+The pipeline is idempotent and versioned. Each document version has a state machine:
+`RECEIVED → STORED → QUEUED → PARSING → ... → READY` (or `FAILED`).
 
 ### Online answer plane (Retrieval)
 
@@ -93,21 +93,21 @@ Query + knowledge base IDs
   → Streamed answer + citations + limitations
 ```
 
-Jawaban hanya digenerate jika evidence cukup. Jika tidak, platform menjawab dengan `clarify` atau `abstain` — tidak mengarang.
+Answers are only generated when evidence is sufficient. Otherwise the platform responds with `clarify` or `abstain` — never fabricates.
 
 ---
 
 ## Open Grounding Console
 
-Console web untuk operator:
+Web console for operators:
 
-| Route | Fungsi |
+| Route | Function |
 |---|---|
 | `/login` | Login via NextAuth credentials |
 | `/console` | Overview + quick-start guide |
-| `/console/ingestion` | Upload dokumen + track status pipeline |
-| `/console/retrieval` | Tanya jawab grounded + citations + feedback |
-| `/console/settings` | Status platform + tenant info |
+| `/console/ingestion` | Upload documents + track pipeline status |
+| `/console/retrieval` | Grounded Q&A + citations + feedback |
+| `/console/settings` | Platform health + tenant info |
 
 ---
 
@@ -123,14 +123,14 @@ bun run bootstrap
 bun run dev
 ```
 
-`bun run bootstrap` akan:
-- Copy `.env.example` ke `.env` jika belum ada
-- Start PostgreSQL, Redis, Qdrant, dan MinIO via Docker
-- Tunggu sampai semua service ready
-- Apply Alembic baseline migration
-- Generate merged OpenAPI spec
+`bun run bootstrap` will:
+- Copy `.env.example` to `.env` if it does not exist
+- Start PostgreSQL, Redis, Qdrant, and MinIO via Docker
+- Wait for all services to be ready
+- Apply the Alembic baseline migration
+- Generate the merged OpenAPI spec
 
-Setelah bootstrap, init OpenSpec untuk planning layer:
+After bootstrapping, initialize OpenSpec for the planning layer:
 
 ```bash
 bunx openspec init
@@ -150,35 +150,35 @@ bunx openspec init
 
 ---
 
-## Infrastruktur Docker
+## Docker Infrastructure
 
-| Service | Port host | Fungsi |
+| Service | Host port | Purpose |
 |---|---|---|
 | PostgreSQL | `5433` | Metadata, lifecycle, trace |
 | Redis | `6380` | Queue (BullMQ) + cache |
 | Qdrant | `6334` | Vector store (dense + sparse) |
-| MinIO API | `9100` | Object store (file + artefak) |
+| MinIO API | `9100` | Object store (files + artifacts) |
 | MinIO Console | `9101` | MinIO admin UI |
 
 ```bash
-bun run stack:up       # start semua service
-bun run stack:down     # stop semua service
-bun run stack:logs     # lihat logs postgres + redis
-bun run stack:reset    # stop + hapus semua volume (data hilang)
+bun run stack:up       # start all services
+bun run stack:down     # stop all services
+bun run stack:logs     # tail postgres + redis logs
+bun run stack:reset    # stop + remove all volumes (data loss)
 ```
 
 ---
 
-## Perintah Harian
+## Daily Commands
 
 ```bash
-bun run session:status     # cek status repo + MCP + task aktif
-bun run db:upgrade         # apply migrasi Alembic terbaru
+bun run session:status     # check repo status, MCP, and active tasks
+bun run db:upgrade         # apply latest Alembic migrations
 bun run openapi:generate   # regenerate docs/openapi.json
-bun run lint               # Biome lint semua workspace
+bun run lint               # Biome lint across all workspaces
 bun run typecheck          # TypeScript typecheck
-bun run test               # semua test
-bun run build              # build semua workspace
+bun run test               # run all tests
+bun run build              # build all workspaces
 ```
 
 ---
@@ -189,7 +189,7 @@ bun run build              # build semua workspace
 bun run check
 ```
 
-Menjalankan: skill validation + network boundary check + lint + typecheck + test + smoke test + build.
+Runs: skill validation + network boundary check + lint + typecheck + test + smoke test + build.
 
 ---
 
@@ -200,25 +200,25 @@ Menjalankan: skill validation + network boundary check + lint + typecheck + test
 - Scalar config: `apps/api/scalar.config.json`
 - Generate: `bun run openapi:generate`
 
-Jangan edit `docs/openapi.json` langsung — update FastAPI/Pydantic lalu regenerate.
+Do not edit `docs/openapi.json` directly — update FastAPI/Pydantic models and regenerate.
 
 ---
 
 ## Vibe Coding Flow
 
-Feature development menggunakan AI agents (Claude Code / Codex). Planning via [OpenSpec](https://github.com/Fission-AI/OpenSpec), implementation via **skills**.
+Feature development uses AI agents (Claude Code / Codex). Planning is handled by [OpenSpec](https://github.com/Fission-AI/OpenSpec), implementation is guided by **skills**.
 
-### Start Session
+### Start a Session
 
-Ketik **"Mulai"** atau **"Start"** di Claude Code / Codex. Agent akan:
-1. Cek MCP status
-2. Cek branch dan task aktif
-3. Arahkan ke langkah berikutnya
+Type **"Start"** or **"Mulai"** in Claude Code / Codex. The agent will:
+1. Check MCP status
+2. Check active branch and in-progress tasks
+3. Direct you to the next step
 
 ### Phase 1 — Propose
 
 ```
-/opsx:propose "nama fitur"
+/opsx:propose "feature name"
 
 Output: openspec/changes/{slug}/
           proposal.md
@@ -238,11 +238,11 @@ Output: openspec/changes/{slug}/
 ### Phase 3 — Verify & Archive
 
 ```
-/opsx:verify    → validasi implementasi
-/opsx:archive   → archive specs
+/opsx:verify    → validate implementation against specs
+/opsx:archive   → archive the completed change
 ```
 
-Skill registry lengkap ada di `.agents/AGENTS.md`.
+Full skill registry is in `.agents/AGENTS.md`.
 
 ---
 
@@ -250,18 +250,18 @@ Skill registry lengkap ada di `.agents/AGENTS.md`.
 
 Required MCP: `github`
 
-Config dibaca dari `.mcp.json` di root repo (gitignored karena berisi token).
+Config is read from `.mcp.json` at the repo root (gitignored — contains real tokens).
 
-Jika baru clone:
-1. Buat `.mcp.json` dengan GitHub token
-2. Isi `.agents/settings.json` untuk `repo.owner` dan `repo.name`
-3. Jalankan `bun run session:status`
+If you just cloned:
+1. Create `.mcp.json` with your GitHub token
+2. Fill in `.agents/settings.json` for `repo.owner` and `repo.name`
+3. Run `bun run session:status`
 
 ---
 
 ## Delivery Phases
 
-| Phase | Status | Cakupan |
+| Phase | Status | Scope |
 |---|---|---|
 | A — Platform foundation | ✅ Done | FastAPI + PostgreSQL + tenant schema |
 | B — Reliable ingestion | ✅ Done | Upload PDF/MD/TXT → pipeline → Qdrant |
@@ -273,11 +273,12 @@ Jika baru clone:
 
 ## Contributing
 
-1. Fork atau buat branch baru dari `main`
+1. Fork or create a branch from `main`
 2. `bun install && bun run bootstrap`
-3. Pastikan `bun run check` pass
-4. Jika menyentuh `.agents/skills/`, jalankan `bun run skills:sync && bun run skills:validate`
-5. Buka pull request
+3. Make your changes
+4. Ensure `bun run check` passes
+5. If touching `.agents/skills/`, run `bun run skills:sync && bun run skills:validate`
+6. Open a pull request
 
 ---
 
