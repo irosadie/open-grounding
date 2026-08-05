@@ -133,8 +133,8 @@ export const useRagQueryStream = () => {
 
     const payload = {
       message: args.message,
-      knowledgeBaseIds: args.knowledgeBaseIds,
-      conversationId: args.conversationId,
+      knowledge_base_ids: args.knowledgeBaseIds,
+      conversation_id: args.conversationId,
       mode: "grounded",
       stream: true,
     }

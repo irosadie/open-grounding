@@ -13,7 +13,13 @@ const askRag = async (payload: RagQueryProps) => {
   const result = await axios<RagQueryResponse>({
     method: "POST",
     url: apiRouters.rag.query.ask,
-    data: { ...validated, stream: false },
+    data: {
+      message: validated.message,
+      knowledge_base_ids: validated.knowledgeBaseIds,
+      conversation_id: validated.conversationId,
+      mode: validated.mode,
+      stream: false,
+    },
   })
   return result
 }

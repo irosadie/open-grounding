@@ -16,7 +16,14 @@ const createIntake = async (payload: CreateIntakeProps) => {
   const result = await axios<IngestionIntakeResponse>({
     method: "POST",
     url: apiRouters.rag.ingestion.intake,
-    data: validated,
+    data: {
+      knowledge_base_id: validated.knowledgeBaseId,
+      filename: validated.filename,
+      mime_type: validated.mimeType,
+      size_bytes: validated.sizeBytes,
+      source_revision: validated.sourceRevision,
+      title: validated.title,
+    },
   })
   return result
 }

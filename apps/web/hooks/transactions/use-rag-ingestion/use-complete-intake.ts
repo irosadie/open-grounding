@@ -16,7 +16,10 @@ const completeIntake = async (payload: CompleteIntakeProps) => {
   const result = await axios<IngestionCompleteResponse>({
     method: "POST",
     url: apiRouters.rag.ingestion.complete,
-    data: validated,
+    data: {
+      document_version_id: validated.documentVersionId,
+      content_checksum: validated.contentChecksum,
+    },
   })
   return result
 }
