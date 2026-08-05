@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.settings import get_settings
 from app.infrastructure.tenant_bootstrap import verify_and_bootstrap_tenant
 from app.interfaces.http.errors import register_exception_handlers
-from app.interfaces.http.routes import auth_router, rag_query_router, rag_router, system_router
+from app.interfaces.http.routes import auth_router, kb_router, rag_query_router, rag_router, system_router
 
 
 @asynccontextmanager
@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(rag_router)
     app.include_router(rag_query_router)
+    app.include_router(kb_router)
     return app
 
 

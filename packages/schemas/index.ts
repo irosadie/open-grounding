@@ -1,3 +1,4 @@
+export * from "./knowledge-base"
 export * from "./login"
 export * from "./rag-ingestion"
 export * from "./rag-query"

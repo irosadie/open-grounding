@@ -12,6 +12,7 @@ from app.interfaces.http.dependencies import (
     AuthContextDependency,
     AuthServiceDependency,
     IngestionServiceDependency,
+    KnowledgeBaseServiceDependency,
     RagQueryServiceDependency,
     RagTraceServiceDependency,
     TenantContextDependency,
@@ -19,6 +20,7 @@ from app.interfaces.http.dependencies import (
 from app.interfaces.http.schemas import (
     CompleteIntakeRequest,
     CreateIntakeRequest,
+    CreateKnowledgeBaseRequest,
     LoginRequest,
     RagAnswerFeedbackRequest,
     RagQueryRequest,
@@ -29,6 +31,7 @@ system_router = APIRouter(tags=["System"])
 auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 rag_router = APIRouter(prefix="/rag", tags=["RAG Ingestion"])
 rag_query_router = APIRouter(prefix="/rag/query", tags=["RAG Query"])
+kb_router = APIRouter(prefix="/rag/knowledge-bases", tags=["Knowledge Bases"])
 
 
 def success(message: str, data: object | None = None, meta: object | None = None) -> dict[str, object]:
@@ -308,3 +311,66 @@ async def _stream_query(
 
 def _sse_event(event: str, data: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+
+# --- Knowledge base routes ---------------------------------------------------
+
+@kb_router.post("", status_code=status.HTTP_201_CREATED)
+async def create_knowledge_base(
+    payload: CreateKnowledgeBaseRequest,
+    kb_service: KnowledgeBaseServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Create a new tenant-scoped knowledge base."""
+    result = await kb_service.create(
+        tenant=tenant,
+        name=payload.name,
+        slug=payload.slug,
+    )
+    return success("Knowledge base created", {
+        "id": result.id,
+        "tenantId": result.tenant_id,
+        "slug": result.slug,
+        "name": result.name,
+        "status": result.status,
+        "createdAt": result.created_at,
+        "updatedAt": result.updated_at,
+    })
+
+
+@kb_router.get("")
+async def list_knowledge_bases(
+    kb_service: KnowledgeBaseServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """List all active knowledge bases for the authenticated tenant."""
+    results = await kb_service.list_all(tenant=tenant)
+    return success("Knowledge bases loaded", [
+        {
+            "id": r.id,
+            "tenantId": r.tenant_id,
+            "slug": r.slug,
+            "name": r.name,
+            "status": r.status,
+            "createdAt": r.created_at,
+            "updatedAt": r.updated_at,
+        }
+        for r in results
+    ])
+
+
+@kb_router.delete("/{knowledge_base_id}", status_code=status.HTTP_200_OK)
+async def delete_knowledge_base(
+    knowledge_base_id: str,
+    kb_service: KnowledgeBaseServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Soft-delete (archive) a knowledge base."""
+    result = await kb_service.archive(
+        tenant=tenant,
+        knowledge_base_id=knowledge_base_id,
+    )
+    return success("Knowledge base archived", {
+        "id": result.id,
+        "status": result.status,
+    })

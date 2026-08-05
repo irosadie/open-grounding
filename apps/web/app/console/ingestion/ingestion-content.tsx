@@ -2,11 +2,12 @@
 
 import { Button } from "$/components/button"
 import { EmptyState } from "$/components/empty-state"
-import { Input } from "$/components/input"
+import { KnowledgeBaseSelect } from "$/components/knowledge-base-select"
 import { PanelCard } from "$/components/panel-card"
 import { useRagIngestionComplete } from "$/hooks/transactions/use-rag-ingestion"
 import { useRagIngestionIntake } from "$/hooks/transactions/use-rag-ingestion"
 import { ingestionMimeTypes } from "@open-grounding/schemas"
+import type { KnowledgeBaseResponseProps } from "@open-grounding/types"
 import { FileUp, Upload, X } from "lucide-react"
 import {
   type ChangeEvent,
@@ -41,7 +42,8 @@ export function IngestionContent() {
   const complete = useRagIngestionComplete()
   const sourceFileInputId = useId()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [knowledgeBaseId, setKnowledgeBaseId] = useState("")
+  const [selectedKb, setSelectedKb] =
+    useState<KnowledgeBaseResponseProps | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [formError, setFormError] = useState("")
   const [versions, setVersions] = useState<UploadedVersion[]>([])
@@ -82,8 +84,8 @@ export function IngestionContent() {
 
   const handleUpload = async () => {
     setFormError("")
-    if (!knowledgeBaseId.trim()) {
-      setFormError("Knowledge Base ID wajib diisi.")
+    if (!selectedKb) {
+      setFormError("Pilih knowledge base terlebih dahulu.")
       return
     }
     if (!selectedFile) {
@@ -93,7 +95,7 @@ export function IngestionContent() {
 
     try {
       const intakeResult = await intake.mutateAsync({
-        knowledgeBaseId: knowledgeBaseId.trim(),
+        knowledgeBaseId: selectedKb.id,
         filename: selectedFile.name,
         mimeType: selectedFile.type as (typeof ingestionMimeTypes)[number],
         sizeBytes: selectedFile.size,
@@ -148,14 +150,13 @@ export function IngestionContent() {
         description="Dukung format PDF, Markdown (.md), dan plain-text (.txt)."
       >
         <div className="flex flex-col gap-4">
-          <Input
-            label="Knowledge Base ID"
-            name="knowledgeBaseId"
-            placeholder="contoh: kb-produk-2024"
-            value={knowledgeBaseId}
-            onChange={(event) => setKnowledgeBaseId(event.target.value)}
-            hint="ID unik knowledge base yang sudah dibuat. Gunakan ID yang sama saat bertanya di halaman Retrieval."
+          <KnowledgeBaseSelect
+            value={selectedKb}
+            onChange={setSelectedKb}
+            label="Knowledge Base"
+            hint="Pilih knowledge base tujuan dokumen ini."
             required
+            disabled={isBusy}
           />
 
           {/* Drop zone */}
@@ -231,7 +232,7 @@ export function IngestionContent() {
             intent="primary"
             onClick={handleUpload}
             loading={isBusy}
-            disabled={isBusy || !selectedFile || !knowledgeBaseId.trim()}
+            disabled={isBusy || !selectedFile || !selectedKb}
             leftIcon={<Upload className="h-4 w-4" />}
           >
             {isBusy ? "Mengupload..." : "Upload & Ingest"}

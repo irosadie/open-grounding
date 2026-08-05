@@ -3,6 +3,7 @@
 import { Button } from "$/components/button"
 import { EmptyState } from "$/components/empty-state"
 import { Input } from "$/components/input"
+import { KnowledgeBaseMultiSelect } from "$/components/knowledge-base-multi-select"
 import { PanelCard } from "$/components/panel-card"
 import { useRagFeedback } from "$/hooks/transactions/use-rag-query"
 import { useRagQueryStream } from "$/hooks/transactions/use-rag-query"
@@ -11,8 +12,9 @@ import {
   getRagEvidenceLevelLabel,
   getRagQueryRouteLabel,
 } from "@open-grounding/schemas"
-import { AlertTriangle, MessageSquareText, Send, Star, X } from "lucide-react"
-import { type ChangeEvent, type KeyboardEvent, useId, useState } from "react"
+import type { KnowledgeBaseResponseProps } from "@open-grounding/types"
+import { AlertTriangle, MessageSquareText, Send, Star } from "lucide-react"
+import { type ChangeEvent, useId, useState } from "react"
 
 const EVIDENCE_VARIANT: Record<string, string> = {
   high: "bg-success-100 text-success-700",
@@ -24,8 +26,9 @@ const EVIDENCE_VARIANT: Record<string, string> = {
 export function RetrievalContent() {
   const stream = useRagQueryStream()
   const [message, setMessage] = useState("")
-  const [kbIdInput, setKbIdInput] = useState("")
-  const [kbIds, setKbIds] = useState<string[]>([])
+  const [selectedKbs, setSelectedKbs] = useState<KnowledgeBaseResponseProps[]>(
+    [],
+  )
   const [formError, setFormError] = useState("")
   const [feedbackRating, setFeedbackRating] = useState<number | null>(null)
   const [feedbackHover, setFeedbackHover] = useState<number | null>(null)
@@ -36,57 +39,18 @@ export function RetrievalContent() {
     traceId: stream.traceId ?? "",
   })
 
-  const addKbId = (value: string) => {
-    const trimmed = value.trim()
-    if (trimmed && !kbIds.includes(trimmed)) {
-      setKbIds((prev) => [...prev, trimmed])
-    }
-    setKbIdInput("")
-  }
-
-  const handleKbIdKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter" || event.key === ",") {
-      event.preventDefault()
-      addKbId(kbIdInput)
-    } else if (
-      event.key === "Backspace" &&
-      kbIdInput === "" &&
-      kbIds.length > 0
-    ) {
-      setKbIds((prev) => prev.slice(0, -1))
-    }
-  }
-
-  const removeKbId = (id: string) => {
-    setKbIds((prev) => prev.filter((k) => k !== id))
-  }
-
   const handleSubmit = () => {
     setFormError("")
-
-    // Flush any pending input
-    const pendingIds = kbIdInput.trim() ? [...kbIds, kbIdInput.trim()] : kbIds
-    if (pendingIds.length === 0 && kbIdInput.trim()) {
-      setKbIds([kbIdInput.trim()])
-    }
-
     const trimmedMessage = message.trim()
-    const knowledgeBaseIds = kbIdInput.trim()
-      ? [...kbIds, kbIdInput.trim()]
-      : kbIds
+    const knowledgeBaseIds = selectedKbs.map((kb) => kb.id)
 
     if (!trimmedMessage) {
       setFormError("Pertanyaan wajib diisi.")
       return
     }
     if (knowledgeBaseIds.length === 0) {
-      setFormError("Tambahkan minimal satu Knowledge Base ID.")
+      setFormError("Pilih minimal satu Knowledge Base.")
       return
-    }
-
-    if (kbIdInput.trim()) {
-      setKbIds(knowledgeBaseIds)
-      setKbIdInput("")
     }
 
     void stream.stream({
@@ -130,77 +94,14 @@ export function RetrievalContent() {
         description="Jawaban akan dikutip langsung dari dokumen yang sudah diingestion."
       >
         <div className="flex flex-col gap-4">
-          {/* Tag input for KB IDs */}
-          <div className="flex flex-col gap-1.5">
-            <label
-              htmlFor="kb-id-input"
-              className="text-sm font-medium text-main-700"
-            >
-              Knowledge Base ID <span className="text-danger-500">*</span>
-            </label>
-            <div
-              className={cn(
-                "flex min-h-[42px] flex-wrap items-center gap-1.5 rounded-lg border bg-white px-3 py-2 text-sm transition-colors focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500",
-                kbIds.length > 0 || kbIdInput
-                  ? "border-gray-300"
-                  : "border-gray-300",
-              )}
-              onClick={() => {
-                const input = document.getElementById("kb-id-input")
-                input?.focus()
-              }}
-              onKeyDown={() => {
-                const input = document.getElementById("kb-id-input")
-                input?.focus()
-              }}
-            >
-              {kbIds.map((id) => (
-                <span
-                  key={id}
-                  className="inline-flex items-center gap-1 rounded-md bg-primary-50 px-2 py-0.5 text-xs font-medium text-primary-700"
-                >
-                  {id}
-                  <button
-                    type="button"
-                    onClick={() => removeKbId(id)}
-                    className="rounded hover:text-primary-900"
-                    aria-label={`Hapus ${id}`}
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-              <input
-                id="kb-id-input"
-                type="text"
-                value={kbIdInput}
-                onChange={(e) => setKbIdInput(e.target.value)}
-                onKeyDown={handleKbIdKeyDown}
-                onBlur={() => {
-                  if (kbIdInput.trim()) addKbId(kbIdInput)
-                }}
-                placeholder={
-                  kbIds.length === 0
-                    ? "Ketik ID lalu tekan Enter atau koma"
-                    : "Tambah ID lagi..."
-                }
-                className="min-w-[180px] flex-1 bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400"
-                disabled={isStreaming}
-              />
-            </div>
-            <p className="text-xs text-gray-400">
-              Tekan{" "}
-              <kbd className="rounded border border-gray-200 bg-gray-50 px-1 py-0.5 font-mono text-[10px]">
-                Enter
-              </kbd>{" "}
-              atau{" "}
-              <kbd className="rounded border border-gray-200 bg-gray-50 px-1 py-0.5 font-mono text-[10px]">
-                ,
-              </kbd>{" "}
-              untuk menambah ID. Gunakan ID yang sama seperti saat upload di
-              Ingestion.
-            </p>
-          </div>
+          <KnowledgeBaseMultiSelect
+            value={selectedKbs}
+            onChange={setSelectedKbs}
+            label="Knowledge Bases"
+            required
+            disabled={isStreaming}
+            hint="Pilih satu atau lebih knowledge base sebagai sumber jawaban."
+          />
 
           <div className="flex flex-col gap-1.5">
             <label

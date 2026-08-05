@@ -97,5 +97,26 @@ class RagAnswerFeedbackRequest(BaseModel):
 
     model_config = {
         "extra": "forbid",
-        "json_schema_extra": {"examples": [{"rating": 5, "comment": "The answer cited the relevant policy."}]},
     }
+
+
+# --- Knowledge base schemas --------------------------------------------------
+
+class CreateKnowledgeBaseRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+    model_config = {"extra": "forbid"}
+
+
+class KnowledgeBaseResponse(BaseModel):
+    id: str
+    tenant_id: str
+    slug: str
+    name: str
+    status: str
+    created_at: str
+    updated_at: str
+
+    model_config = {"populate_by_name": True}
+

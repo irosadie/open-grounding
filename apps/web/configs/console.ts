@@ -20,6 +20,12 @@ export const consoleNavItems: ConsoleNavItem[] = [
     description: "Platform summary",
   },
   {
+    label: "Knowledge Bases",
+    href: "/console/knowledge-bases",
+    icon: Database,
+    description: "Manage knowledge bases",
+  },
+  {
     label: "Ingestion",
     href: "/console/ingestion",
     icon: Database,

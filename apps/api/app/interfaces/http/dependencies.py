@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.auth_service import AuthService
 from app.application.ingestion_intake_service import IngestionIntakeService
+from app.application.knowledge_base_service import KnowledgeBaseService
 from app.application.rag_query_admission import RagQueryAdmission
 from app.application.rag_query_service import RagQueryService
 from app.application.rag_trace_service import RagTraceService
@@ -122,3 +123,12 @@ async def get_tenant_context(
 
 
 TenantContextDependency = Annotated[TenantContext, Depends(get_tenant_context)]
+
+
+def get_knowledge_base_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> KnowledgeBaseService:
+    return KnowledgeBaseService(session)
+
+
+KnowledgeBaseServiceDependency = Annotated[KnowledgeBaseService, Depends(get_knowledge_base_service)]

@@ -14,6 +14,11 @@ export const apiRouters = {
     health: "/health",
   },
   rag: {
+    knowledgeBases: {
+      list: "/rag/knowledge-bases",
+      create: "/rag/knowledge-bases",
+      delete: "/rag/knowledge-bases/:id",
+    },
     ingestion: {
       intake: "/rag/ingestion/intake",
       complete: "/rag/ingestion/complete",

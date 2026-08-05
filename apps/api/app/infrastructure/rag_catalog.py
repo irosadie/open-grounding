@@ -352,6 +352,16 @@ class SqlAlchemyKnowledgeBaseRepository:
         row = result.scalar_one_or_none()
         return _to_knowledge_base(row) if row else None
 
+    async def find_by_slug(self, *, tenant_id: str, slug: str) -> KnowledgeBase | None:
+        result = await self._session.execute(
+            select(KnowledgeBaseRecord).where(
+                KnowledgeBaseRecord.tenant_id == tenant_id,
+                KnowledgeBaseRecord.slug == slug,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_knowledge_base(row) if row else None
+
     async def create(self, *, tenant_id: str, slug: str, name: str, status: str) -> KnowledgeBase:
         row = KnowledgeBaseRecord(
             id=str(uuid4()),
@@ -361,6 +371,30 @@ class SqlAlchemyKnowledgeBaseRepository:
             status=KnowledgeBaseStatus(status),
         )
         self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_knowledge_base(row)
+
+    async def list_by_tenant(self, *, tenant_id: str) -> list[KnowledgeBase]:
+        result = await self._session.execute(
+            select(KnowledgeBaseRecord).where(
+                KnowledgeBaseRecord.tenant_id == tenant_id,
+                KnowledgeBaseRecord.status == KnowledgeBaseStatus.ACTIVE,
+            ).order_by(KnowledgeBaseRecord.created_at.desc())
+        )
+        return [_to_knowledge_base(row) for row in result.scalars().all()]
+
+    async def archive(self, *, tenant_id: str, knowledge_base_id: str) -> KnowledgeBase | None:
+        result = await self._session.execute(
+            select(KnowledgeBaseRecord).where(
+                KnowledgeBaseRecord.tenant_id == tenant_id,
+                KnowledgeBaseRecord.id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        row.status = KnowledgeBaseStatus.ARCHIVED
         await self._session.commit()
         await self._session.refresh(row)
         return _to_knowledge_base(row)

@@ -14,6 +14,11 @@ export const queryKeys = {
     health: "systemHealth",
   },
   rag: {
+    knowledgeBases: {
+      list: "ragKnowledgeBasesList",
+      create: "ragKnowledgeBasesCreate",
+      delete: "ragKnowledgeBasesDelete",
+    },
     ingestion: {
       intake: "ragIngestionIntake",
       complete: "ragIngestionComplete",
