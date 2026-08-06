@@ -20,6 +20,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     Uuid,
     select,
 )
@@ -29,6 +30,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.domain.rag.catalog import (
     Chunk,
     ChunkType,
+    DecompositionConfig,
     Document,
     DocumentVersion,
     DocumentVersionLifecycleState,
@@ -541,6 +543,29 @@ class SqlAlchemyDocumentVersionRepository:
         await self._session.commit()
         await self._session.refresh(row)
         return _to_document_version(row)
+
+    async def list_by_knowledge_base(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+    ) -> list[tuple[DocumentVersion, str, str]]:
+        """Return list of (version, document_title, filename) for a KB."""
+        result = await self._session.execute(
+            select(DocumentVersionRecord, DocumentRecord)
+            .join(DocumentRecord, DocumentVersionRecord.document_id == DocumentRecord.id)
+            .where(
+                DocumentVersionRecord.tenant_id == tenant_id,
+                DocumentRecord.knowledge_base_id == knowledge_base_id,
+                DocumentRecord.tenant_id == tenant_id,
+            )
+            .order_by(DocumentVersionRecord.created_at.desc())
+        )
+        rows = result.all()
+        return [
+            (_to_document_version(ver), doc.title or doc.id, doc.id)
+            for ver, doc in rows
+        ]
 
 
 class SqlAlchemyModelProfileRepository:
@@ -1177,3 +1202,422 @@ class SqlAlchemyProviderCredentialRepository:
         row.value_enc = ""
         await self._session.commit()
         return True
+
+
+class DecompositionConfigRecord(Base):
+    __tablename__ = "rag_decomposition_configs"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    knowledge_base_id: Mapped[str] = mapped_column(
+        "knowledge_base_id", Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    model_profile_id: Mapped[str] = mapped_column(
+        "model_profile_id", Uuid(as_uuid=False),
+        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=False,
+    )
+    system_prompt: Mapped[str] = mapped_column(String, nullable=False)
+    user_prompt_template: Mapped[str] = mapped_column(String, nullable=False)
+    max_sub_queries: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    max_depth: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
+    min_complexity_score: Mapped[float] = mapped_column(nullable=False, default=0.6)
+    guardrails_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_decomp_config_tenant_kb"),)
+
+
+def _to_decomposition_config(row: DecompositionConfigRecord) -> DecompositionConfig:
+    return DecompositionConfig(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        knowledge_base_id=row.knowledge_base_id,
+        enabled=row.enabled,
+        model_profile_id=row.model_profile_id,
+        system_prompt=row.system_prompt,
+        user_prompt_template=row.user_prompt_template,
+        max_sub_queries=row.max_sub_queries,
+        max_depth=row.max_depth,
+        min_complexity_score=row.min_complexity_score,
+        guardrails=row.guardrails_json or {},
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+class SqlAlchemyDecompositionConfigRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def find_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> DecompositionConfig | None:
+        result = await self._session.execute(
+            select(DecompositionConfigRecord).where(
+                DecompositionConfigRecord.tenant_id == tenant_id,
+                DecompositionConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_decomposition_config(row) if row else None
+
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        enabled: bool,
+        model_profile_id: str,
+        system_prompt: str,
+        user_prompt_template: str,
+        max_sub_queries: int,
+        max_depth: int,
+        min_complexity_score: float,
+        guardrails: dict[str, object],
+    ) -> DecompositionConfig:
+        result = await self._session.execute(
+            select(DecompositionConfigRecord).where(
+                DecompositionConfigRecord.tenant_id == tenant_id,
+                DecompositionConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = DecompositionConfigRecord(
+                id=str(uuid4()),
+                tenant_id=tenant_id,
+                knowledge_base_id=knowledge_base_id,
+            )
+            self._session.add(row)
+        row.enabled = enabled
+        row.model_profile_id = model_profile_id
+        row.system_prompt = system_prompt
+        row.user_prompt_template = user_prompt_template
+        row.max_sub_queries = max_sub_queries
+        row.max_depth = max_depth
+        row.min_complexity_score = min_complexity_score
+        row.guardrails_json = guardrails
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_decomposition_config(row)
+
+    async def delete(self, *, tenant_id: str, knowledge_base_id: str) -> bool:
+        result = await self._session.execute(
+            select(DecompositionConfigRecord).where(
+                DecompositionConfigRecord.tenant_id == tenant_id,
+                DecompositionConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.commit()
+        return True
+
+
+# --- Memory ORM models -------------------------------------------------------
+
+class MemoryConfigRecord(Base):
+    __tablename__ = "rag_memory_configs"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    knowledge_base_id: Mapped[str] = mapped_column(
+        "knowledge_base_id", Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    summarization_model_profile_id: Mapped[str] = mapped_column(
+        "summarization_model_profile_id", Uuid(as_uuid=False),
+        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=False,
+    )
+    embedding_profile_id: Mapped[str] = mapped_column(
+        "embedding_profile_id", Uuid(as_uuid=False),
+        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=False,
+    )
+    retention_days: Mapped[int] = mapped_column(Integer, default=90, nullable=False)
+    retrieval_top_k: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    min_turns_to_summarize: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    system_prompt: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_memory_config_tenant_kb"),)
+
+
+class MemoryChunkRecord(Base):
+    __tablename__ = "rag_memory_chunks"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    knowledge_base_id: Mapped[str] = mapped_column(
+        "knowledge_base_id", Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column("user_id", Uuid(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    conversation_id: Mapped[str | None] = mapped_column(
+        "conversation_id", Uuid(as_uuid=False),
+        ForeignKey("rag_conversations.id", ondelete="SET NULL"), nullable=True,
+    )
+    summary: Mapped[str] = mapped_column(String, nullable=False)
+    qdrant_point_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    embedding_profile_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    turn_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column("expires_at", DateTime(timezone=False), nullable=False)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
+
+    __table_args__ = (
+        __import__("sqlalchemy").Index("ix_memory_chunks_tenant_kb_user", "tenant_id", "knowledge_base_id", "user_id"),
+        __import__("sqlalchemy").Index("ix_memory_chunks_expires_at", "expires_at"),
+    )
+
+
+# --- Memory entity mappers ---------------------------------------------------
+
+def _to_memory_config(row: MemoryConfigRecord) -> "MemoryConfig":
+    from app.domain.rag.memory import MemoryConfig
+    return MemoryConfig(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        knowledge_base_id=row.knowledge_base_id,
+        enabled=row.enabled,
+        summarization_model_profile_id=row.summarization_model_profile_id,
+        embedding_profile_id=row.embedding_profile_id,
+        retention_days=row.retention_days,
+        retrieval_top_k=row.retrieval_top_k,
+        min_turns_to_summarize=row.min_turns_to_summarize,
+        system_prompt=row.system_prompt,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _to_memory_chunk(row: MemoryChunkRecord) -> "MemoryChunk":
+    from app.domain.rag.memory import MemoryChunk
+    return MemoryChunk(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        knowledge_base_id=row.knowledge_base_id,
+        user_id=row.user_id,
+        conversation_id=row.conversation_id,
+        summary=row.summary,
+        qdrant_point_id=row.qdrant_point_id,
+        embedding_profile_id=row.embedding_profile_id,
+        turn_count=row.turn_count,
+        expires_at=row.expires_at,
+        created_at=row.created_at,
+    )
+
+
+# --- Memory repositories -----------------------------------------------------
+
+class SqlAlchemyMemoryConfigRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def find_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> "MemoryConfig | None":
+        result = await self._session.execute(
+            select(MemoryConfigRecord).where(
+                MemoryConfigRecord.tenant_id == tenant_id,
+                MemoryConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_memory_config(row) if row else None
+
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        enabled: bool,
+        summarization_model_profile_id: str,
+        embedding_profile_id: str,
+        retention_days: int,
+        retrieval_top_k: int,
+        min_turns_to_summarize: int,
+        system_prompt: str,
+    ) -> "MemoryConfig":
+        result = await self._session.execute(
+            select(MemoryConfigRecord).where(
+                MemoryConfigRecord.tenant_id == tenant_id,
+                MemoryConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = MemoryConfigRecord(
+                id=str(uuid4()),
+                tenant_id=tenant_id,
+                knowledge_base_id=knowledge_base_id,
+            )
+            self._session.add(row)
+        row.enabled = enabled
+        row.summarization_model_profile_id = summarization_model_profile_id
+        row.embedding_profile_id = embedding_profile_id
+        row.retention_days = retention_days
+        row.retrieval_top_k = retrieval_top_k
+        row.min_turns_to_summarize = min_turns_to_summarize
+        row.system_prompt = system_prompt
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_memory_config(row)
+
+    async def delete(self, *, tenant_id: str, knowledge_base_id: str) -> bool:
+        result = await self._session.execute(
+            select(MemoryConfigRecord).where(
+                MemoryConfigRecord.tenant_id == tenant_id,
+                MemoryConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.commit()
+        return True
+
+
+class SqlAlchemyMemoryChunkRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def find_by_user_kb(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        user_id: str,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> list["MemoryChunk"]:
+        result = await self._session.execute(
+            select(MemoryChunkRecord)
+            .where(
+                MemoryChunkRecord.tenant_id == tenant_id,
+                MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
+                MemoryChunkRecord.user_id == user_id,
+            )
+            .order_by(MemoryChunkRecord.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return [_to_memory_chunk(row) for row in result.scalars().all()]
+
+    async def count_by_user_kb(self, *, tenant_id: str, knowledge_base_id: str, user_id: str) -> int:
+        from sqlalchemy import func
+        result = await self._session.execute(
+            select(func.count()).select_from(MemoryChunkRecord).where(
+                MemoryChunkRecord.tenant_id == tenant_id,
+                MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
+                MemoryChunkRecord.user_id == user_id,
+            )
+        )
+        return result.scalar_one()
+
+    async def find_expired(self, *, limit: int = 500) -> list["MemoryChunk"]:
+        from datetime import UTC, datetime as dt
+        now = dt.now(UTC).replace(tzinfo=None)
+        result = await self._session.execute(
+            select(MemoryChunkRecord)
+            .where(MemoryChunkRecord.expires_at < now)
+            .limit(limit)
+        )
+        return [_to_memory_chunk(row) for row in result.scalars().all()]
+
+    async def create(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        user_id: str,
+        conversation_id: str,
+        summary: str,
+        qdrant_point_id: str,
+        embedding_profile_id: str,
+        turn_count: int,
+        expires_at: datetime,
+    ) -> "MemoryChunk":
+        row = MemoryChunkRecord(
+            id=str(uuid4()),
+            tenant_id=tenant_id,
+            knowledge_base_id=knowledge_base_id,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            summary=summary,
+            qdrant_point_id=qdrant_point_id,
+            embedding_profile_id=embedding_profile_id,
+            turn_count=turn_count,
+            expires_at=expires_at,
+        )
+        self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_memory_chunk(row)
+
+    async def delete(self, *, tenant_id: str, chunk_id: str, user_id: str) -> bool:
+        result = await self._session.execute(
+            select(MemoryChunkRecord).where(
+                MemoryChunkRecord.tenant_id == tenant_id,
+                MemoryChunkRecord.id == chunk_id,
+                MemoryChunkRecord.user_id == user_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.commit()
+        return True
+
+    async def delete_by_user_kb(self, *, tenant_id: str, knowledge_base_id: str, user_id: str) -> int:
+        from sqlalchemy import delete as sa_delete
+        result = await self._session.execute(
+            sa_delete(MemoryChunkRecord).where(
+                MemoryChunkRecord.tenant_id == tenant_id,
+                MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
+                MemoryChunkRecord.user_id == user_id,
+            )
+        )
+        await self._session.commit()
+        return result.rowcount  # type: ignore[return-value]
+
+    async def delete_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> int:
+        from sqlalchemy import delete as sa_delete
+        result = await self._session.execute(
+            sa_delete(MemoryChunkRecord).where(
+                MemoryChunkRecord.tenant_id == tenant_id,
+                MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        await self._session.commit()
+        return result.rowcount  # type: ignore[return-value]
+
+    async def delete_many(self, *, chunk_ids: list[str]) -> None:
+        from sqlalchemy import delete as sa_delete
+        if not chunk_ids:
+            return
+        await self._session.execute(
+            sa_delete(MemoryChunkRecord).where(MemoryChunkRecord.id.in_(chunk_ids))
+        )
+        await self._session.commit()
+
+    async def is_conversation_summarized(self, *, conversation_id: str) -> bool:
+        result = await self._session.execute(
+            select(MemoryChunkRecord).where(
+                MemoryChunkRecord.conversation_id == conversation_id,
+            ).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def find_by_id(self, *, tenant_id: str, chunk_id: str) -> "MemoryChunk | None":
+        result = await self._session.execute(
+            select(MemoryChunkRecord).where(
+                MemoryChunkRecord.tenant_id == tenant_id,
+                MemoryChunkRecord.id == chunk_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_memory_chunk(row) if row else None

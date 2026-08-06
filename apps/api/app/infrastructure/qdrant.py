@@ -97,7 +97,7 @@ class QdrantVectorStoreAdapter:
         response = await self._client.post(
             f"{self._base_url}/collections/{collection}/points/query",
             headers=self._headers,
-            json={"query": vector, "limit": limit, "filter": filter_value},
+            json={"query": vector, "limit": limit, "filter": filter_value, "with_payload": True},
         )
         response.raise_for_status()
         result = response.json().get("result", {})

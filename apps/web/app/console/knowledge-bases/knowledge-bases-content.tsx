@@ -12,7 +12,8 @@ import {
 import { cn } from "$/utils/cn"
 import { knowledgeBaseCreateSchema } from "@open-grounding/schemas"
 import type { KnowledgeBaseResponseProps } from "@open-grounding/types"
-import { Database, Plus, Trash2 } from "lucide-react"
+import { Brain, Database, History, Plus, Trash2 } from "lucide-react"
+import Link from "next/link"
 import { type ChangeEvent, useState } from "react"
 
 export default function KnowledgeBasesContent() {
@@ -183,6 +184,28 @@ export default function KnowledgeBasesContent() {
                   >
                     {kb.status === "ACTIVE" ? "Aktif" : kb.status}
                   </span>
+                  <Link
+                    href={`/console/knowledge-bases/${kb.id}/decomposition`}
+                  >
+                    <Button
+                      intent="secondary"
+                      size="small"
+                      bordered
+                      leftIcon={<Brain className="h-3.5 w-3.5" />}
+                    >
+                      Decomposition
+                    </Button>
+                  </Link>
+                  <Link href={`/console/knowledge-bases/${kb.id}/memory`}>
+                    <Button
+                      intent="secondary"
+                      size="small"
+                      bordered
+                      leftIcon={<History className="h-3.5 w-3.5" />}
+                    >
+                      Memory
+                    </Button>
+                  </Link>
                   {confirmDeleteId === kb.id ? (
                     <div className="flex items-center gap-1">
                       <Button

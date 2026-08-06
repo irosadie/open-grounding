@@ -55,12 +55,23 @@ class IngestionStatusResponse(BaseModel):
     quality: dict[str, Any] | None = None
 
 
+class DecompositionOverride(BaseModel):
+    enabled: bool | None = Field(default=None, description="Override KB decomposition config for this request")
+    max_sub_queries: int | None = Field(default=None, ge=1, le=5, description="Override max sub-queries for this request")
+
+
+class MemoryOverride(BaseModel):
+    enabled: bool | None = Field(default=None, description="Override memory retrieval for this request")
+
+
 class RagQueryRequest(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=120, description="Optional server-owned conversation identifier")
     message: str = Field(min_length=1, max_length=8_000, description="Question to answer from permitted evidence")
     knowledge_base_ids: list[str] = Field(min_length=1, max_length=20, description="Knowledge bases the caller may select")
     mode: str = Field(default="grounded", pattern="^(grounded)$", description="Only grounded mode is supported")
     stream: bool = Field(default=False, description="Request an SSE response when enabled")
+    decomposition: DecompositionOverride | None = Field(default=None, description="Optional per-request decomposition override")
+    memory: MemoryOverride | None = Field(default=None, description="Optional per-request memory override")
 
     model_config = {
         "extra": "forbid",
@@ -162,3 +173,78 @@ class SetProviderCredentialRequest(BaseModel):
 
     model_config = {"extra": "forbid"}
 
+
+# --- Decomposition config schemas -------------------------------------------
+
+class CreateDecompositionConfigRequest(BaseModel):
+    enabled: bool = Field(default=True)
+    model_profile_id: str = Field(min_length=1, max_length=120)
+    system_prompt: str = Field(min_length=1)
+    user_prompt_template: str = Field(min_length=1)
+    max_sub_queries: int = Field(default=3, ge=1, le=5)
+    max_depth: int = Field(default=2, ge=1, le=3)
+    min_complexity_score: float = Field(default=0.6, ge=0.0, le=1.0)
+    guardrails: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"extra": "forbid"}
+
+
+class DecompositionConfigResponse(BaseModel):
+    id: str
+    knowledge_base_id: str
+    enabled: bool
+    model_profile_id: str
+    system_prompt: str
+    user_prompt_template: str
+    max_sub_queries: int
+    max_depth: int
+    min_complexity_score: float
+    guardrails: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+
+# --- Memory config schemas ---------------------------------------------------
+
+class CreateMemoryConfigRequest(BaseModel):
+    enabled: bool = Field(default=False)
+    summarization_model_profile_id: str = Field(min_length=1, max_length=120)
+    embedding_profile_id: str = Field(min_length=1, max_length=120)
+    retention_days: int = Field(default=90, ge=1, le=365)
+    retrieval_top_k: int = Field(default=5, ge=1, le=20)
+    min_turns_to_summarize: int = Field(default=3, ge=1, le=20)
+    system_prompt: str = Field(min_length=1)
+
+    model_config = {"extra": "forbid"}
+
+
+class MemoryConfigResponse(BaseModel):
+    id: str
+    knowledge_base_id: str
+    enabled: bool
+    summarization_model_profile_id: str
+    embedding_profile_id: str
+    retention_days: int
+    retrieval_top_k: int
+    min_turns_to_summarize: int
+    system_prompt: str
+    created_at: str
+    updated_at: str
+
+
+class MemoryChunkResponse(BaseModel):
+    id: str
+    knowledge_base_id: str
+    user_id: str
+    conversation_id: str | None
+    summary: str
+    turn_count: int
+    expires_at: str
+    created_at: str
+
+
+class MemoryChunkListResponse(BaseModel):
+    items: list[MemoryChunkResponse]
+    total: int
+    page: int
+    page_size: int

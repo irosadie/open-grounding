@@ -107,12 +107,19 @@ async def test_query_persists_bounded_retrieval_and_validation_trace_outcomes() 
     ).query(tenant=tenant, message="question", knowledge_base_ids=("kb",), conversation_id=None)
 
     assert trace_details.retrieval_summary == {
-        "authorizedKnowledgeBaseCount": 0,
-        "activeGenerationCount": 0,
-        "retrievalExecuted": False,
+        "route": "abstain",
         "reason": "No requested knowledge base is available to this tenant.",
+        "decomposition": {
+            "triggered": False,
+            "complexity_score": 0.0,
+            "reason": "not_configured",
+        },
+        "memory": {
+            "triggered": False,
+            "chunks_retrieved": 0,
+        },
     }
-    assert trace_details.validation_outcome == {"release": "safe_abstention", "validationExecuted": False}
+    assert trace_details.validation_outcome == {"release": "abstain", "validationExecuted": False}
 
 
 def test_query_admission_enforces_payload_rate_and_concurrency_limits() -> None:

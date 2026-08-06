@@ -18,6 +18,15 @@ export const apiRouters = {
       list: "/rag/knowledge-bases",
       create: "/rag/knowledge-bases",
       delete: "/rag/knowledge-bases/:id",
+      decomposition: "/rag/knowledge-bases/:id/decomposition",
+      decompositionDefaults: "/rag/knowledge-bases/:id/decomposition/defaults",
+      memoryConfig: "/rag/knowledge-bases/:id/memory-config",
+      memoryConfigDefaults: "/rag/knowledge-bases/:id/memory-config/defaults",
+    },
+    memory: {
+      list: "/rag/memory",
+      clear: "/rag/memory",
+      deleteChunk: "/rag/memory/:chunkId",
     },
     modelProfiles: {
       list: "/rag/model-profiles",
@@ -39,6 +48,7 @@ export const apiRouters = {
       complete: "/rag/ingestion/complete",
       status: "/rag/ingestion/status/:documentVersionId",
       delete: "/rag/ingestion/:documentVersionId",
+      documents: "/rag/ingestion/documents",
     },
     query: {
       ask: "/rag/query",

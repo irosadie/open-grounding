@@ -1,10 +1,9 @@
 "use client"
 
-import { authConfig } from "$/configs/auth"
 import type { RagCitationResponse } from "@open-grounding/types"
 import { useCallback, useRef, useState } from "react"
 
-const STREAM_BASE = `${authConfig.proxyApiBasePath}/stream`
+const STREAM_BASE = "/api/stream"
 
 export type StreamState = "idle" | "streaming" | "completed" | "failed"
 

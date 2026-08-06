@@ -1,7 +1,7 @@
 [project]
 name = "open-grounding-api"
 version = "0.1.0"
-description = "FastAPI service for vibecoding-starter"
+description = "FastAPI service for open-grounding"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.15,<2",
@@ -22,6 +22,8 @@ dependencies = [
   "redis[asyncio]>=8.1.0",
   "aioboto3>=15.5.0",
   "cryptography>=50.0.0",
+  "python-multipart>=0.0.32",
+  "jinja2>=3.1.6",
 ]
 
 [project.optional-dependencies]

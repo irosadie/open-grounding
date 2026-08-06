@@ -20,6 +20,10 @@ class QueryServiceStub:
         message: str,
         knowledge_base_ids: tuple[str, ...],
         conversation_id: str | None,
+        decomposition_enabled: bool | None = None,
+        decomposition_max_sub_queries: int | None = None,
+        memory_enabled: bool | None = None,
+        session: object = None,
     ) -> dict[str, object]:
         self.calls.append(
             {
@@ -36,6 +40,8 @@ class QueryServiceStub:
             "citations": [],
             "limitations": ["No requested knowledge base is available to this tenant."],
             "traceId": str(uuid4()),
+            "decomposition": None,
+            "memory": None,
         }
 
 

@@ -29,7 +29,23 @@ class IndexProfilesStub:
         from app.domain.rag.profiles import IndexProfile
 
         self.activated = (tenant_id, profile_id)
-        return IndexProfile(profile_id, "embedding-1", None, "rag", 768, "cosine", "2", is_active=True)
+        return IndexProfile(
+            id=profile_id,
+            tenant_id=tenant_id,
+            name="test-profile",
+            embedding_profile_id="embedding-1",
+            sparse_profile_id=None,
+            reranker_profile_id=None,
+            collection="rag",
+            dimensions=768,
+            distance_metric="cosine",
+            chunking_strategy="RECURSIVE",
+            chunk_size_tokens=400,
+            chunk_overlap_tokens=50,
+            parent_chunk_size=1500,
+            version="2",
+            is_active=True,
+        )
 
 
 def _tenant() -> TenantContext:

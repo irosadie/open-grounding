@@ -32,6 +32,8 @@ def gate_evidence(*, candidate_count: int, independent_source_count: int, top_sc
         return EvidenceDecision(EvidenceLevel.HIGH, False, QueryRoute.GROUNDED)
     if top_score >= 0.5:
         return EvidenceDecision(EvidenceLevel.MEDIUM, not retry_attempted, QueryRoute.CLARIFY if retry_attempted else QueryRoute.GROUNDED)
+    if top_score >= 0.25:
+        return EvidenceDecision(EvidenceLevel.LOW, not retry_attempted, QueryRoute.GROUNDED)
     return EvidenceDecision(EvidenceLevel.LOW, False, QueryRoute.CLARIFY)
 
 

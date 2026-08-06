@@ -428,6 +428,77 @@
         }
       }
     },
+    "/rag/ingestion/upload/{document_version_id}": {
+      "put": {
+        "tags": [
+          "RAG Ingestion"
+        ],
+        "summary": "Upload Document",
+        "description": "Upload document file to object store.",
+        "operationId": "upload_document_rag_ingestion_upload__document_version_id__put",
+        "parameters": [
+          {
+            "name": "document_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Document Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_document_rag_ingestion_upload__document_version_id__put"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upload Document Rag Ingestion Upload  Document Version Id  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/rag/ingestion/complete": {
       "post": {
         "tags": [
@@ -473,6 +544,67 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Complete Intake Rag Ingestion Complete Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/ingestion/documents": {
+      "get": {
+        "tags": [
+          "RAG Ingestion"
+        ],
+        "summary": "List Documents",
+        "description": "List document versions for a knowledge base.",
+        "operationId": "list_documents_rag_ingestion_documents_get",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Documents Rag Ingestion Documents Get"
                 }
               }
             }
@@ -967,6 +1099,256 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Delete Knowledge Base Rag Knowledge Bases  Knowledge Base Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/knowledge-bases/{knowledge_base_id}/decomposition": {
+      "post": {
+        "tags": [
+          "Knowledge Bases"
+        ],
+        "summary": "Upsert Decomposition Config",
+        "description": "Create or replace decomposition config for a knowledge base.",
+        "operationId": "upsert_decomposition_config_rag_knowledge_bases__knowledge_base_id__decomposition_post",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDecompositionConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upsert Decomposition Config Rag Knowledge Bases  Knowledge Base Id  Decomposition Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Knowledge Bases"
+        ],
+        "summary": "Get Decomposition Config",
+        "description": "Get decomposition config for a knowledge base.",
+        "operationId": "get_decomposition_config_rag_knowledge_bases__knowledge_base_id__decomposition_get",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Decomposition Config Rag Knowledge Bases  Knowledge Base Id  Decomposition Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Knowledge Bases"
+        ],
+        "summary": "Delete Decomposition Config",
+        "description": "Delete decomposition config for a knowledge base.",
+        "operationId": "delete_decomposition_config_rag_knowledge_bases__knowledge_base_id__decomposition_delete",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Decomposition Config Rag Knowledge Bases  Knowledge Base Id  Decomposition Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/knowledge-bases/{knowledge_base_id}/decomposition/defaults": {
+      "get": {
+        "tags": [
+          "Knowledge Bases"
+        ],
+        "summary": "Get Decomposition Defaults",
+        "description": "Get default decomposition config values.",
+        "operationId": "get_decomposition_defaults_rag_knowledge_bases__knowledge_base_id__decomposition_defaults_get",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Decomposition Defaults Rag Knowledge Bases  Knowledge Base Id  Decomposition Defaults Get"
                 }
               }
             }
@@ -1505,10 +1887,482 @@
           }
         }
       }
+    },
+    "/rag/knowledge-bases/{knowledge_base_id}/memory-config": {
+      "post": {
+        "tags": [
+          "Memory Config"
+        ],
+        "summary": "Upsert Memory Config",
+        "operationId": "upsert_memory_config_rag_knowledge_bases__knowledge_base_id__memory_config_post",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMemoryConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upsert Memory Config Rag Knowledge Bases  Knowledge Base Id  Memory Config Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Memory Config"
+        ],
+        "summary": "Get Memory Config",
+        "operationId": "get_memory_config_rag_knowledge_bases__knowledge_base_id__memory_config_get",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Memory Config Rag Knowledge Bases  Knowledge Base Id  Memory Config Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Memory Config"
+        ],
+        "summary": "Delete Memory Config",
+        "operationId": "delete_memory_config_rag_knowledge_bases__knowledge_base_id__memory_config_delete",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Memory Config Rag Knowledge Bases  Knowledge Base Id  Memory Config Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/knowledge-bases/{knowledge_base_id}/memory-config/defaults": {
+      "get": {
+        "tags": [
+          "Memory Config"
+        ],
+        "summary": "Get Memory Config Defaults",
+        "operationId": "get_memory_config_defaults_rag_knowledge_bases__knowledge_base_id__memory_config_defaults_get",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Memory Config Defaults Rag Knowledge Bases  Knowledge Base Id  Memory Config Defaults Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/memory": {
+      "get": {
+        "tags": [
+          "User Memory"
+        ],
+        "summary": "List Memory Chunks",
+        "operationId": "list_memory_chunks_rag_memory_get",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Memory Chunks Rag Memory Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "User Memory"
+        ],
+        "summary": "Clear Memory",
+        "operationId": "clear_memory_rag_memory_delete",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Clear Memory Rag Memory Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/memory/{chunk_id}": {
+      "delete": {
+        "tags": [
+          "User Memory"
+        ],
+        "summary": "Delete Memory Chunk",
+        "operationId": "delete_memory_chunk_rag_memory__chunk_id__delete",
+        "parameters": [
+          {
+            "name": "chunk_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Chunk Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Memory Chunk Rag Memory  Chunk Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "Body_upload_document_rag_ingestion_upload__document_version_id__put": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_document_rag_ingestion_upload__document_version_id__put"
+      },
       "CompleteIntakeRequest": {
         "properties": {
           "document_version_id": {
@@ -1530,6 +2384,65 @@
           "content_checksum"
         ],
         "title": "CompleteIntakeRequest"
+      },
+      "CreateDecompositionConfigRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "model_profile_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Model Profile Id"
+          },
+          "system_prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "System Prompt"
+          },
+          "user_prompt_template": {
+            "type": "string",
+            "minLength": 1,
+            "title": "User Prompt Template"
+          },
+          "max_sub_queries": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Max Sub Queries",
+            "default": 3
+          },
+          "max_depth": {
+            "type": "integer",
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Max Depth",
+            "default": 2
+          },
+          "min_complexity_score": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Min Complexity Score",
+            "default": 0.6
+          },
+          "guardrails": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Guardrails"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model_profile_id",
+          "system_prompt",
+          "user_prompt_template"
+        ],
+        "title": "CreateDecompositionConfigRequest"
       },
       "CreateIndexProfileRequest": {
         "properties": {
@@ -1704,6 +2617,61 @@
         ],
         "title": "CreateKnowledgeBaseRequest"
       },
+      "CreateMemoryConfigRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": false
+          },
+          "summarization_model_profile_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Summarization Model Profile Id"
+          },
+          "embedding_profile_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Embedding Profile Id"
+          },
+          "retention_days": {
+            "type": "integer",
+            "maximum": 365.0,
+            "minimum": 1.0,
+            "title": "Retention Days",
+            "default": 90
+          },
+          "retrieval_top_k": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Retrieval Top K",
+            "default": 5
+          },
+          "min_turns_to_summarize": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Min Turns To Summarize",
+            "default": 3
+          },
+          "system_prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "System Prompt"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "summarization_model_profile_id",
+          "embedding_profile_id",
+          "system_prompt"
+        ],
+        "title": "CreateMemoryConfigRequest"
+      },
       "CreateModelProfileRequest": {
         "properties": {
           "name": {
@@ -1769,6 +2737,38 @@
         ],
         "title": "CreateModelProfileRequest"
       },
+      "DecompositionOverride": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled",
+            "description": "Override KB decomposition config for this request"
+          },
+          "max_sub_queries": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 5.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Sub Queries",
+            "description": "Override max sub-queries for this request"
+          }
+        },
+        "type": "object",
+        "title": "DecompositionOverride"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1803,6 +2803,24 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "MemoryOverride": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled",
+            "description": "Override memory retrieval for this request"
+          }
+        },
+        "type": "object",
+        "title": "MemoryOverride"
       },
       "RagAnswerFeedbackRequest": {
         "properties": {
@@ -1882,6 +2900,28 @@
             "title": "Stream",
             "description": "Request an SSE response when enabled",
             "default": false
+          },
+          "decomposition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecompositionOverride"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional per-request decomposition override"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryOverride"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional per-request memory override"
           }
         },
         "additionalProperties": false,

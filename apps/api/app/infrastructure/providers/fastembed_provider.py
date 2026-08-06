@@ -39,6 +39,23 @@ class FastEmbedProvider:
         embeddings = list(model.embed(texts))
         return [list(map(float, e)) for e in embeddings]
 
+    async def encode_sparse(self, texts: list[str]) -> list[dict[str, object]]:
+        """Return sparse representations (SPLADE-style indices/values)."""
+        try:
+            from fastembed import SparseTextEmbedding
+        except ImportError as e:
+            raise ValueError("fastembed sparse support unavailable") from e
+        model = SparseTextEmbedding(model_name="prithivida/Splade_PP_COO_1")
+        results = []
+        for sparse in list(model.embed(texts)):
+            results.append(
+                {
+                    "indices": [int(i) for i in sparse.indices],
+                    "values": [float(v) for v in sparse.values],
+                }
+            )
+        return results
+
     async def health(self) -> bool:
         try:
             self._get_model()

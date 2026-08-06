@@ -1,4 +1,5 @@
 import {
+  Brain,
   Cpu,
   Database,
   KeyRound,
@@ -7,6 +8,7 @@ import {
   MessageSquareText,
   Settings,
   Upload,
+  Wrench,
 } from "lucide-react"
 
 export type ConsoleNavItem = {
@@ -43,6 +45,12 @@ export const consoleNavItems: ConsoleNavItem[] = [
     description: "Ask grounded questions",
   },
   {
+    label: "Memory",
+    href: "/console/memory",
+    icon: Brain,
+    description: "Manage your conversation memory",
+  },
+  {
     label: "Settings",
     href: "/console/settings",
     icon: Settings,
@@ -67,6 +75,13 @@ export const consoleNavItems: ConsoleNavItem[] = [
     href: "/console/settings/providers",
     icon: KeyRound,
     description: "API keys and provider credentials",
+    indent: true,
+  },
+  {
+    label: "Tools",
+    href: "/console/settings/tools",
+    icon: Wrench,
+    description: "Live tool registry and permissions",
     indent: true,
   },
 ]

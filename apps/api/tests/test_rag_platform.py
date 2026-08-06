@@ -85,17 +85,35 @@ def test_query_candidate_budgets_must_be_ordered() -> None:
 
 
 def _embedding_profile(pid: str = "emb-1", dims: int = 768) -> ModelProfile:
-    return ModelProfile(id=pid, profile_kind="embedding", provider="local", model="bge", dimensions=dims, version="1")
+    return ModelProfile(
+        id=pid,
+        tenant_id="tenant-1",
+        name="test-embedding",
+        profile_kind="embedding",
+        provider="local",
+        model="bge",
+        modality="TEXT",
+        dimensions=dims,
+        config_json=None,
+        version="1",
+    )
 
 
 def _index_profile(eid: str = "emb-1", dims: int = 768) -> IndexProfile:
     return IndexProfile(
         id="idx-1",
+        tenant_id="tenant-1",
+        name="test-profile",
         embedding_profile_id=eid,
         sparse_profile_id=None,
+        reranker_profile_id=None,
         collection="rag",
         dimensions=dims,
         distance_metric=DistanceMetric.COSINE,
+        chunking_strategy="RECURSIVE",
+        chunk_size_tokens=400,
+        chunk_overlap_tokens=50,
+        parent_chunk_size=1500,
         version="1",
     )
 
@@ -113,7 +131,18 @@ def test_index_profile_rejects_dimension_mismatch() -> None:
 
 
 def test_index_profile_rejects_missing_embedding_dimensions() -> None:
-    emb = ModelProfile(id="emb-1", profile_kind="embedding", provider="local", model="bge", dimensions=None, version="1")
+    emb = ModelProfile(
+        id="emb-1",
+        tenant_id="tenant-1",
+        name="test-embedding",
+        profile_kind="embedding",
+        provider="local",
+        model="bge",
+        modality="TEXT",
+        dimensions=None,
+        config_json=None,
+        version="1",
+    )
     result = validate_index_profile_compatibility(index=_index_profile(), embedding=emb)
     assert not result.is_compatible
     assert "dimensions" in (result.reason or "").lower()

@@ -18,6 +18,15 @@ export const queryKeys = {
       list: "ragKnowledgeBasesList",
       create: "ragKnowledgeBasesCreate",
       delete: "ragKnowledgeBasesDelete",
+      decomposition: "ragKnowledgeBasesDecomposition",
+      decompositionDefaults: "ragKnowledgeBasesDecompositionDefaults",
+      memoryConfig: "ragKnowledgeBasesMemoryConfig",
+      memoryConfigDefaults: "ragKnowledgeBasesMemoryConfigDefaults",
+    },
+    memory: {
+      list: "ragMemoryList",
+      clear: "ragMemoryClear",
+      deleteChunk: "ragMemoryDeleteChunk",
     },
     modelProfiles: {
       list: "ragModelProfilesList",
@@ -39,6 +48,7 @@ export const queryKeys = {
       complete: "ragIngestionComplete",
       status: "ragIngestionStatus",
       delete: "ragIngestionDelete",
+      documents: "ragIngestionDocuments",
     },
     query: {
       ask: "ragQueryAsk",

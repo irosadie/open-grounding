@@ -5,10 +5,14 @@ from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.auth_service import AuthService
+from app.application.memory_config_service import MemoryConfigService
+from app.application.decomposition_config_service import DecompositionConfigService
 from app.application.ingestion_intake_service import IngestionIntakeService
 from app.application.knowledge_base_service import KnowledgeBaseService
 from app.application.profile_service import IndexProfileService, ModelProfileService
 from app.application.provider_credential_service import ProviderCredentialService
+from app.application.rag_generation import RagGenerationService
+from app.application.rag_hybrid_retrieval import RagHybridRetrievalService
 from app.application.rag_query_admission import RagQueryAdmission
 from app.application.rag_query_service import RagQueryService
 from app.application.rag_trace_service import RagTraceService
@@ -18,8 +22,11 @@ from app.domain.errors import DomainError
 from app.domain.models import UserRole
 from app.domain.tenant_context import TenantContext
 from app.infrastructure.database import SqlAlchemyAuthRepository, SqlAlchemyTenantRepository, get_session
+from app.infrastructure.embedding_adapter import ProfileSparseEncoderAdapter, ProviderEmbeddingAdapter
+from app.infrastructure.generation_adapter import LLMGenerationAdapter
+from app.infrastructure.qdrant import QdrantVectorStoreAdapter
 from app.infrastructure.rag_answer_trace import SqlAlchemyAnswerFeedbackRepository, SqlAlchemyAnswerRunRepository, SqlAlchemyAnswerTraceDetailRepository
-from app.infrastructure.rag_catalog import SqlAlchemyIndexGenerationRepository, SqlAlchemyKnowledgeBaseRepository
+from app.infrastructure.rag_catalog import SqlAlchemyDecompositionConfigRepository, SqlAlchemyIndexGenerationRepository, SqlAlchemyIndexProfileRepository, SqlAlchemyKnowledgeBaseRepository
 from app.infrastructure.rag_conversations import SqlAlchemyConversationHistoryRepository
 
 
@@ -66,7 +73,28 @@ def get_rag_query_service(
         SqlAlchemyConversationHistoryRepository(session),
         SqlAlchemyIndexGenerationRepository(session),
         SqlAlchemyAnswerTraceDetailRepository(session),
+        SqlAlchemyDecompositionConfigRepository(session),
+        SqlAlchemyIndexProfileRepository(session),
+        _retrieval_service(settings),
+        _generation_service(settings),
     )
+
+
+def _retrieval_service(settings: Settings) -> RagHybridRetrievalService:
+    import httpx
+
+    client = httpx.AsyncClient(timeout=30.0)
+    qdrant = QdrantVectorStoreAdapter(settings, client)
+    return RagHybridRetrievalService(
+        settings,
+        ProviderEmbeddingAdapter(settings),
+        ProfileSparseEncoderAdapter(settings),
+        qdrant,
+    )
+
+
+def _generation_service(settings: Settings) -> RagGenerationService:
+    return RagGenerationService(settings, LLMGenerationAdapter(settings))
 
 
 def get_rag_trace_service(
@@ -160,3 +188,25 @@ def get_provider_credential_service(
 
 
 ProviderCredentialServiceDependency = Annotated[ProviderCredentialService, Depends(get_provider_credential_service)]
+
+
+def get_decomposition_config_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DecompositionConfigService:
+    return DecompositionConfigService(session, settings)
+
+
+DecompositionConfigServiceDependency = Annotated[DecompositionConfigService, Depends(get_decomposition_config_service)]
+
+
+def get_memory_config_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> MemoryConfigService:
+    return MemoryConfigService(session, settings)
+
+
+MemoryConfigServiceDependency = Annotated[MemoryConfigService, Depends(get_memory_config_service)]
+
+SessionDependency = Annotated[AsyncSession, Depends(get_session)]

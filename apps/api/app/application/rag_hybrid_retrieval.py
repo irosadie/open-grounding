@@ -1,4 +1,8 @@
-"""Parallel dense/sparse retrieval with one immutable policy scope."""
+"""Parallel dense/sparse retrieval with one immutable policy scope.
+
+Sparse search is optional: if no sparse profile id is provided, only dense
+search runs. Callers resolve profile ids from the active index profile.
+"""
 
 import asyncio
 
@@ -28,36 +32,39 @@ class RagHybridRetrievalService:
         collection: str,
         knowledge_base_ids: tuple[str, ...],
         active_generation_ids: tuple[str, ...],
+        embedding_profile_id: str,
+        sparse_profile_id: str | None = None,
     ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-        embedding_profile_id = self._required_profile_id(self._settings.rag_query_embedding_profile_id, "embedding")
-        sparse_profile_id = self._required_profile_id(self._settings.rag_query_sparse_profile_id, "sparse")
-        dense_vectors, sparse_vectors = await asyncio.gather(
-            self._embeddings.embed(tenant=tenant, texts=[query], model_profile_id=embedding_profile_id),
-            self._sparse_encoder.encode(tenant=tenant, texts=[query], sparse_profile_id=sparse_profile_id),
+        """Return (dense_results, sparse_results). Sparse results empty when no sparse profile."""
+        dense_vectors = await self._embeddings.embed(
+            tenant=tenant, texts=[query], model_profile_id=embedding_profile_id
         )
-        if len(dense_vectors) != 1 or len(sparse_vectors) != 1:
-            raise ValueError("Query representation adapters must return exactly one vector")
-        return await asyncio.gather(
-            self._vector_store.search_permitted(
-                tenant=tenant,
-                collection=collection,
-                vector=dense_vectors[0],
-                limit=self._settings.rag_retrieval_dense_candidates,
-                knowledge_base_ids=knowledge_base_ids,
-                active_generation_ids=active_generation_ids,
-            ),
-            self._vector_store.search_sparse_permitted(
-                tenant=tenant,
-                collection=collection,
-                vector=sparse_vectors[0],
-                limit=self._settings.rag_retrieval_sparse_candidates,
-                knowledge_base_ids=knowledge_base_ids,
-                active_generation_ids=active_generation_ids,
-            ),
+        if len(dense_vectors) != 1:
+            raise ValueError("Query embedding adapter must return exactly one vector")
+
+        dense_task = self._vector_store.search_permitted(
+            tenant=tenant,
+            collection=collection,
+            vector=dense_vectors[0],
+            limit=self._settings.rag_retrieval_dense_candidates,
+            knowledge_base_ids=knowledge_base_ids,
+            active_generation_ids=active_generation_ids,
         )
 
-    @staticmethod
-    def _required_profile_id(profile_id: str | None, profile_kind: str) -> str:
-        if not profile_id:
-            raise ValueError(f"Active {profile_kind} profile is required for retrieval")
-        return profile_id
+        if not sparse_profile_id:
+            return (await dense_task, [])
+
+        sparse_vectors = await self._sparse_encoder.encode(
+            tenant=tenant, texts=[query], sparse_profile_id=sparse_profile_id
+        )
+        if len(sparse_vectors) != 1:
+            raise ValueError("Query sparse encoder must return exactly one sparse vector")
+        sparse_results = await self._vector_store.search_sparse_permitted(
+            tenant=tenant,
+            collection=collection,
+            vector=sparse_vectors[0],
+            limit=self._settings.rag_retrieval_sparse_candidates,
+            knowledge_base_ids=knowledge_base_ids,
+            active_generation_ids=active_generation_ids,
+        )
+        return (await dense_task, sparse_results)

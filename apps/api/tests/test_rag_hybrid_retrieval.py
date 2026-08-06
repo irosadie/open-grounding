@@ -58,11 +58,15 @@ class VectorStoreStub:
 @pytest.mark.asyncio
 async def test_hybrid_retrieval_uses_identical_policy_scope_for_dense_and_sparse() -> None:
     tenant = TenantContext(tenant_id=str(uuid4()), membership_id=str(uuid4()), user_id=str(uuid4()), role=UserRole.USER)
-    settings = Settings(_env_file=None, rag_query_embedding_profile_id="embedding-v1", rag_query_sparse_profile_id="sparse-v1")
+    settings = Settings(_env_file=None)
     vector_store = VectorStoreStub()
     service = RagHybridRetrievalService(settings, EmbeddingsStub(), SparseStub(), vector_store)
 
-    dense, sparse = await service.retrieve(tenant=tenant, query="question", collection="rag", knowledge_base_ids=("kb-1",), active_generation_ids=("generation-1",))
+    dense, sparse = await service.retrieve(
+        tenant=tenant, query="question", collection="rag",
+        knowledge_base_ids=("kb-1",), active_generation_ids=("generation-1",),
+        embedding_profile_id="embedding-v1", sparse_profile_id="sparse-v1",
+    )
 
     assert dense == [{"id": "dense"}]
     assert sparse == [{"id": "sparse"}]
@@ -70,9 +74,18 @@ async def test_hybrid_retrieval_uses_identical_policy_scope_for_dense_and_sparse
 
 
 @pytest.mark.asyncio
-async def test_hybrid_retrieval_requires_active_profile_ids() -> None:
+async def test_hybrid_retrieval_without_sparse_returns_only_dense() -> None:
     tenant = TenantContext(tenant_id=str(uuid4()), membership_id=str(uuid4()), user_id=str(uuid4()), role=UserRole.USER)
-    service = RagHybridRetrievalService(Settings(_env_file=None), EmbeddingsStub(), SparseStub(), VectorStoreStub())
+    settings = Settings(_env_file=None)
+    vector_store = VectorStoreStub()
+    service = RagHybridRetrievalService(settings, EmbeddingsStub(), SparseStub(), vector_store)
 
-    with pytest.raises(ValueError, match="embedding profile"):
-        await service.retrieve(tenant=tenant, query="question", collection="rag", knowledge_base_ids=("kb-1",), active_generation_ids=("generation-1",))
+    dense, sparse = await service.retrieve(
+        tenant=tenant, query="question", collection="rag",
+        knowledge_base_ids=("kb-1",), active_generation_ids=("generation-1",),
+        embedding_profile_id="embedding-v1", sparse_profile_id=None,
+    )
+
+    assert dense == [{"id": "dense"}]
+    assert sparse == []
+    assert len(vector_store.scopes) == 1

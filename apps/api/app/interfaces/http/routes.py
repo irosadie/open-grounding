@@ -2,29 +2,36 @@ import json
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Request, UploadFile, File, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.rag_query_service import RagQueryService
 from app.core.security import decode_refresh_token
 from app.core.settings import Settings, get_settings
+from app.infrastructure.database import get_session
 from app.interfaces.http.dependencies import (
     AuthContextDependency,
     AuthServiceDependency,
+    DecompositionConfigServiceDependency,
     IndexProfileServiceDependency,
     IngestionServiceDependency,
     KnowledgeBaseServiceDependency,
+    MemoryConfigServiceDependency,
     ModelProfileServiceDependency,
     ProviderCredentialServiceDependency,
     RagQueryServiceDependency,
     RagTraceServiceDependency,
+    SessionDependency,
     TenantContextDependency,
 )
 from app.interfaces.http.schemas import (
     CompleteIntakeRequest,
+    CreateDecompositionConfigRequest,
     CreateIndexProfileRequest,
     CreateIntakeRequest,
     CreateKnowledgeBaseRequest,
+    CreateMemoryConfigRequest,
     CreateModelProfileRequest,
     LoginRequest,
     RagAnswerFeedbackRequest,
@@ -171,6 +178,45 @@ async def create_intake(
     )
 
 
+@rag_router.put("/ingestion/upload/{document_version_id}", status_code=status.HTTP_200_OK)
+async def upload_document(
+    document_version_id: str,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+    settings: Annotated[Settings, Depends(get_settings)],
+    file: UploadFile = File(...),
+) -> dict[str, object]:
+    """Upload document file to object store."""
+    import aioboto3  # type: ignore
+
+    version = await service._version_repo.find_by_id(
+        tenant_id=tenant.tenant_id,
+        version_id=document_version_id,
+    )
+    if version is None:
+        from app.domain.errors import DomainError
+        raise DomainError("VERSION_NOT_FOUND", "Document version not found", 404)
+
+    content = await file.read()
+    bucket = settings.object_store_bucket
+    s3_session = aioboto3.Session()
+    async with s3_session.client(
+        "s3",
+        endpoint_url=settings.object_store_endpoint,
+        aws_access_key_id=settings.object_store_access_key,
+        aws_secret_access_key=settings.object_store_secret_key,
+        region_name="us-east-1",
+    ) as s3:
+        await s3.put_object(
+            Bucket=bucket,
+            Key=version.object_key_raw,
+            Body=content,
+            ContentType=file.content_type or "application/octet-stream",
+        )
+
+    return success("File uploaded", {"documentVersionId": document_version_id})
+
+
 @rag_router.post("/ingestion/complete")
 async def complete_intake(
     payload: CompleteIntakeRequest,
@@ -190,6 +236,34 @@ async def complete_intake(
             "lifecycleState": result.lifecycle_state,
             "enqueued": result.enqueued,
         },
+    )
+
+
+@rag_router.get("/ingestion/documents")
+async def list_documents(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    """List document versions for a knowledge base."""
+    rows = await service._version_repo.list_by_knowledge_base(
+        tenant_id=tenant.tenant_id,
+        knowledge_base_id=knowledge_base_id,
+    )
+    return success(
+        "Documents loaded",
+        [
+            {
+                "documentVersionId": ver.id,
+                "documentId": doc_id,
+                "title": title,
+                "lifecycleState": ver.lifecycle_state.value,
+                "mimeType": ver.mime_type,
+                "sizeBytes": ver.size_bytes,
+                "createdAt": ver.created_at.isoformat() if ver.created_at else None,
+            }
+            for ver, title, doc_id in rows
+        ],
     )
 
 
@@ -228,7 +302,11 @@ async def query_rag(
     payload: RagQueryRequest,
     tenant: TenantContextDependency,
     service: RagQueryServiceDependency,
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, object] | StreamingResponse:
+    decomposition_enabled = payload.decomposition.enabled if payload.decomposition else None
+    decomposition_max_sub_queries = payload.decomposition.max_sub_queries if payload.decomposition else None
+    memory_enabled = payload.memory.enabled if payload.memory else None
     if payload.stream:
         return StreamingResponse(
             _stream_query(
@@ -237,6 +315,10 @@ async def query_rag(
                 message=payload.message,
                 knowledge_base_ids=tuple(payload.knowledge_base_ids),
                 conversation_id=payload.conversation_id,
+                decomposition_enabled=decomposition_enabled,
+                decomposition_max_sub_queries=decomposition_max_sub_queries,
+                memory_enabled=memory_enabled,
+                session=session,
             ),
             media_type="text/event-stream",
         )
@@ -245,6 +327,10 @@ async def query_rag(
         message=payload.message,
         knowledge_base_ids=tuple(payload.knowledge_base_ids),
         conversation_id=payload.conversation_id,
+        decomposition_enabled=decomposition_enabled,
+        decomposition_max_sub_queries=decomposition_max_sub_queries,
+        memory_enabled=memory_enabled,
+        session=session,
     )
     return success("Query completed", result)
 
@@ -289,6 +375,10 @@ async def _stream_query(
     message: str,
     knowledge_base_ids: tuple[str, ...],
     conversation_id: str | None,
+    decomposition_enabled: bool | None = None,
+    decomposition_max_sub_queries: int | None = None,
+    memory_enabled: bool | None = None,
+    session: AsyncSession,
 ) -> AsyncIterator[str]:
     try:
         result = await service.query(
@@ -296,6 +386,10 @@ async def _stream_query(
             message=message,
             knowledge_base_ids=knowledge_base_ids,
             conversation_id=conversation_id,
+            decomposition_enabled=decomposition_enabled,
+            decomposition_max_sub_queries=decomposition_max_sub_queries,
+            memory_enabled=memory_enabled,
+            session=session,
         )
     except Exception:
         yield _sse_event("response.failed", {"code": "QUERY_FAILED"})
@@ -304,6 +398,21 @@ async def _stream_query(
     trace_id = result["traceId"]
     yield _sse_event("response.started", {"traceId": trace_id})
     yield _sse_event("response.route", {"route": result["route"]})
+
+    # tool_call and tool_result events — emitted only when route is "tool"
+    for tool_event in result.get("toolCalls", []):
+        yield _sse_event("response.tool_call", {
+            "toolSlug": tool_event.get("toolSlug"),
+            "inputHash": tool_event.get("inputHash"),
+            "traceId": trace_id,
+        })
+        yield _sse_event("response.tool_result", {
+            "toolSlug": tool_event.get("toolSlug"),
+            "evidenceCount": tool_event.get("evidenceCount", 0),
+            "latencyMs": tool_event.get("latencyMs"),
+            "status": tool_event.get("status"),
+        })
+
     yield _sse_event("response.retrieval_summary", {"evidenceLevel": result["evidenceLevel"]})
     if result["answer"] is not None:
         yield _sse_event("response.delta", {"answer": result["answer"]})
@@ -383,6 +492,86 @@ async def delete_knowledge_base(
         "id": result.id,
         "status": result.status,
     })
+
+
+# --- Decomposition config routes --------------------------------------------
+
+@kb_router.post("/{knowledge_base_id}/decomposition", status_code=status.HTTP_200_OK)
+async def upsert_decomposition_config(
+    knowledge_base_id: str,
+    payload: CreateDecompositionConfigRequest,
+    svc: DecompositionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Create or replace decomposition config for a knowledge base."""
+    result = await svc.upsert(
+        tenant=tenant,
+        knowledge_base_id=knowledge_base_id,
+        enabled=payload.enabled,
+        model_profile_id=payload.model_profile_id,
+        system_prompt=payload.system_prompt,
+        user_prompt_template=payload.user_prompt_template,
+        max_sub_queries=payload.max_sub_queries,
+        max_depth=payload.max_depth,
+        min_complexity_score=payload.min_complexity_score,
+        guardrails=payload.guardrails,
+    )
+    return success("Decomposition config saved", _decomposition_config_dto(result))
+
+
+@kb_router.get("/{knowledge_base_id}/decomposition")
+async def get_decomposition_config(
+    knowledge_base_id: str,
+    svc: DecompositionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Get decomposition config for a knowledge base."""
+    from app.domain.errors import DomainError
+    result = await svc.get(tenant=tenant, knowledge_base_id=knowledge_base_id)
+    if result is None:
+        raise DomainError("NOT_FOUND", "Decomposition config not found", 404)
+    return success("Decomposition config loaded", _decomposition_config_dto(result))
+
+
+@kb_router.delete("/{knowledge_base_id}/decomposition", status_code=status.HTTP_200_OK)
+async def delete_decomposition_config(
+    knowledge_base_id: str,
+    svc: DecompositionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Delete decomposition config for a knowledge base."""
+    deleted = await svc.delete(tenant=tenant, knowledge_base_id=knowledge_base_id)
+    if not deleted:
+        from app.domain.errors import DomainError
+        raise DomainError("NOT_FOUND", "Decomposition config not found", 404)
+    return success("Decomposition config deleted")
+
+
+@kb_router.get("/{knowledge_base_id}/decomposition/defaults")
+async def get_decomposition_defaults(
+    knowledge_base_id: str,
+    svc: DecompositionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Get default decomposition config values."""
+    return success("Decomposition defaults loaded", svc.get_defaults())
+
+
+def _decomposition_config_dto(config: object) -> dict[str, object]:
+    return {
+        "id": config.id,  # type: ignore[union-attr]
+        "knowledgeBaseId": config.knowledge_base_id,  # type: ignore[union-attr]
+        "enabled": config.enabled,  # type: ignore[union-attr]
+        "modelProfileId": config.model_profile_id,  # type: ignore[union-attr]
+        "systemPrompt": config.system_prompt,  # type: ignore[union-attr]
+        "userPromptTemplate": config.user_prompt_template,  # type: ignore[union-attr]
+        "maxSubQueries": config.max_sub_queries,  # type: ignore[union-attr]
+        "maxDepth": config.max_depth,  # type: ignore[union-attr]
+        "minComplexityScore": config.min_complexity_score,  # type: ignore[union-attr]
+        "guardrails": config.guardrails,  # type: ignore[union-attr]
+        "createdAt": config.created_at.isoformat(),  # type: ignore[union-attr]
+        "updatedAt": config.updated_at.isoformat(),  # type: ignore[union-attr]
+    }
 
 
 # --- Model profile routes ---------------------------------------------------
@@ -547,3 +736,199 @@ async def revoke_provider_credential(
         "keyName": result.key_name,
         "isConfigured": result.is_configured,
     })
+
+
+# --- Memory config routes ----------------------------------------------------
+
+memory_config_router = APIRouter(prefix="/rag/knowledge-bases", tags=["Memory Config"])
+memory_router = APIRouter(prefix="/rag/memory", tags=["User Memory"])
+
+
+@memory_config_router.post("/{knowledge_base_id}/memory-config", status_code=status.HTTP_200_OK)
+async def upsert_memory_config(
+    knowledge_base_id: str,
+    payload: CreateMemoryConfigRequest,
+    tenant: TenantContextDependency,
+    svc: MemoryConfigServiceDependency,
+) -> dict[str, object]:
+    result = await svc.upsert(
+        tenant=tenant,
+        knowledge_base_id=knowledge_base_id,
+        enabled=payload.enabled,
+        summarization_model_profile_id=payload.summarization_model_profile_id,
+        embedding_profile_id=payload.embedding_profile_id,
+        retention_days=payload.retention_days,
+        retrieval_top_k=payload.retrieval_top_k,
+        min_turns_to_summarize=payload.min_turns_to_summarize,
+        system_prompt=payload.system_prompt,
+    )
+    return success("Memory config saved", {
+        "id": result.id,
+        "knowledgeBaseId": result.knowledge_base_id,
+        "enabled": result.enabled,
+        "summarizationModelProfileId": result.summarization_model_profile_id,
+        "embeddingProfileId": result.embedding_profile_id,
+        "retentionDays": result.retention_days,
+        "retrievalTopK": result.retrieval_top_k,
+        "minTurnsToSummarize": result.min_turns_to_summarize,
+        "systemPrompt": result.system_prompt,
+        "createdAt": result.created_at.isoformat(),
+        "updatedAt": result.updated_at.isoformat(),
+    })
+
+
+@memory_config_router.get("/{knowledge_base_id}/memory-config")
+async def get_memory_config(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    svc: MemoryConfigServiceDependency,
+) -> dict[str, object]:
+    result = await svc.get(tenant=tenant, knowledge_base_id=knowledge_base_id)
+    return success("Memory config loaded", {
+        "id": result.id,
+        "knowledgeBaseId": result.knowledge_base_id,
+        "enabled": result.enabled,
+        "summarizationModelProfileId": result.summarization_model_profile_id,
+        "embeddingProfileId": result.embedding_profile_id,
+        "retentionDays": result.retention_days,
+        "retrievalTopK": result.retrieval_top_k,
+        "minTurnsToSummarize": result.min_turns_to_summarize,
+        "systemPrompt": result.system_prompt,
+        "createdAt": result.created_at.isoformat(),
+        "updatedAt": result.updated_at.isoformat(),
+    })
+
+
+@memory_config_router.delete("/{knowledge_base_id}/memory-config", status_code=status.HTTP_200_OK)
+async def delete_memory_config(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    svc: MemoryConfigServiceDependency,
+) -> dict[str, object]:
+    await svc.delete(tenant=tenant, knowledge_base_id=knowledge_base_id)
+    return success("Memory config deleted")
+
+
+@memory_config_router.get("/{knowledge_base_id}/memory-config/defaults")
+async def get_memory_config_defaults(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    svc: MemoryConfigServiceDependency,
+) -> dict[str, object]:
+    return success("Memory config defaults loaded", svc.get_defaults())
+
+
+# --- User memory management routes -------------------------------------------
+
+@memory_router.get("")
+async def list_memory_chunks(
+    tenant: TenantContextDependency,
+    svc: MemoryConfigServiceDependency,
+    knowledge_base_id: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict[str, object]:
+    from app.infrastructure.rag_catalog import SqlAlchemyMemoryChunkRepository
+    # svc._session is available since MemoryConfigService holds session
+    chunk_repo = SqlAlchemyMemoryChunkRepository(svc._session)
+    if knowledge_base_id:
+        chunks = await chunk_repo.find_by_user_kb(
+            tenant_id=tenant.tenant_id,
+            knowledge_base_id=knowledge_base_id,
+            user_id=tenant.user_id,
+            page=page,
+            page_size=page_size,
+        )
+        total = await chunk_repo.count_by_user_kb(
+            tenant_id=tenant.tenant_id,
+            knowledge_base_id=knowledge_base_id,
+            user_id=tenant.user_id,
+        )
+    else:
+        chunks = []
+        total = 0
+    return success("Memory chunks loaded", {
+        "items": [
+            {
+                "id": c.id,
+                "knowledgeBaseId": c.knowledge_base_id,
+                "userId": c.user_id,
+                "conversationId": c.conversation_id,
+                "summary": c.summary,
+                "turnCount": c.turn_count,
+                "expiresAt": c.expires_at.isoformat(),
+                "createdAt": c.created_at.isoformat(),
+            }
+            for c in chunks
+        ],
+        "total": total,
+        "page": page,
+        "pageSize": page_size,
+    })
+
+
+@memory_router.delete("", status_code=status.HTTP_200_OK)
+async def clear_memory(
+    tenant: TenantContextDependency,
+    svc: MemoryConfigServiceDependency,
+    knowledge_base_id: str | None = None,
+) -> dict[str, object]:
+    from app.application.memory_summarizer import MemorySummarizer
+    from app.infrastructure.rag_catalog import MemoryChunkRecord, SqlAlchemyMemoryChunkRepository
+    from sqlalchemy import select
+
+    chunk_repo = SqlAlchemyMemoryChunkRepository(svc._session)
+    if knowledge_base_id:
+        # Collect point_ids first
+        result = await svc._session.execute(
+            select(MemoryChunkRecord).where(
+                MemoryChunkRecord.tenant_id == tenant.tenant_id,
+                MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
+                MemoryChunkRecord.user_id == tenant.user_id,
+            )
+        )
+        chunks = result.scalars().all()
+        point_ids = [c.qdrant_point_id for c in chunks]
+        if point_ids:
+            summarizer = MemorySummarizer(svc._settings)
+            try:
+                await summarizer.delete_qdrant_points_by_ids(point_ids=point_ids)
+            except Exception:
+                pass
+        deleted = await chunk_repo.delete_by_user_kb(
+            tenant_id=tenant.tenant_id,
+            knowledge_base_id=knowledge_base_id,
+            user_id=tenant.user_id,
+        )
+    else:
+        deleted = 0
+    return success("Memory cleared", {"deleted": deleted})
+
+
+@memory_router.delete("/{chunk_id}", status_code=status.HTTP_200_OK)
+async def delete_memory_chunk(
+    chunk_id: str,
+    tenant: TenantContextDependency,
+    svc: MemoryConfigServiceDependency,
+) -> dict[str, object]:
+    from app.application.memory_summarizer import MemorySummarizer
+    from app.infrastructure.rag_catalog import SqlAlchemyMemoryChunkRepository
+
+    chunk_repo = SqlAlchemyMemoryChunkRepository(svc._session)
+    chunk = await chunk_repo.find_by_id(tenant_id=tenant.tenant_id, chunk_id=chunk_id)
+    if chunk is None or chunk.user_id != tenant.user_id:
+        from app.domain.errors import DomainError
+        raise DomainError.not_found("Memory chunk not found")
+
+    summarizer = MemorySummarizer(svc._settings)
+    try:
+        await summarizer.delete_qdrant_points_by_ids(point_ids=[chunk.qdrant_point_id])
+    except Exception:
+        pass
+
+    await chunk_repo.delete(
+        tenant_id=tenant.tenant_id,
+        chunk_id=chunk_id,
+        user_id=tenant.user_id,
+    )
+    return success("Memory chunk deleted")

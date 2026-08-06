@@ -9,7 +9,7 @@ from app.infrastructure.database import create_session_factory
 from app.infrastructure.profile_seed import seed_default_profiles
 from app.infrastructure.tenant_bootstrap import verify_and_bootstrap_tenant
 from app.interfaces.http.errors import register_exception_handlers
-from app.interfaces.http.routes import auth_router, index_profile_router, kb_router, model_profile_router, provider_credential_router, rag_query_router, rag_router, system_router
+from app.interfaces.http.routes import auth_router, index_profile_router, kb_router, memory_config_router, memory_router, model_profile_router, provider_credential_router, rag_query_router, rag_router, system_router
 
 
 @asynccontextmanager
@@ -34,6 +34,8 @@ def create_app() -> FastAPI:
     app.include_router(model_profile_router)
     app.include_router(index_profile_router)
     app.include_router(provider_credential_router)
+    app.include_router(memory_config_router)
+    app.include_router(memory_router)
     return app
 
 

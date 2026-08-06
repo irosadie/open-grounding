@@ -1,5 +1,7 @@
+export * from "./decomposition-config"
 export * from "./knowledge-base"
 export * from "./login"
+export * from "./memory-config"
 export * from "./profiles"
 export * from "./rag-ingestion"
 export * from "./rag-query"

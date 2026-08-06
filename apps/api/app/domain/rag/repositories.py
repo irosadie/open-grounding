@@ -7,10 +7,15 @@ prohibited. Protocols define only the persistence contract — concrete
 SQLAlchemy implementations live in infrastructure.
 """
 
-from typing import Protocol
+from datetime import datetime
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from app.domain.rag.memory import MemoryChunk, MemoryConfig
 
 from app.domain.rag.catalog import (
     Chunk,
+    DecompositionConfig,
     Document,
     DocumentVersion,
     IndexGeneration,
@@ -166,3 +171,73 @@ class StageCheckpointRepository(Protocol):
         trace_id: str | None,
         checkpoint_data: dict[str, object],
     ) -> StageCheckpoint: ...
+
+
+class DecompositionConfigRepository(Protocol):
+    async def find_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> DecompositionConfig | None: ...
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        enabled: bool,
+        model_profile_id: str,
+        system_prompt: str,
+        user_prompt_template: str,
+        max_sub_queries: int,
+        max_depth: int,
+        min_complexity_score: float,
+        guardrails: dict[str, object],
+    ) -> DecompositionConfig: ...
+    async def delete(self, *, tenant_id: str, knowledge_base_id: str) -> bool: ...
+
+
+class MemoryConfigRepository(Protocol):
+    async def find_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> "MemoryConfig | None": ...
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        enabled: bool,
+        summarization_model_profile_id: str,
+        embedding_profile_id: str,
+        retention_days: int,
+        retrieval_top_k: int,
+        min_turns_to_summarize: int,
+        system_prompt: str,
+    ) -> "MemoryConfig": ...
+    async def delete(self, *, tenant_id: str, knowledge_base_id: str) -> bool: ...
+
+
+class MemoryChunkRepository(Protocol):
+    async def find_by_user_kb(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        user_id: str,
+        page: int,
+        page_size: int,
+    ) -> "list[MemoryChunk]": ...
+    async def count_by_user_kb(self, *, tenant_id: str, knowledge_base_id: str, user_id: str) -> int: ...
+    async def find_expired(self, *, limit: int) -> "list[MemoryChunk]": ...
+    async def create(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        user_id: str,
+        conversation_id: str,
+        summary: str,
+        qdrant_point_id: str,
+        embedding_profile_id: str,
+        turn_count: int,
+        expires_at: "datetime",
+    ) -> "MemoryChunk": ...
+    async def delete(self, *, tenant_id: str, chunk_id: str, user_id: str) -> bool: ...
+    async def delete_by_user_kb(self, *, tenant_id: str, knowledge_base_id: str, user_id: str) -> int: ...
+    async def delete_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> int: ...
+    async def delete_many(self, *, chunk_ids: list[str]) -> None: ...
+    async def is_conversation_summarized(self, *, conversation_id: str) -> bool: ...
+    async def find_by_id(self, *, tenant_id: str, chunk_id: str) -> "MemoryChunk | None": ...
