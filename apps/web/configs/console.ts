@@ -10,7 +10,6 @@ import {
   Network,
   Settings,
   Upload,
-  Wrench,
 } from "lucide-react"
 
 export type ConsoleNavItem = {
@@ -19,6 +18,7 @@ export type ConsoleNavItem = {
   icon: typeof Database
   description: string
   indent?: boolean
+  group?: string
 }
 
 export const consoleNavItems: ConsoleNavItem[] = [
@@ -33,15 +33,16 @@ export const consoleNavItems: ConsoleNavItem[] = [
     href: "/console/knowledge-bases",
     icon: Database,
     description: "Manage knowledge bases",
+    group: "WORKSPACE",
   },
   {
-    label: "Ingestion",
+    label: "Documents",
     href: "/console/ingestion",
     icon: Upload,
     description: "Upload and track documents",
   },
   {
-    label: "Retrieval",
+    label: "Query",
     href: "/console/retrieval",
     icon: MessageSquareText,
     description: "Ask grounded questions",
@@ -53,13 +54,14 @@ export const consoleNavItems: ConsoleNavItem[] = [
     description: "Manage your conversation memory",
   },
   {
-    label: "Settings",
+    label: "Configuration",
     href: "/console/settings",
     icon: Settings,
     description: "Platform configuration",
+    group: "SETTINGS",
   },
   {
-    label: "Model Profiles",
+    label: "Models",
     href: "/console/settings/models",
     icon: Cpu,
     description: "Embedding and generation models",
@@ -84,13 +86,6 @@ export const consoleNavItems: ConsoleNavItem[] = [
     href: "/console/settings/providers",
     icon: KeyRound,
     description: "API keys and provider credentials",
-    indent: true,
-  },
-  {
-    label: "Tools",
-    href: "/console/settings/tools",
-    icon: Wrench,
-    description: "Live tool registry and permissions",
     indent: true,
   },
   {

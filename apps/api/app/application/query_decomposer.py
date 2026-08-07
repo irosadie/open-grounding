@@ -66,6 +66,7 @@ async def _call_openai(
     user_prompt: str,
     model: str,
     api_key: str,
+    timeout: float = LLM_TIMEOUT_SECONDS,
 ) -> str:
     from openai import AsyncOpenAI
     client = AsyncOpenAI(api_key=api_key)
@@ -76,10 +77,9 @@ async def _call_openai(
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.0,
-            max_tokens=512,
+            max_completion_tokens=512,
         ),
-        timeout=LLM_TIMEOUT_SECONDS,
+        timeout=timeout,
     )
     return response.choices[0].message.content or ""
 
@@ -89,6 +89,7 @@ async def _call_ollama(
     user_prompt: str,
     model: str,
     base_url: str,
+    timeout: float = LLM_TIMEOUT_SECONDS,
 ) -> str:
     import httpx
     payload = {
@@ -99,7 +100,7 @@ async def _call_ollama(
         ],
         "stream": False,
     }
-    async with httpx.AsyncClient(base_url=base_url, timeout=LLM_TIMEOUT_SECONDS) as client:
+    async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
         response = await client.post("/api/chat", json=payload)
         response.raise_for_status()
         data = response.json()

@@ -14,7 +14,7 @@ class GenerationStub:
         self.answer = answer
         self.prompt = ""
 
-    async def generate(self, *, tenant: TenantContext, prompt: str, model_profile_id: str, max_tokens: int | None = None) -> dict[str, object]:
+    async def generate(self, *, tenant: TenantContext, prompt: str, model_profile_id: str, max_tokens: int | None = None, messages: list[dict[str, str]] | None = None) -> dict[str, object]:
         del tenant, model_profile_id, max_tokens
         self.prompt = prompt
         return {"answer": self.answer}

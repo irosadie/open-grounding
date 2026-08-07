@@ -24,6 +24,9 @@ export const documentVersionLifecycleStates = [
   "PENDING",
   "STORED",
   "PARSING",
+  "NORMALIZING",
+  "NEEDS_REVIEW",
+  "CHUNKING",
   "EMBEDDING",
   "INDEXING",
   "READY",
@@ -35,6 +38,9 @@ export const documentVersionLifecycleLabels = [
   { label: "Pending", value: "PENDING" },
   { label: "Stored", value: "STORED" },
   { label: "Parsing", value: "PARSING" },
+  { label: "Normalizing", value: "NORMALIZING" },
+  { label: "Perlu Ditinjau", value: "NEEDS_REVIEW" },
+  { label: "Chunking", value: "CHUNKING" },
   { label: "Embedding", value: "EMBEDDING" },
   { label: "Indexing", value: "INDEXING" },
   { label: "Ready", value: "READY" },
@@ -91,3 +97,9 @@ export const completeIntakeSchema = z.object({
 })
 
 export type CompleteIntakeProps = z.infer<typeof completeIntakeSchema>
+
+export const submitParsedTextSchema = z.object({
+  text: z.string().min(1, "Teks tidak boleh kosong"),
+})
+
+export type SubmitParsedTextProps = z.infer<typeof submitParsedTextSchema>

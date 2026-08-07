@@ -60,6 +60,9 @@ export const queryKeys = {
       status: "ragIngestionStatus",
       delete: "ragIngestionDelete",
       documents: "ragIngestionDocuments",
+      parsedText: "ragIngestionParsedText",
+      approve: "ragIngestionApprove",
+      reject: "ragIngestionReject",
     },
     query: {
       ask: "ragQueryAsk",

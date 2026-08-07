@@ -58,23 +58,24 @@ class QueryPlanner:
                 model_profile=model_profile,
                 tenant_id=config.tenant_id,
                 session=session,
+                timeout=float(getattr(config, "task_timeout_seconds", 10)),
             )
             return parse_task_plan(raw, context["max_tasks"], allowed_types)
         except asyncio.TimeoutError:
-            return fallback_task_plan(query, "timeout")
+            return fallback_task_plan(query, "timeout", allowed_types)
         except Exception as exc:
             logger.warning("LLM task planning failed: %s", exc)
-            return fallback_task_plan(query, f"planner_error: {type(exc).__name__}")
+            return fallback_task_plan(query, f"planner_error: {type(exc).__name__}", allowed_types)
 
-    async def _call_llm(self, *, system_prompt: str, user_prompt: str, model_profile: ModelProfileRecord, tenant_id: str, session: AsyncSession | None) -> str:
+    async def _call_llm(self, *, system_prompt: str, user_prompt: str, model_profile: ModelProfileRecord, tenant_id: str, session: AsyncSession | None, timeout: float = 10.0) -> str:
         from app.infrastructure.providers.registry import get_provider_api_key
 
         if model_profile.provider == "openai":
             api_key = await get_provider_api_key(provider="openai", key_name="api_key", tenant_id=tenant_id, session=session, settings=self._settings)
             if not api_key:
                 raise ValueError("OpenAI API key not configured")
-            return await _call_openai(system_prompt, user_prompt, model_profile.model, api_key)
+            return await _call_openai(system_prompt, user_prompt, model_profile.model, api_key, timeout=timeout)
         if model_profile.provider == "ollama":
             base_url = await get_provider_api_key(provider="ollama", key_name="base_url", tenant_id=tenant_id, session=session, settings=self._settings) or getattr(self._settings, "ollama_base_url", "http://localhost:11434")
-            return await _call_ollama(system_prompt, user_prompt, model_profile.model, base_url)
+            return await _call_ollama(system_prompt, user_prompt, model_profile.model, base_url, timeout=timeout)
         raise ValueError(f"Unsupported LLM provider for planning: {model_profile.provider}")

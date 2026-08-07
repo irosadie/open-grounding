@@ -8,9 +8,20 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
+from app.domain.rag.elements import ParsedDocument, ParserProfile
+from app.domain.tenant_context import TenantContext
+from app.infrastructure.rag.parsers.docling_adapter import DoclingParserAdapter
 from app.infrastructure.rag_catalog import SqlAlchemyDocumentVersionRepository
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_PARSER_PROFILE = ParserProfile(
+    id="default-v1",
+    pipeline="standard",
+    model="layout",
+    ocr_enabled=False,
+    version="1",
+)
 
 
 async def parse_document(
@@ -33,20 +44,69 @@ async def parse_document(
     # Read raw file from object store
     raw_content = await _read_raw_object(version.object_key_raw, settings)
 
-    # Parse based on MIME type
+    # Parse based on MIME type — try Docling first, fall back to pdfminer
     mime_type = version.mime_type or "text/plain"
-    text = _extract_text(raw_content, mime_type, version.object_key_raw)
-
-    # Store parsed text in object store or DB (use a simple cache approach)
-    # For now store in a simple in-memory cache keyed by version_id
-    _parsed_cache[document_version_id] = text
-
-    await repo.update_lifecycle_state(
-        tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="NORMALIZING"
+    text = await _parse_with_docling_or_fallback(
+        raw_content=raw_content,
+        mime_type=mime_type,
+        filename=version.object_key_raw,
+        tenant_id=tenant_id,
     )
 
-    logger.info("[parse] extracted %d chars from %s", len(text), document_version_id)
+    # Store parsed text in DB and set lifecycle to NEEDS_REVIEW
+    await repo.update_parsed_text(
+        tenant_id=tenant_id,
+        version_id=document_version_id,
+        parsed_text=text,
+    )
+    # Pipeline halts here — approval required before NORMALIZING
+
+    logger.info("[parse] persisted %d chars for %s", len(text), document_version_id)
     return text
+
+
+async def _parse_with_docling_or_fallback(
+    *,
+    raw_content: bytes,
+    mime_type: str,
+    filename: str,
+    tenant_id: str,
+) -> str:
+    """Try DoclingParserAdapter; fall back to _extract_text() on missing install."""
+    from app.domain.errors import DomainError
+
+    tenant = TenantContext(tenant_id=tenant_id, membership_id=tenant_id, user_id=tenant_id)
+    try:
+        adapter = DoclingParserAdapter(
+            expected_tenant_id=tenant_id,
+            profile=_DEFAULT_PARSER_PROFILE,
+        )
+        parsed_doc = await adapter.parse(
+            tenant=tenant,
+            source=raw_content,
+            mime_type=mime_type,
+            parser_profile_id=_DEFAULT_PARSER_PROFILE.id,
+        )
+        return _serialize_parsed_document(parsed_doc)
+    except DomainError as exc:
+        if getattr(exc, "code", None) == "PARSER_NOT_INSTALLED":
+            logger.warning(
+                "[parse] docling not installed, falling back to pdfminer for %s",
+                filename,
+            )
+            return _extract_text(raw_content, mime_type, filename)
+        raise
+    except ImportError:
+        logger.warning(
+            "[parse] docling import failed, falling back to pdfminer for %s",
+            filename,
+        )
+        return _extract_text(raw_content, mime_type, filename)
+
+
+def _serialize_parsed_document(parsed_doc: ParsedDocument) -> str:
+    """Serialize ParsedDocument to plain text for downstream chunking compatibility."""
+    return "\n".join(e.text for e in parsed_doc.elements if e.text.strip())
 
 
 # Simple in-process cache for parsed text (across pipeline stages in same process)

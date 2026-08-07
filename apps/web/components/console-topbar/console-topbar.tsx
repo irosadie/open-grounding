@@ -44,7 +44,7 @@ export function ConsoleTopbar({ onMenuClick }: ConsoleTopbarProps) {
           </>
         )}
       </div>
-      <UserMenu />
+      <UserMenu collapsed dropdownPosition="bottom" />
     </header>
   )
 }

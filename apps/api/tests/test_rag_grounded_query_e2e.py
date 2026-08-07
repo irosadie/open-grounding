@@ -27,8 +27,9 @@ class GenerationStub:
         prompt: str,
         model_profile_id: str,
         max_tokens: int | None = None,
+        messages: list[dict[str, str]] | None = None,
     ) -> dict[str, object]:
-        del tenant, model_profile_id, max_tokens
+        del tenant, model_profile_id, max_tokens, messages
         self.prompts.append(prompt)
         if self.delay:
             await asyncio.sleep(1)

@@ -128,6 +128,18 @@ class IngestionStatusResponse(BaseModel):
     quality: dict[str, Any] | None = None
 
 
+class ParsedTextResponse(BaseModel):
+    version_id: str
+    parsed_text: str | None
+    lifecycle_state: str
+
+
+class UpdateParsedTextRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10_000_000)
+
+    model_config = {"extra": "forbid"}
+
+
 class DecompositionOverride(BaseModel):
     enabled: bool | None = Field(default=None, description="Override KB decomposition config for this request")
     max_sub_queries: int | None = Field(default=None, ge=1, le=5, description="Override max sub-queries for this request")

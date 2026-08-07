@@ -121,6 +121,7 @@ class DocumentVersionRecord(Base):
     content_checksum: Mapped[str] = mapped_column(String(128), nullable=False)
     source_revision: Mapped[str | None] = mapped_column(String(512), nullable=True)
     pipeline_fingerprint: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    parsed_text: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     object_key_raw: Mapped[str] = mapped_column(String(1024), nullable=False)
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -434,6 +435,7 @@ def _to_document_version(row: DocumentVersionRecord) -> DocumentVersion:
         content_checksum=row.content_checksum,
         source_revision=row.source_revision,
         pipeline_fingerprint=row.pipeline_fingerprint,
+        parsed_text=row.parsed_text,
         object_key_raw=row.object_key_raw,
         size_bytes=row.size_bytes,
         mime_type=row.mime_type,
@@ -770,6 +772,38 @@ class SqlAlchemyDocumentVersionRepository:
         await self._session.commit()
         await self._session.refresh(row)
         return _to_document_version(row)
+
+    async def _get_row(self, *, tenant_id: str, version_id: str) -> DocumentVersionRecord | None:
+        result = await self._session.execute(
+            select(DocumentVersionRecord).where(
+                DocumentVersionRecord.tenant_id == tenant_id,
+                DocumentVersionRecord.id == version_id,
+            )
+        )
+        return result.scalar_one_or_none()
+
+    async def update_parsed_text(self, *, tenant_id: str, version_id: str, parsed_text: str) -> DocumentVersion | None:
+        row = await self._get_row(tenant_id=tenant_id, version_id=version_id)
+        if row is None:
+            return None
+        row.parsed_text = parsed_text
+        row.lifecycle_state = DocumentVersionLifecycleState.NEEDS_REVIEW
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_document_version(row)
+
+    async def patch_parsed_text(self, *, tenant_id: str, version_id: str, text: str) -> DocumentVersion | None:
+        row = await self._get_row(tenant_id=tenant_id, version_id=version_id)
+        if row is None:
+            return None
+        row.parsed_text = text
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_document_version(row)
+
+    async def find_parsed_text(self, *, tenant_id: str, version_id: str) -> str | None:
+        row = await self._get_row(tenant_id=tenant_id, version_id=version_id)
+        return row.parsed_text if row else None
 
     async def list_by_knowledge_base(
         self,

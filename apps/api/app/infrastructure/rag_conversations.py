@@ -3,6 +3,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,3 +43,27 @@ class SqlAlchemyConversationHistoryRepository:
         )
         rows = list(result.scalars().all())
         return [ConversationMessage(row.id, row.tenant_id, row.conversation_id, row.speaker, row.content, row.created_at) for row in reversed(rows)]
+
+    async def save_message(self, *, message: ConversationMessage) -> None:
+        self._session.add(
+            ConversationMessageRecord(
+                id=message.id,
+                tenant_id=message.tenant_id,
+                conversation_id=message.conversation_id,
+                speaker=message.speaker,
+                content=message.content,
+                created_at=message.created_at,
+            )
+        )
+        await self._session.commit()
+
+    async def ensure_conversation(self, *, tenant_id: str, user_id: str, conversation_id: str) -> None:
+        from app.infrastructure.rag_answer_trace import ConversationRecord
+
+        stmt = (
+            insert(ConversationRecord)
+            .values(id=conversation_id, tenant_id=tenant_id, user_id=user_id, summarized=False)
+            .on_conflict_do_nothing(index_elements=["id"])
+        )
+        await self._session.execute(stmt)
+        await self._session.commit()

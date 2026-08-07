@@ -283,7 +283,7 @@ async def _call_openai_llm(model: str, prompt: str, api_key: str | None) -> str:
     resp = await client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=512,
+        max_completion_tokens=512,
         temperature=0.3,
     )
     return resp.choices[0].message.content or ""

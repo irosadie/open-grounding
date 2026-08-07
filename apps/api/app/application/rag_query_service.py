@@ -144,10 +144,17 @@ class RagQueryService:
         memory_enabled: bool | None,
         session: "AsyncSession | None",
     ) -> dict[str, object]:
+        # Generate conversation_id server-side if not provided
+        if conversation_id is None:
+            conversation_id = str(uuid4())
+
         plan = plan_query(message, max_chars=self._settings.rag_query_max_message_chars, knowledge_base_ids=knowledge_base_ids)
 
-        # Load recent conversation messages (for context + window test)
-        await self._recent_messages(tenant=tenant, conversation_id=conversation_id)
+        # Persist user message before pipeline
+        await self._save_turn(tenant=tenant, conversation_id=conversation_id, speaker="user", content=message)
+
+        # Load recent conversation messages and inject as chat history
+        conversation_messages = await self._recent_messages(tenant=tenant, conversation_id=conversation_id)
 
         memory_meta = await self._retrieve_memory(
             tenant=tenant,
@@ -170,6 +177,7 @@ class RagQueryService:
             planner_enabled=planner_enabled,
             planner_max_tasks=planner_max_tasks,
             planner_task_types=planner_task_types,
+            precomputed_complexity_score=float(decomposition_meta.get("complexity_score") or 0.0),
         )
         if self._planner_configs is not None or planner_enabled is not None:
             decomposition_meta = {**decomposition_meta, "planner": planner_meta}
@@ -228,6 +236,7 @@ class RagQueryService:
             generations=generations,
             decomposition_meta=decomposition_meta,
             memory_meta=memory_meta,
+            conversation_messages=conversation_messages,
             session=session,
         )
 
@@ -242,6 +251,7 @@ class RagQueryService:
         generations: list[IndexGeneration],
         decomposition_meta: dict[str, object],
         memory_meta: dict[str, object],
+        conversation_messages: list[dict[str, str]] | None = None,
         planner_meta: dict[str, object] | None = None,
         session: "AsyncSession | None" = None,
     ) -> dict[str, object]:
@@ -339,7 +349,7 @@ class RagQueryService:
         if questions:
             merged, _ = merge_evidence([*dense_results, *sparse_results], top_k=self._settings.rag_context_max_chunks)
 
-        if not merged:
+        if not merged and not supplementary:
             return await self._finish_abstain(
                 tenant=tenant,
                 plan=plan,
@@ -360,14 +370,14 @@ class RagQueryService:
             output_reserve=self._settings.rag_generation_max_output_tokens,
         )
 
-        # Gate evidence
+        # Gate evidence — skip gate if MCP supplementary context is available
         decision = gate_evidence(
             candidate_count=len(merged),
             independent_source_count=_independent_sources(merged),
             top_score=_top_score(merged),
             retry_attempted=False,
         )
-        if decision.route is not QueryRoute.GROUNDED:
+        if decision.route is not QueryRoute.GROUNDED and not supplementary:
             return await self._finish_abstain(
                 tenant=tenant,
                 plan=plan,
@@ -398,6 +408,7 @@ class RagQueryService:
             evidence=context,
             profile_id=generation_profile_id,
             supplementary=supplementary,
+            messages=conversation_messages or [],
         )
 
         return await self._finish_grounded(
@@ -412,6 +423,7 @@ class RagQueryService:
             decision=decision,
             decomposition=decomposition_meta,
             memory=memory_meta,
+            conversation_messages=conversation_messages,
         )
 
     async def _execute_planned_tasks(
@@ -446,11 +458,23 @@ class RagQueryService:
             profile = await SqlAlchemyModelProfileRepository(active_session).find_by_id(tenant_id=tenant.tenant_id, profile_id=config.model_profile_id)
             if profile is None:
                 return None
+            available_tools = ""
+            if self._mcp_runtime and planner_meta.get("mcp_enabled"):
+                try:
+                    allowed_tools = await self._mcp_runtime.list_allowed_tools(tenant=tenant)
+                    available_tools = "\n".join(
+                        f"- id={tool.id} name={tool.name}: {tool.description}"
+                        for tool in allowed_tools
+                    )
+                except Exception:
+                    pass
+
             task_plan = await QueryPlanner(self._settings).plan(
                 query=query,
                 config=config,
                 knowledge_base_name=knowledge_base_id,
                 model_profile=profile,
+                available_tools=available_tools,
                 allowed_types=set(planner_meta["task_types"]),
                 session=active_session,
             )
@@ -573,6 +597,7 @@ class RagQueryService:
         decision: EvidenceDecision,
         decomposition: dict[str, object],
         memory: dict[str, object],
+        conversation_messages: list[dict[str, str]] | None = None,
     ) -> dict[str, object]:
         citations = [_citation_dto(c) for c in context.citations]  # type: ignore[union-attr]
         answer_text = _render_answer(answer)
@@ -718,6 +743,17 @@ class RagQueryService:
                 checks={"release": route, "validationExecuted": False},
                 repair_attempted=False,
             )
+
+        # Persist assistant message
+        if conversation_id is not None:
+            assistant_content = answer if answer else (limitation or "")
+            await self._save_turn(
+                tenant=tenant,
+                conversation_id=conversation_id,
+                speaker="assistant",
+                content=assistant_content,
+            )
+
         return {
             "answer": answer,
             "route": route,
@@ -725,6 +761,7 @@ class RagQueryService:
             "citations": list(citations),
             "limitations": limitations,
             "traceId": trace_id,
+            "conversationId": conversation_id,
             "decomposition": decomposition,
             **({"planner": decomposition["planner"]} if "planner" in decomposition else {}),
             **({"tasks": decomposition["tasks"]} if "tasks" in decomposition else {}),
@@ -770,6 +807,7 @@ class RagQueryService:
         planner_enabled: bool | None,
         planner_max_tasks: int | None,
         planner_task_types: tuple[str, ...] | None,
+        precomputed_complexity_score: float | None = None,
     ) -> dict[str, object]:
         if planner_enabled is False:
             return {"triggered": False, "reason": "disabled_by_request"}
@@ -787,7 +825,7 @@ class RagQueryService:
         threshold = config.guardrails.get("min_complexity_score", 0.6)
         if not isinstance(threshold, (float, int)):
             threshold = 0.6
-        score = complexity_score(message)
+        score = precomputed_complexity_score if precomputed_complexity_score is not None else complexity_score(message)
         if score < threshold:
             return {"triggered": False, "complexity_score": score, "reason": "score_below_threshold", "threshold": threshold}
         return {
@@ -800,7 +838,37 @@ class RagQueryService:
             "planner_fallback": False,
         }
 
-    async def _recent_messages(self, *, tenant: TenantContext, conversation_id: str | None) -> list[str]:
+    async def _save_turn(
+        self,
+        *,
+        tenant: TenantContext,
+        conversation_id: str,
+        speaker: str,
+        content: str,
+    ) -> None:
+        """Persist a message to conversation history. Silent on failure."""
+        try:
+            from datetime import datetime
+            from app.domain.rag.conversation import ConversationMessage, ConversationSpeaker
+
+            await self._conversations.ensure_conversation(
+                tenant_id=tenant.tenant_id,
+                user_id=tenant.user_id,
+                conversation_id=conversation_id,
+            )
+            message = ConversationMessage(
+                id=str(uuid4()),
+                tenant_id=tenant.tenant_id,
+                conversation_id=conversation_id,
+                speaker=ConversationSpeaker.USER if speaker == "user" else ConversationSpeaker.ASSISTANT,
+                content=content,
+                created_at=datetime.utcnow(),
+            )
+            await self._conversations.save_message(message=message)
+        except Exception:
+            logger.warning("Failed to save conversation message", exc_info=True)
+
+    async def _recent_messages(self, *, tenant: TenantContext, conversation_id: str | None) -> list[dict[str, str]]:
         if conversation_id is None:
             return []
         messages = await self._conversations.recent_messages(
@@ -809,7 +877,10 @@ class RagQueryService:
             conversation_id=conversation_id,
             limit=self._settings.rag_query_recent_messages,
         )
-        return [message.content for message in messages]
+        return [
+            {"role": "user" if message.speaker.value == "USER" else "assistant", "content": message.content}
+            for message in messages
+        ]
 
     async def _authorized_knowledge_base_ids(self, *, tenant: TenantContext, knowledge_base_ids: tuple[str, ...]) -> tuple[str, ...]:
         authorized: list[str] = []

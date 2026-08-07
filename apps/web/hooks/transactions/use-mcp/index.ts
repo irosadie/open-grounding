@@ -32,7 +32,7 @@ const toServerPayload = (payload: ServerPayload) => ({
   url: payload.transport === "stdio" ? undefined : payload.url,
   auth_type: payload.authType,
   credential: payload.credential || undefined,
-  headers_json: payload.headers,
+  headers: payload.headers,
   timeout_seconds: payload.timeoutSeconds,
   max_payload_bytes: payload.maxPayloadBytes,
   allow_insecure: payload.allowInsecure,

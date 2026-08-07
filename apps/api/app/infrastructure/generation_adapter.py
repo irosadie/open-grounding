@@ -33,6 +33,7 @@ class LLMGenerationAdapter(GenerationAdapter):
         prompt: str,
         model_profile_id: str,
         max_tokens: int | None = None,
+        messages: list[dict[str, str]] | None = None,
     ) -> dict[str, object]:
         from app.application.provider_resolver import resolve_model_profile
 
@@ -42,6 +43,7 @@ class LLMGenerationAdapter(GenerationAdapter):
 
         instruction = _STRUCTURED_INSTRUCTION
         system_prompt = "You are a precise grounded-answer assistant. Follow the output format exactly."
+        history = messages or []
 
         if resolved.provider_name == "openai":
             if not resolved.api_key:
@@ -53,6 +55,7 @@ class LLMGenerationAdapter(GenerationAdapter):
                     system_prompt=system_prompt,
                     user_prompt=f"{instruction}\n\n{prompt}",
                     max_tokens=max_tokens,
+                    history=history,
                 ),
                 timeout=_GENERATION_TIMEOUT_S,
             )
@@ -64,6 +67,7 @@ class LLMGenerationAdapter(GenerationAdapter):
                     base_url=base_url,
                     system_prompt=system_prompt,
                     user_prompt=f"{instruction}\n\n{prompt}",
+                    history=history,
                 ),
                 timeout=_GENERATION_TIMEOUT_S,
             )
@@ -73,7 +77,7 @@ class LLMGenerationAdapter(GenerationAdapter):
         return _parse_structured(raw)
 
 
-async def _call_openai(*, model: str, api_key: str, system_prompt: str, user_prompt: str, max_tokens: int | None) -> str:
+async def _call_openai(*, model: str, api_key: str, system_prompt: str, user_prompt: str, max_tokens: int | None, history: list[dict[str, str]]) -> str:
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=api_key)
@@ -81,6 +85,7 @@ async def _call_openai(*, model: str, api_key: str, system_prompt: str, user_pro
         model=model,
         messages=[
             {"role": "system", "content": system_prompt},
+            *history,
             {"role": "user", "content": user_prompt},
         ],
         max_completion_tokens=max_tokens or 1024,
@@ -89,7 +94,7 @@ async def _call_openai(*, model: str, api_key: str, system_prompt: str, user_pro
     return response.choices[0].message.content or ""
 
 
-async def _call_ollama(*, model: str, base_url: str, system_prompt: str, user_prompt: str) -> str:
+async def _call_ollama(*, model: str, base_url: str, system_prompt: str, user_prompt: str, history: list[dict[str, str]]) -> str:
     import httpx
 
     async with httpx.AsyncClient(timeout=_GENERATION_TIMEOUT_S) as client:
@@ -99,6 +104,7 @@ async def _call_ollama(*, model: str, base_url: str, system_prompt: str, user_pr
                 "model": model,
                 "messages": [
                     {"role": "system", "content": system_prompt},
+                    *history,
                     {"role": "user", "content": user_prompt},
                 ],
                 "stream": False,

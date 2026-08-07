@@ -178,6 +178,31 @@ class IngestionIntakeService:
         finally:
             await client.aclose()
 
+    async def _enqueue_chunking(self, *, tenant: TenantContext, version: object) -> bool:
+        """Enqueue chunk job to BullMQ ingestion.chunk queue after approval."""
+        version_id = getattr(version, "id", None)
+        if version_id is None:
+            return False
+        redis_url = getattr(self._settings, "redis_url", "redis://127.0.0.1:6379")
+        job_id = f"auto:{version_id}"
+        queue_name = "ingestion.chunk"
+        job_key = f"bull:{queue_name}:{job_id}"
+        data = json.dumps({
+            "documentVersionId": version_id,
+            "tenantId": tenant.tenant_id,
+        })
+        client = aioredis.from_url(redis_url, decode_responses=True)
+        try:
+            await client.hset(job_key, "data", data)
+            await client.lpush(f"bull:{queue_name}:wait", job_id)
+            logger.info("Enqueued chunk job for %s", version_id)
+            return True
+        except Exception as e:
+            logger.warning("Failed to enqueue chunk job for %s: %s", version_id, e)
+            return False
+        finally:
+            await client.aclose()
+
     async def get_status(
         self,
         *,

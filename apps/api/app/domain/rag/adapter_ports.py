@@ -110,6 +110,12 @@ class GenerationAdapter(Protocol):
     Generation requests MUST carry tenant context and a generation model
     profile reference. The adapter MUST NOT persist secrets and returns only
     the generated text and usage metadata.
+
+    Supports two calling styles (backward compatible):
+    - ``prompt``-only: legacy single-string prompt, behaviour unchanged.
+    - ``messages``: role-based chat history list injected before the final
+      user message.  When both are provided, ``messages`` takes precedence
+      and ``prompt`` is used as the final user turn.
     """
 
     async def generate(
@@ -119,6 +125,7 @@ class GenerationAdapter(Protocol):
         prompt: str,
         model_profile_id: str,
         max_tokens: int | None = None,
+        messages: list[dict[str, str]] | None = None,
     ) -> dict[str, object]:
         """Generate text for the tenant. Returns text and usage metadata."""
         ...

@@ -66,6 +66,9 @@ export const apiRouters = {
       status: "/rag/ingestion/status/:documentVersionId",
       delete: "/rag/ingestion/:documentVersionId",
       documents: "/rag/ingestion/documents",
+      parsedText: "/rag/ingestion/:versionId/parsed-text",
+      approve: "/rag/ingestion/:versionId/approve",
+      reject: "/rag/ingestion/:versionId/reject",
     },
     query: {
       ask: "/rag/query",

@@ -16,7 +16,9 @@ class TaskResumer:
             if result.status != "success":
                 continue
             if result.task_type is TaskType.MCP and result.mcp:
-                supplementary.append(f"[Live tool results:]\n{result.mcp.get('result_text', '')}")
+                mcp_result = result.mcp.get("result") or result.mcp.get("result_text", "")
+                if mcp_result:
+                    supplementary.append(f"[Live tool results:]\n{mcp_result}")
             elif result.task_type is TaskType.GENERAL and result.general:
                 supplementary.append(f"[Related context:]\n{result.general}")
         sources = {str(item.get("source", "")) for item in evidence if item.get("source")}

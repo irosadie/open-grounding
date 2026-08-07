@@ -154,6 +154,17 @@ class McpRuntimeService:
         await self._get_server(tenant.tenant_id, server_id)
         return [_tool_dto(tool) for tool in await self._tools.list(tenant_id=tenant.tenant_id, server_id=server_id, include_stale=include_stale)]
 
+    async def list_allowed_tools(self, *, tenant: TenantContext) -> list[McpTool]:
+        """Return all allowed, non-stale tools across all enabled servers for a tenant."""
+        servers = await self._servers.list(tenant_id=tenant.tenant_id)
+        result: list[McpTool] = []
+        for server in servers:
+            if not server.enabled:
+                continue
+            tools = await self._tools.list(tenant_id=tenant.tenant_id, server_id=server.id)
+            result.extend(tool for tool in tools if tool.allowed and not tool.is_stale)
+        return result
+
     async def set_tool_allowed(self, *, tenant: TenantContext, tool_id: str, allowed: bool) -> dict[str, object]:
         self._require_admin(tenant)
         tool = await self._tools.set_allowed(tenant_id=tenant.tenant_id, tool_id=tool_id, allowed=allowed)

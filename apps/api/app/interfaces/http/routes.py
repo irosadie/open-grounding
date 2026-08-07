@@ -43,6 +43,7 @@ from app.interfaces.http.schemas import (
     CreatePlannerConfigRequest,
     InvokeToolRequest,
     LoginRequest,
+    ParsedTextResponse,
     RagAnswerFeedbackRequest,
     RagQueryRequest,
     RegisterRequest,
@@ -51,6 +52,7 @@ from app.interfaces.http.schemas import (
     SetProviderCredentialRequest,
     SuccessEnvelope,
     UpdateMcpToolRequest,
+    UpdateParsedTextRequest,
     LabelRequest,
     BulkLabelRequest,
     CalibrateRequest,
@@ -788,6 +790,125 @@ async def list_documents(
     )
 
 
+@rag_router.get(
+    "/ingestion/{version_id}/parsed-text",
+    summary="Get parsed text for a document version",
+    response_model=None,
+)
+async def get_parsed_text(
+    version_id: str,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    version = await service._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
+    if version is None:
+        from app.domain.errors import DomainError
+        raise DomainError("NOT_FOUND", "Document version not found", 404)
+    return success(
+        "Parsed text loaded",
+        {
+            "versionId": version.id,
+            "parsedText": version.parsed_text,
+            "lifecycleState": version.lifecycle_state.value,
+        },
+    )
+
+
+@rag_router.patch(
+    "/ingestion/{version_id}/parsed-text",
+    summary="Update parsed text for a document version",
+    response_model=None,
+)
+async def update_parsed_text(
+    version_id: str,
+    payload: UpdateParsedTextRequest,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    from app.domain.errors import DomainError
+    from app.domain.rag.catalog import DocumentVersionLifecycleState
+
+    version = await service._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
+    if version is None:
+        raise DomainError("NOT_FOUND", "Document version not found", 404)
+    if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
+        raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
+    updated = await service._version_repo.patch_parsed_text(
+        tenant_id=tenant.tenant_id, version_id=version_id, text=payload.text
+    )
+    return success(
+        "Parsed text updated",
+        {
+            "versionId": updated.id,
+            "parsedText": updated.parsed_text,
+            "lifecycleState": updated.lifecycle_state.value,
+        },
+    )
+
+
+@rag_router.post(
+    "/ingestion/{version_id}/approve",
+    summary="Approve parsed text and trigger chunking",
+    response_model=None,
+)
+async def approve_parsed_text(
+    version_id: str,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    from app.domain.errors import DomainError
+    from app.domain.rag.catalog import DocumentVersionLifecycleState
+
+    version = await service._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
+    if version is None:
+        raise DomainError("NOT_FOUND", "Document version not found", 404)
+    if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
+        raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
+    updated = await service._version_repo.update_lifecycle_state(
+        tenant_id=tenant.tenant_id,
+        version_id=version_id,
+        lifecycle_state="NORMALIZING",
+    )
+    enqueued = await service._enqueue_chunking(tenant=tenant, version=updated)
+    return success(
+        "Document version approved",
+        {
+            "versionId": updated.id,
+            "lifecycleState": updated.lifecycle_state.value,
+            "enqueued": enqueued,
+        },
+    )
+
+
+@rag_router.post(
+    "/ingestion/{version_id}/reject",
+    summary="Reject parsed text and fail the document version",
+    response_model=None,
+)
+async def reject_parsed_text(
+    version_id: str,
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    from app.domain.errors import DomainError
+    from app.domain.rag.catalog import DocumentVersionLifecycleState
+
+    version = await service._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
+    if version is None:
+        raise DomainError("NOT_FOUND", "Document version not found", 404)
+    if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
+        raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
+    updated = await service._version_repo.update_lifecycle_state(
+        tenant_id=tenant.tenant_id,
+        version_id=version_id,
+        lifecycle_state="FAILED",
+    )
+    return success(
+        "Document version rejected",
+        {"versionId": updated.id, "lifecycleState": updated.lifecycle_state.value},
+    )
+
+
 @rag_router.get("/ingestion/status/{document_version_id}")
 async def get_ingestion_status(
     document_version_id: str,
@@ -932,7 +1053,7 @@ async def _stream_query(
         return
 
     trace_id = result["traceId"]
-    yield _sse_event("response.started", {"traceId": trace_id})
+    yield _sse_event("response.started", {"traceId": trace_id, "conversationId": result.get("conversationId")})
     yield _sse_event("response.route", {"route": result["route"]})
 
     # tool_call and tool_result events — emitted only when route is "tool"

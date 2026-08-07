@@ -22,3 +22,21 @@ export type IngestionStatusResponse = {
 export type IngestionDeleteResponse = {
   success: boolean
 }
+
+export type ParsedTextResponse = {
+  versionId: string
+  parsedText: string | null
+  lifecycleState: string
+}
+
+export type ApproveIngestionResponse = {
+  versionId: string
+  lifecycleState: string
+  enqueued: boolean
+}
+
+export type RejectIngestionResponse = {
+  versionId: string
+  lifecycleState: string
+}
+

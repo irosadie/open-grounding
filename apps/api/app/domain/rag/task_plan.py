@@ -79,15 +79,15 @@ def parse_task_plan(
     tasks: list[TaskSpec] = []
     for index, item in enumerate(parsed, start=1):
         if not isinstance(item, Mapping):
-            raise ValueError("Each task must be an object")
+            raise ValueError(f"Task at index {index} must be an object, got {type(item).__name__}")
         try:
             task_type = TaskType(str(item["type"]).upper())
             if task_type not in allowed:
-                raise ValueError(f"Task type {task_type} is not allowed")
+                raise ValueError(f"Task type {task_type} is not allowed (allowed: {', '.join(t.value for t in allowed)})")
             task_id = str(item.get("id", f"t{index}")).strip()
             intent = str(item["intent"]).strip()
             if not task_id or not intent:
-                raise ValueError("Task id and intent are required")
+                raise ValueError("Task id and intent must be non-empty strings")
             query = item.get("query")
             if query is not None:
                 query = str(query).strip() or None
@@ -97,11 +97,12 @@ def parse_task_plan(
             if not isinstance(arguments, Mapping):
                 raise ValueError("MCP arguments must be an object")
             if task_type in (TaskType.RAG, TaskType.GENERAL) and not query:
-                raise ValueError(f"{task_type} tasks require query")
+                raise ValueError(f"{task_type} tasks require a non-empty 'query' field")
             if task_type is TaskType.MCP and not str(item.get("tool_ref", "")).strip():
-                raise ValueError("MCP tasks require tool_ref")
+                raise ValueError("MCP tasks require a non-empty 'tool_ref' field")
         except (KeyError, TypeError) as exc:
-            raise ValueError("Invalid task object") from exc
+            missing = str(exc).strip("'")
+            raise ValueError(f"Task at index {index} is missing required field: {missing}") from exc
         tasks.append(
             TaskSpec(
                 id=task_id,
@@ -120,9 +121,19 @@ def parse_task_plan(
     return TaskPlan(tasks=tuple(tasks[:max_tasks]), truncated=len(tasks) > max_tasks)
 
 
-def fallback_task_plan(query: str, reason: str) -> TaskPlan:
+def fallback_task_plan(
+    query: str,
+    reason: str,
+    allowed_types: set[TaskType | str] | None = None,
+) -> TaskPlan:
+    allowed = {TaskType(t) for t in (allowed_types or {TaskType.RAG})} if allowed_types else {TaskType.RAG}
+    fallback_type = (
+        TaskType.RAG if TaskType.RAG in allowed
+        else TaskType.GENERAL if TaskType.GENERAL in allowed
+        else next(iter(allowed), TaskType.RAG)
+    )
     return TaskPlan(
-        tasks=(TaskSpec(id="t1", type=TaskType.RAG, intent="retrieve_evidence", query=query),),
+        tasks=(TaskSpec(id="t1", type=fallback_type, intent="retrieve_evidence", query=query),),
         fallback=True,
         fallback_reason=reason,
     )

@@ -117,6 +117,7 @@ class DocumentVersion:
     content_checksum: str
     source_revision: str | None
     pipeline_fingerprint: str | None
+    parsed_text: str | None
     object_key_raw: str
     size_bytes: int | None
     mime_type: str | None

@@ -33,6 +33,7 @@ export default function LoginContent() {
   const [formError, setFormError] = useState("")
   const [fieldErrors, setFieldErrors] = useState<LoginErrors>({})
   const sessionExpired = searchParams.get("sessionExpired") === "1"
+  const urlError = searchParams.get("error")
   const [form, setForm] = useState<LoginProps>({
     email: "",
     password: "",
@@ -90,7 +91,11 @@ export default function LoginContent() {
         })
 
         if (result?.error) {
-          setFormError(result.error)
+          setFormError(
+            result.error === "CredentialsSignin"
+              ? "Email atau password salah"
+              : result.error,
+          )
           return
         }
 
@@ -133,9 +138,11 @@ export default function LoginContent() {
 
           {formError ? (
             <p className="text-sm text-danger-500">{formError}</p>
+          ) : urlError && urlError !== "undefined" ? (
+            <p className="text-sm text-danger-500">Email atau password salah</p>
           ) : null}
 
-          {sessionExpired && !formError ? (
+          {sessionExpired && !formError && !urlError ? (
             <p className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700">
               Your session has expired. Please sign in again.
             </p>
