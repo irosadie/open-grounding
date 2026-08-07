@@ -68,7 +68,8 @@ export const apiRouters = {
       documents: "/rag/ingestion/documents",
       parsedText: "/rag/ingestion/:versionId/parsed-text",
       approve: "/rag/ingestion/:versionId/approve",
-      reject: "/rag/ingestion/:versionId/reject",
+        reject: "/rag/ingestion/:versionId/reject",
+        pendingReviewCount: "/rag/ingestion/pending-review/count",
     },
     query: {
       ask: "/rag/query",

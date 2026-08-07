@@ -136,6 +136,12 @@ def test_intake_without_metadata_passes_validation(client: TestClient) -> None:
     assert response.status_code in (401, 403)
 
 
+def test_pending_review_count_requires_auth(client: TestClient) -> None:
+    """Pending review count endpoint requires authentication."""
+    response = client.get("/rag/ingestion/pending-review/count")
+    assert response.status_code in (401, 403)
+
+
 def test_rag_routes_registered() -> None:
     """The RAG router is registered and routes appear in the OpenAPI spec."""
     app = create_app()

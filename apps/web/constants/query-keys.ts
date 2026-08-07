@@ -63,6 +63,7 @@ export const queryKeys = {
       parsedText: "ragIngestionParsedText",
       approve: "ragIngestionApprove",
       reject: "ragIngestionReject",
+      pendingReviewCount: "ragIngestionPendingReviewCount",
     },
     query: {
       ask: "ragQueryAsk",

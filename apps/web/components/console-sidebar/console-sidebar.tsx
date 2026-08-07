@@ -1,6 +1,7 @@
 "use client"
 
 import { consoleNavItems } from "$/configs/console"
+import { useNeedsReviewCount } from "$/hooks/transactions/use-rag-ingestion"
 import { cn } from "$/utils/cn"
 import { ChevronDown } from "lucide-react"
 import { usePathname } from "next/navigation"
@@ -14,6 +15,7 @@ export function ConsoleSidebar({ onNavClick }: ConsoleSidebarProps) {
   const pathname = usePathname()
   const inSettings = pathname.startsWith("/console/settings")
   const [settingsOpen, setSettingsOpen] = useState(inSettings)
+  const { data: pendingReviewCount } = useNeedsReviewCount()
 
   return (
     <nav
@@ -28,6 +30,8 @@ export function ConsoleSidebar({ onNavClick }: ConsoleSidebarProps) {
         const Icon = item.icon
         const isSettingsParent = item.href === "/console/settings"
         const isSubItem = item.indent
+        const isIngestion = item.href === "/console/ingestion"
+        const badge = isIngestion && pendingReviewCount ? pendingReviewCount : 0
 
         if (isSubItem && !settingsOpen) {
           return null
@@ -74,7 +78,12 @@ export function ConsoleSidebar({ onNavClick }: ConsoleSidebarProps) {
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" />
-                <span>{item.label}</span>
+                <span className="flex-1">{item.label}</span>
+                {badge > 0 && (
+                  <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </a>
             )}
           </div>

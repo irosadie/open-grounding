@@ -791,6 +791,16 @@ async def list_documents(
     )
 
 
+@rag_router.get("/ingestion/pending-review/count")
+async def get_pending_review_count(
+    tenant: TenantContextDependency,
+    service: IngestionServiceDependency,
+) -> dict[str, object]:
+    """Return count of document versions in NEEDS_REVIEW state for the tenant."""
+    count = await service.get_pending_review_count(tenant=tenant)
+    return success("Pending review count", {"count": count})
+
+
 @rag_router.get(
     "/ingestion/{version_id}/parsed-text",
     summary="Get parsed text for a document version",

@@ -809,6 +809,17 @@ class SqlAlchemyDocumentVersionRepository:
         row = await self._get_row(tenant_id=tenant_id, version_id=version_id)
         return row.parsed_text if row else None
 
+    async def count_needs_review(self, *, tenant_id: str) -> int:
+        """Return count of document versions in NEEDS_REVIEW state for a tenant."""
+        from sqlalchemy import func
+        result = await self._session.execute(
+            select(func.count()).where(
+                DocumentVersionRecord.tenant_id == tenant_id,
+                DocumentVersionRecord.lifecycle_state == DocumentVersionLifecycleState.NEEDS_REVIEW,
+            )
+        )
+        return result.scalar_one() or 0
+
     async def list_by_knowledge_base(
         self,
         *,

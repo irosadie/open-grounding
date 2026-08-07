@@ -205,6 +205,10 @@ class IngestionIntakeService:
         finally:
             await client.aclose()
 
+    async def get_pending_review_count(self, *, tenant: TenantContext) -> int:
+        """Return count of document versions in NEEDS_REVIEW state for the tenant."""
+        return await self._version_repo.count_needs_review(tenant_id=tenant.tenant_id)
+
     async def get_status(
         self,
         *,
