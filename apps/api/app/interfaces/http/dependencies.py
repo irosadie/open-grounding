@@ -5,10 +5,13 @@ from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.auth_service import AuthService
-from app.application.memory_config_service import MemoryConfigService
+from app.application.confidence_service import ConfidenceService
 from app.application.decomposition_config_service import DecompositionConfigService
 from app.application.ingestion_intake_service import IngestionIntakeService
 from app.application.knowledge_base_service import KnowledgeBaseService
+from app.application.mcp_runtime_service import McpRuntimeService
+from app.application.memory_config_service import MemoryConfigService
+from app.application.planner_config_service import PlannerConfigService
 from app.application.profile_service import IndexProfileService, ModelProfileService
 from app.application.provider_credential_service import ProviderCredentialService
 from app.application.rag_generation import RagGenerationService
@@ -16,6 +19,7 @@ from app.application.rag_hybrid_retrieval import RagHybridRetrievalService
 from app.application.rag_query_admission import RagQueryAdmission
 from app.application.rag_query_service import RagQueryService
 from app.application.rag_trace_service import RagTraceService
+from app.application.retrieval_config_service import RetrievalConfigService
 from app.core.security import decode_access_token
 from app.core.settings import Settings, get_settings
 from app.domain.errors import DomainError
@@ -24,9 +28,23 @@ from app.domain.tenant_context import TenantContext
 from app.infrastructure.database import SqlAlchemyAuthRepository, SqlAlchemyTenantRepository, get_session
 from app.infrastructure.embedding_adapter import ProfileSparseEncoderAdapter, ProviderEmbeddingAdapter
 from app.infrastructure.generation_adapter import LLMGenerationAdapter
+from app.infrastructure.mcp.connection_manager import McpConnectionManager
 from app.infrastructure.qdrant import QdrantVectorStoreAdapter
 from app.infrastructure.rag_answer_trace import SqlAlchemyAnswerFeedbackRepository, SqlAlchemyAnswerRunRepository, SqlAlchemyAnswerTraceDetailRepository
-from app.infrastructure.rag_catalog import SqlAlchemyDecompositionConfigRepository, SqlAlchemyIndexGenerationRepository, SqlAlchemyIndexProfileRepository, SqlAlchemyKnowledgeBaseRepository
+from app.infrastructure.rag_catalog import (
+    SqlAlchemyDecompositionConfigRepository,
+    SqlAlchemyIndexGenerationRepository,
+    SqlAlchemyIndexProfileRepository,
+    SqlAlchemyKnowledgeBaseRepository,
+    SqlAlchemyMcpInvocationRepository,
+    SqlAlchemyMcpServerRepository,
+    SqlAlchemyMcpToolRepository,
+    SqlAlchemyPlannerConfigRepository,
+    SqlAlchemyRetrievalConfigRepository,
+    SqlCalibrationFixtureRepository,
+    SqlCalibrationModelRepository,
+    SqlConfidenceConfigRepository,
+)
 from app.infrastructure.rag_conversations import SqlAlchemyConversationHistoryRepository
 
 
@@ -75,12 +93,14 @@ def get_rag_query_service(
         SqlAlchemyAnswerTraceDetailRepository(session),
         SqlAlchemyDecompositionConfigRepository(session),
         SqlAlchemyIndexProfileRepository(session),
-        _retrieval_service(settings),
+        _retrieval_service(settings, session),
         _generation_service(settings),
+        planner_configs=SqlAlchemyPlannerConfigRepository(session),
+        mcp_runtime=get_mcp_runtime_service(session, settings, get_mcp_connection_manager()),
     )
 
 
-def _retrieval_service(settings: Settings) -> RagHybridRetrievalService:
+def _retrieval_service(settings: Settings, session: AsyncSession) -> RagHybridRetrievalService:
     import httpx
 
     client = httpx.AsyncClient(timeout=30.0)
@@ -90,6 +110,7 @@ def _retrieval_service(settings: Settings) -> RagHybridRetrievalService:
         ProviderEmbeddingAdapter(settings),
         ProfileSparseEncoderAdapter(settings),
         qdrant,
+        SqlAlchemyRetrievalConfigRepository(session),
     )
 
 
@@ -200,6 +221,16 @@ def get_decomposition_config_service(
 DecompositionConfigServiceDependency = Annotated[DecompositionConfigService, Depends(get_decomposition_config_service)]
 
 
+def get_planner_config_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PlannerConfigService:
+    return PlannerConfigService(session, settings)
+
+
+PlannerConfigServiceDependency = Annotated[PlannerConfigService, Depends(get_planner_config_service)]
+
+
 def get_memory_config_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -208,5 +239,52 @@ def get_memory_config_service(
 
 
 MemoryConfigServiceDependency = Annotated[MemoryConfigService, Depends(get_memory_config_service)]
+
+
+def get_retrieval_config_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RetrievalConfigService:
+    return RetrievalConfigService(session, settings)
+
+
+RetrievalConfigServiceDependency = Annotated[RetrievalConfigService, Depends(get_retrieval_config_service)]
+
+
+def get_confidence_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ConfidenceService:
+    return ConfidenceService(
+        SqlConfidenceConfigRepository(session),
+        SqlCalibrationFixtureRepository(session),
+        SqlCalibrationModelRepository(session),
+        SqlAlchemyAnswerRunRepository(session),
+    )
+
+
+ConfidenceServiceDependency = Annotated[ConfidenceService, Depends(get_confidence_service)]
+
+
+@lru_cache
+def get_mcp_connection_manager() -> McpConnectionManager:
+    return McpConnectionManager()
+
+
+def get_mcp_runtime_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    connections: Annotated[McpConnectionManager, Depends(get_mcp_connection_manager)],
+) -> McpRuntimeService:
+    return McpRuntimeService(
+        settings,
+        SqlAlchemyMcpServerRepository(session),
+        SqlAlchemyMcpToolRepository(session),
+        SqlAlchemyMcpInvocationRepository(session),
+        ProviderCredentialService(session, settings),
+        connections,
+    )
+
+
+McpRuntimeServiceDependency = Annotated[McpRuntimeService, Depends(get_mcp_runtime_service)]
 
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]

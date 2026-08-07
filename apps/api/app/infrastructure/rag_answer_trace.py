@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, Uuid, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.rag.answer_trace import AnswerCitation, AnswerFeedback, AnswerRun
@@ -35,6 +36,7 @@ class AnswerRunRecord(Base):
     evidence_level: Mapped[str] = mapped_column(String(20), nullable=False)
     profile_snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
     limitations: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    feature_vector: Mapped[dict[str, float] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
 
 
@@ -97,7 +99,7 @@ class EvaluationResultRecord(Base):
 
 
 def _to_answer_run(row: AnswerRunRecord) -> AnswerRun:
-    return AnswerRun(row.id, row.tenant_id, row.trace_id, row.conversation_id, row.original_query, row.standalone_query, row.route, row.evidence_level, row.profile_snapshot, tuple(row.limitations), row.created_at)
+    return AnswerRun(row.id, row.tenant_id, row.trace_id, row.conversation_id, row.original_query, row.standalone_query, row.route, row.evidence_level, row.profile_snapshot, tuple(row.limitations), row.created_at, row.feature_vector)
 
 
 def _to_answer_citation(row: AnswerCitationRecord) -> AnswerCitation:
@@ -124,6 +126,7 @@ class SqlAlchemyAnswerRunRepository:
         evidence_level: str,
         profile_snapshot: dict[str, object],
         limitations: tuple[str, ...],
+        feature_vector: dict[str, float] | None = None,
     ) -> AnswerRun:
         row = AnswerRunRecord(
             id=str(uuid4()),
@@ -136,6 +139,7 @@ class SqlAlchemyAnswerRunRepository:
             evidence_level=evidence_level,
             profile_snapshot=profile_snapshot,
             limitations=list(limitations),
+            feature_vector=feature_vector,
         )
         self._session.add(row)
         await self._session.commit()
@@ -146,6 +150,43 @@ class SqlAlchemyAnswerRunRepository:
         result = await self._session.execute(select(AnswerRunRecord).where(AnswerRunRecord.tenant_id == tenant_id, AnswerRunRecord.trace_id == trace_id))
         row = result.scalar_one_or_none()
         return _to_answer_run(row) if row else None
+
+    async def find_by_id(self, *, tenant_id: str, answer_run_id: str) -> AnswerRun | None:
+        result = await self._session.execute(select(AnswerRunRecord).where(AnswerRunRecord.tenant_id == tenant_id, AnswerRunRecord.id == answer_run_id))
+        row = result.scalar_one_or_none()
+        return _to_answer_run(row) if row else None
+
+    async def set_feature_vector(self, *, tenant_id: str, answer_run_id: str, feature_vector: dict[str, float]) -> AnswerRun | None:
+        result = await self._session.execute(select(AnswerRunRecord).where(AnswerRunRecord.id == answer_run_id, AnswerRunRecord.tenant_id == tenant_id))
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        row.feature_vector = feature_vector
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_answer_run(row)
+
+    async def list_unlabeled_for_profile(self, *, tenant_id: str, retrieval_profile_id: str, page: int, page_size: int) -> list[AnswerRun]:
+        from sqlalchemy import not_, exists, select as sa_select
+
+        from app.infrastructure.rag_catalog import CalibrationFixtureEntryRecord
+
+        labeled_subquery = sa_select(CalibrationFixtureEntryRecord.answer_run_id).where(
+            CalibrationFixtureEntryRecord.answer_run_id.is_not(None)
+        ).scalar_subquery()
+        stmt = (
+            select(AnswerRunRecord)
+            .where(
+                AnswerRunRecord.tenant_id == tenant_id,
+                AnswerRunRecord.feature_vector.is_not(None),
+                not_(AnswerRunRecord.id.in_(labeled_subquery)),
+            )
+            .order_by(AnswerRunRecord.created_at.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        result = await self._session.execute(stmt)
+        return [_to_answer_run(row) for row in result.scalars().all()]
 
 
 class SqlAlchemyAnswerCitationRepository:

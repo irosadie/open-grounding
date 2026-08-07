@@ -15,6 +15,24 @@ never mix incompatible vector dimensions or models.
 from dataclasses import dataclass
 
 
+@dataclass(frozen=True)
+class RetrievalConfig:
+    """Per-index-profile retrieval and RRF configuration."""
+
+    index_profile_id: str
+    dense_weight: float = 1.0
+    sparse_weight: float = 1.0
+    fusion_k: int = 60
+    dense_candidates: int = 50
+    sparse_candidates: int = 50
+    fused_candidates: int = 40
+    enabled: bool = True
+
+    @classmethod
+    def defaults(cls, index_profile_id: str) -> "RetrievalConfig":
+        return cls(index_profile_id=index_profile_id)
+
+
 class DistanceMetric:
     COSINE = "cosine"
     DOT = "dot"

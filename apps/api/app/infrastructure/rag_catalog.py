@@ -12,12 +12,14 @@ from typing import cast
 from uuid import uuid4
 
 from sqlalchemy import (
+    ARRAY,
     JSON,
     BigInteger,
     Boolean,
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -25,12 +27,14 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.rag.catalog import (
     Chunk,
     ChunkType,
     DecompositionConfig,
+    PlannerConfig,
     Document,
     DocumentVersion,
     DocumentVersionLifecycleState,
@@ -47,8 +51,11 @@ from app.domain.rag.catalog import (
     StageCheckpoint,
     StageCheckpointStatus,
 )
+from app.domain.rag.confidence import CalibrationFixture, CalibrationFixtureEntry, CalibrationModelVersion, CalibrationSource, ConfidenceConfig, ConfidenceLabel
 from app.domain.rag.policy import Classification
-from app.domain.rag.profiles import IndexProfile, ModelProfile
+from app.domain.rag.profiles import IndexProfile, ModelProfile, RetrievalConfig
+from app.domain.mcp.entities import McpInvocation, McpServer, McpTool, McpToolDescriptor
+from app.domain.mcp.enums import McpInvocationStatus, McpServerStatus, McpTransport
 from app.infrastructure.database import Base, utc_now
 
 
@@ -167,6 +174,100 @@ class IndexProfileRecord(Base):
     updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
 
 
+class RetrievalConfigRecord(Base):
+    __tablename__ = "rag_retrieval_configs"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    index_profile_id: Mapped[str] = mapped_column(
+        Uuid(as_uuid=False), ForeignKey("rag_index_profiles.id", ondelete="CASCADE"), nullable=False
+    )
+    dense_weight: Mapped[float] = mapped_column(nullable=False, default=1.0)
+    sparse_weight: Mapped[float] = mapped_column(nullable=False, default=1.0)
+    fusion_k: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    dense_candidates: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    sparse_candidates: Mapped[int] = mapped_column(Integer, nullable=False, default=50)
+    fused_candidates: Mapped[int] = mapped_column(Integer, nullable=False, default=40)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "index_profile_id", name="uq_retrieval_config_tenant_profile"),)
+
+
+class CalibrationFixtureRecord(Base):
+    __tablename__ = "calibration_fixture"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    retrieval_profile_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_index_profiles.id", ondelete="CASCADE"), nullable=False)
+    version: Mapped[str] = mapped_column(String(120), nullable=False)
+    source: Mapped[CalibrationSource] = mapped_column(Enum(CalibrationSource, name="CalibrationSource"), nullable=False)
+    entry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("uq_calibration_fixture_active_profile", "tenant_id", "retrieval_profile_id", unique=True, postgresql_where=is_active.is_(True)),
+    )
+
+
+class CalibrationFixtureEntryRecord(Base):
+    __tablename__ = "calibration_fixture_entry"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    fixture_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("calibration_fixture.id", ondelete="CASCADE"), nullable=False)
+    answer_run_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_answer_runs.id", ondelete="SET NULL"), nullable=True)
+    query: Mapped[str] = mapped_column(String, nullable=False)
+    evidence_chunk_ids: Mapped[list[str]] = mapped_column(ARRAY(Uuid(as_uuid=False)), nullable=False, default=list)
+    answer: Mapped[str] = mapped_column(String, nullable=False)
+    confidence_label: Mapped[ConfidenceLabel] = mapped_column(Enum(ConfidenceLabel, name="ConfidenceLabel"), nullable=False)
+    annotator_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    annotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
+
+
+class CalibrationModelVersionRecord(Base):
+    __tablename__ = "calibration_model_version"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    retrieval_profile_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_index_profiles.id", ondelete="CASCADE"), nullable=False)
+    fixture_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("calibration_fixture.id", ondelete="RESTRICT"), nullable=False)
+    artifact_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    feature_names: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    threshold_used: Mapped[float] = mapped_column(nullable=False)
+    precision_at_threshold: Mapped[float] = mapped_column(nullable=False)
+    recall_at_threshold: Mapped[float] = mapped_column(nullable=False)
+    f1_at_threshold: Mapped[float] = mapped_column(nullable=False)
+    entry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
+    promoted_by: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (
+        Index("uq_calibration_model_active_profile", "tenant_id", "retrieval_profile_id", unique=True, postgresql_where=is_active.is_(True)),
+    )
+
+
+class ConfidenceConfigRecord(Base):
+    __tablename__ = "confidence_config"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    retrieval_profile_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_index_profiles.id", ondelete="CASCADE"), nullable=False)
+    feature_weights: Mapped[dict[str, float] | None] = mapped_column(JSONB, nullable=True)
+    abstention_threshold: Mapped[float] = mapped_column(nullable=False, default=0.35)
+    emit_numeric_score: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    min_labeled_entries: Mapped[int] = mapped_column(Integer, nullable=False, default=200)
+    active_model_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("calibration_model_version.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "retrieval_profile_id", name="uq_confidence_config_tenant_profile"),)
+
+
 class IndexGenerationRecord(Base):
     __tablename__ = "rag_index_generations"
 
@@ -213,6 +314,74 @@ class OutboxEventRecord(Base):
     status: Mapped[OutboxEventStatus] = mapped_column(Enum(OutboxEventStatus, name="OutboxEventStatus"), default=OutboxEventStatus.PENDING, nullable=False)
     created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
     dispatched_at: Mapped[datetime | None] = mapped_column("dispatched_at", DateTime(timezone=False), nullable=True)
+
+
+class McpServerRecord(Base):
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    transport: Mapped[McpTransport] = mapped_column(Enum(McpTransport, name="McpTransport", values_callable=lambda values: [value.value for value in values]), nullable=False)
+    command: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    args: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    auth_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    credential_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    headers_json: Mapped[dict[str, object]] = mapped_column(JSON, default=dict, nullable=False)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    max_payload_bytes: Mapped[int] = mapped_column(Integer, default=1_048_576, nullable=False)
+    allow_insecure: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    status: Mapped[McpServerStatus] = mapped_column(Enum(McpServerStatus, name="McpServerStatus", values_callable=lambda values: [value.value for value in values]), default=McpServerStatus.UNKNOWN, nullable=False)
+    last_error: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (Index("ix_mcp_servers_tenant_id", "tenant_id"),)
+
+
+class McpToolRecord(Base):
+    __tablename__ = "mcp_tools"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    server_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(String(4000), default="", nullable=False)
+    input_schema: Mapped[dict[str, object]] = mapped_column(JSON, default=dict, nullable=False)
+    allowed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "server_id", "name", name="uq_mcp_tools_tenant_server_name"),
+        Index("ix_mcp_tools_tenant_server", "tenant_id", "server_id"),
+    )
+
+
+class McpInvocationRecord(Base):
+    __tablename__ = "mcp_invocations"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    server_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=False)
+    tool_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("mcp_tools.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    args_json: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False)
+    args_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[McpInvocationStatus] = mapped_column(Enum(McpInvocationStatus, name="McpInvocationStatus", values_callable=lambda values: [value.value for value in values]), nullable=False)
+    result_text: Mapped[str | None] = mapped_column(String(4096), nullable=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "created_at", name="uq_mcp_invocations_tenant_created_at"),
+        Index("ix_mcp_invocations_tenant_created_at", "tenant_id", "created_at"),
+        Index("ix_mcp_invocations_tenant_server_status", "tenant_id", "server_id", "status"),
+    )
 
 
 # --- Entity mappers ----------------------------------------------------------
@@ -317,6 +486,35 @@ def _to_index_profile(row: IndexProfileRecord) -> IndexProfile:
     )
 
 
+def _to_retrieval_config(row: RetrievalConfigRecord) -> RetrievalConfig:
+    return RetrievalConfig(
+        index_profile_id=row.index_profile_id,
+        dense_weight=row.dense_weight,
+        sparse_weight=row.sparse_weight,
+        fusion_k=row.fusion_k,
+        dense_candidates=row.dense_candidates,
+        sparse_candidates=row.sparse_candidates,
+        fused_candidates=row.fused_candidates,
+        enabled=row.enabled,
+    )
+
+
+def _to_calibration_fixture(row: CalibrationFixtureRecord) -> CalibrationFixture:
+    return CalibrationFixture(row.id, row.tenant_id, row.retrieval_profile_id, row.version, row.source, row.entry_count, row.is_active, row.created_at, row.created_by)
+
+
+def _to_calibration_fixture_entry(row: CalibrationFixtureEntryRecord) -> CalibrationFixtureEntry:
+    return CalibrationFixtureEntry(row.id, row.fixture_id, row.answer_run_id, row.query, tuple(row.evidence_chunk_ids), row.answer, row.confidence_label, row.annotator_id, row.annotated_at, row.created_at)
+
+
+def _to_calibration_model(row: CalibrationModelVersionRecord) -> CalibrationModelVersion:
+    return CalibrationModelVersion(row.id, row.tenant_id, row.retrieval_profile_id, row.fixture_id, row.artifact_path, tuple(row.feature_names), row.threshold_used, row.precision_at_threshold, row.recall_at_threshold, row.f1_at_threshold, row.entry_count, row.is_active, row.created_at, row.promoted_by)
+
+
+def _to_confidence_config(row: ConfidenceConfigRecord) -> ConfidenceConfig:
+    return ConfidenceConfig(row.tenant_id, row.retrieval_profile_id, row.feature_weights, row.abstention_threshold, row.emit_numeric_score, row.min_labeled_entries, row.active_model_id, row.updated_at, row.updated_by)
+
+
 def _to_index_generation(row: IndexGenerationRecord) -> IndexGeneration:
     return IndexGeneration(
         id=row.id,
@@ -358,6 +556,35 @@ def _to_outbox_event(row: OutboxEventRecord) -> OutboxEvent:
         status=row.status,
         created_at=row.created_at,
         dispatched_at=row.dispatched_at,
+    )
+
+
+def _to_mcp_server(row: McpServerRecord) -> McpServer:
+    return McpServer(
+        id=row.id, tenant_id=row.tenant_id, name=row.name, transport=row.transport,
+        command=row.command, args=list(row.args), url=row.url, auth_type=row.auth_type,
+        credential_ref=row.credential_ref, headers_json=dict(row.headers_json),
+        timeout_seconds=row.timeout_seconds, max_payload_bytes=row.max_payload_bytes,
+        allow_insecure=row.allow_insecure, enabled=row.enabled, status=row.status,
+        last_error=row.last_error, created_at=row.created_at, updated_at=row.updated_at,
+    )
+
+
+def _to_mcp_tool(row: McpToolRecord) -> McpTool:
+    return McpTool(
+        id=row.id, tenant_id=row.tenant_id, server_id=row.server_id, name=row.name,
+        description=row.description, input_schema=dict(row.input_schema), allowed=row.allowed,
+        is_stale=row.is_stale, last_discovered_at=row.last_discovered_at,
+        created_at=row.created_at, updated_at=row.updated_at,
+    )
+
+
+def _to_mcp_invocation(row: McpInvocationRecord) -> McpInvocation:
+    return McpInvocation(
+        id=row.id, tenant_id=row.tenant_id, server_id=row.server_id, tool_id=row.tool_id,
+        user_id=row.user_id, args_json=dict(row.args_json), args_hash=row.args_hash,
+        status=row.status, result_text=row.result_text, duration_ms=row.duration_ms,
+        created_at=row.created_at,
     )
 
 
@@ -738,6 +965,216 @@ class SqlAlchemyIndexProfileRepository:
         return await self.set_active(tenant_id=tenant_id, profile_id=profile_id)
 
 
+class SqlAlchemyRetrievalConfigRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def find_by_profile(self, *, tenant_id: str, index_profile_id: str) -> RetrievalConfig | None:
+        result = await self._session.execute(
+            select(RetrievalConfigRecord).where(
+                RetrievalConfigRecord.tenant_id == tenant_id,
+                RetrievalConfigRecord.index_profile_id == index_profile_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_retrieval_config(row) if row else None
+
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        index_profile_id: str,
+        dense_weight: float,
+        sparse_weight: float,
+        fusion_k: int,
+        dense_candidates: int,
+        sparse_candidates: int,
+        fused_candidates: int,
+        enabled: bool,
+    ) -> RetrievalConfig:
+        result = await self._session.execute(
+            select(RetrievalConfigRecord).where(
+                RetrievalConfigRecord.tenant_id == tenant_id,
+                RetrievalConfigRecord.index_profile_id == index_profile_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = RetrievalConfigRecord(id=str(uuid4()), tenant_id=tenant_id, index_profile_id=index_profile_id)
+            self._session.add(row)
+        row.dense_weight = dense_weight
+        row.sparse_weight = sparse_weight
+        row.fusion_k = fusion_k
+        row.dense_candidates = dense_candidates
+        row.sparse_candidates = sparse_candidates
+        row.fused_candidates = fused_candidates
+        row.enabled = enabled
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_retrieval_config(row)
+
+    async def delete(self, *, tenant_id: str, index_profile_id: str) -> bool:
+        result = await self._session.execute(
+            select(RetrievalConfigRecord).where(
+                RetrievalConfigRecord.tenant_id == tenant_id,
+                RetrievalConfigRecord.index_profile_id == index_profile_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.commit()
+        return True
+
+
+class SqlCalibrationFixtureRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def save(self, fixture: CalibrationFixture) -> CalibrationFixture:
+        row = CalibrationFixtureRecord(
+            id=fixture.id, tenant_id=fixture.tenant_id, retrieval_profile_id=fixture.retrieval_profile_id, version=fixture.version,
+            source=fixture.source, entry_count=fixture.entry_count, is_active=fixture.is_active, created_at=fixture.created_at, created_by=fixture.created_by,
+        )
+        self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_calibration_fixture(row)
+
+    async def get_active(self, *, tenant_id: str, retrieval_profile_id: str) -> CalibrationFixture | None:
+        result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id, CalibrationFixtureRecord.is_active.is_(True)))
+        row = result.scalar_one_or_none()
+        return _to_calibration_fixture(row) if row else None
+
+    async def list(self, *, tenant_id: str, retrieval_profile_id: str) -> list[CalibrationFixture]:
+        result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id).order_by(CalibrationFixtureRecord.created_at.desc()))
+        return [_to_calibration_fixture(row) for row in result.scalars()]
+
+    async def deactivate_previous(self, *, tenant_id: str, retrieval_profile_id: str) -> None:
+        result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id, CalibrationFixtureRecord.is_active.is_(True)))
+        for row in result.scalars():
+            row.is_active = False
+        await self._session.commit()
+
+    async def append_entries(self, *, tenant_id: str, fixture_id: str, entries: list[CalibrationFixtureEntry]) -> None:
+        result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.id == fixture_id, CalibrationFixtureRecord.tenant_id == tenant_id))
+        fixture = result.scalar_one_or_none()
+        if fixture is None:
+            return
+        self._session.add_all([CalibrationFixtureEntryRecord(id=entry.id, fixture_id=fixture_id, answer_run_id=entry.answer_run_id, query=entry.query, evidence_chunk_ids=list(entry.evidence_chunk_ids), answer=entry.answer, confidence_label=entry.confidence_label, annotator_id=entry.annotator_id, annotated_at=entry.annotated_at, created_at=entry.created_at) for entry in entries])
+        fixture.entry_count += len(entries)
+        await self._session.commit()
+
+    async def count_labeled_entries(self, *, tenant_id: str, retrieval_profile_id: str) -> int:
+        result = await self._session.execute(select(CalibrationFixtureRecord.entry_count).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id, CalibrationFixtureRecord.source == CalibrationSource.OPERATOR_LABELED, CalibrationFixtureRecord.is_active.is_(True)))
+        return sum(result.scalars())
+
+    async def get(self, *, tenant_id: str, fixture_id: str) -> CalibrationFixture | None:
+        result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.id == fixture_id, CalibrationFixtureRecord.tenant_id == tenant_id))
+        row = result.scalar_one_or_none()
+        return _to_calibration_fixture(row) if row else None
+
+    async def get_entries(self, *, tenant_id: str, fixture_id: str) -> list[CalibrationFixtureEntry]:
+        result = await self._session.execute(
+            select(CalibrationFixtureEntryRecord)
+            .join(CalibrationFixtureRecord, CalibrationFixtureEntryRecord.fixture_id == CalibrationFixtureRecord.id)
+            .where(CalibrationFixtureEntryRecord.fixture_id == fixture_id, CalibrationFixtureRecord.tenant_id == tenant_id)
+            .order_by(CalibrationFixtureEntryRecord.created_at)
+        )
+        return [_to_calibration_fixture_entry(row) for row in result.scalars()]
+
+    async def upsert_answer_run_entries(self, *, tenant_id: str, fixture_id: str, entries: list[CalibrationFixtureEntry]) -> int:
+        result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.id == fixture_id, CalibrationFixtureRecord.tenant_id == tenant_id).with_for_update())
+        fixture = result.scalar_one_or_none()
+        if fixture is None:
+            return 0
+        created = 0
+        for entry in entries:
+            result = await self._session.execute(select(CalibrationFixtureEntryRecord).where(CalibrationFixtureEntryRecord.fixture_id == fixture_id, CalibrationFixtureEntryRecord.answer_run_id == entry.answer_run_id))
+            row = result.scalar_one_or_none()
+            if row is None:
+                self._session.add(CalibrationFixtureEntryRecord(id=entry.id, fixture_id=fixture_id, answer_run_id=entry.answer_run_id, query=entry.query, evidence_chunk_ids=list(entry.evidence_chunk_ids), answer=entry.answer, confidence_label=entry.confidence_label, annotator_id=entry.annotator_id, annotated_at=entry.annotated_at, created_at=entry.created_at))
+                created += 1
+            else:
+                row.confidence_label = entry.confidence_label
+                row.annotator_id = entry.annotator_id
+                row.annotated_at = entry.annotated_at
+        fixture.entry_count += created
+        await self._session.commit()
+        return created
+
+
+class SqlCalibrationModelRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def save(self, model: CalibrationModelVersion) -> CalibrationModelVersion:
+        row = CalibrationModelVersionRecord(id=model.id, tenant_id=model.tenant_id, retrieval_profile_id=model.retrieval_profile_id, fixture_id=model.fixture_id, artifact_path=model.artifact_path, feature_names=list(model.feature_names), threshold_used=model.threshold_used, precision_at_threshold=model.precision_at_threshold, recall_at_threshold=model.recall_at_threshold, f1_at_threshold=model.f1_at_threshold, entry_count=model.entry_count, is_active=model.is_active, created_at=model.created_at, promoted_by=model.promoted_by)
+        self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_calibration_model(row)
+
+    async def get_active(self, *, tenant_id: str, retrieval_profile_id: str) -> CalibrationModelVersion | None:
+        result = await self._session.execute(select(CalibrationModelVersionRecord).where(CalibrationModelVersionRecord.tenant_id == tenant_id, CalibrationModelVersionRecord.retrieval_profile_id == retrieval_profile_id, CalibrationModelVersionRecord.is_active.is_(True)))
+        row = result.scalar_one_or_none()
+        return _to_calibration_model(row) if row else None
+
+    async def promote(self, *, tenant_id: str, model_id: str, promoted_by: str) -> CalibrationModelVersion | None:
+        result = await self._session.execute(select(CalibrationModelVersionRecord).where(CalibrationModelVersionRecord.id == model_id, CalibrationModelVersionRecord.tenant_id == tenant_id))
+        target = result.scalar_one_or_none()
+        if target is None:
+            return None
+        active = await self._session.execute(select(CalibrationModelVersionRecord).where(CalibrationModelVersionRecord.tenant_id == tenant_id, CalibrationModelVersionRecord.retrieval_profile_id == target.retrieval_profile_id, CalibrationModelVersionRecord.is_active.is_(True)))
+        for row in active.scalars():
+            row.is_active = False
+        target.is_active = True
+        target.promoted_by = promoted_by
+        await self._session.commit()
+        await self._session.refresh(target)
+        return _to_calibration_model(target)
+
+    async def list(self, *, tenant_id: str, retrieval_profile_id: str) -> list[CalibrationModelVersion]:
+        result = await self._session.execute(select(CalibrationModelVersionRecord).where(CalibrationModelVersionRecord.tenant_id == tenant_id, CalibrationModelVersionRecord.retrieval_profile_id == retrieval_profile_id).order_by(CalibrationModelVersionRecord.created_at.desc()))
+        return [_to_calibration_model(row) for row in result.scalars()]
+
+    async def get(self, *, tenant_id: str, model_id: str) -> CalibrationModelVersion | None:
+        result = await self._session.execute(select(CalibrationModelVersionRecord).where(CalibrationModelVersionRecord.id == model_id, CalibrationModelVersionRecord.tenant_id == tenant_id))
+        row = result.scalar_one_or_none()
+        return _to_calibration_model(row) if row else None
+
+
+class SqlConfidenceConfigRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_or_default(self, *, tenant_id: str, retrieval_profile_id: str) -> ConfidenceConfig:
+        result = await self._session.execute(select(ConfidenceConfigRecord).where(ConfidenceConfigRecord.tenant_id == tenant_id, ConfidenceConfigRecord.retrieval_profile_id == retrieval_profile_id))
+        row = result.scalar_one_or_none()
+        return _to_confidence_config(row) if row else ConfidenceConfig.defaults(tenant_id=tenant_id, retrieval_profile_id=retrieval_profile_id)
+
+    async def upsert(self, config: ConfidenceConfig) -> ConfidenceConfig:
+        result = await self._session.execute(select(ConfidenceConfigRecord).where(ConfidenceConfigRecord.tenant_id == config.tenant_id, ConfidenceConfigRecord.retrieval_profile_id == config.retrieval_profile_id))
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = ConfidenceConfigRecord(id=str(uuid4()), tenant_id=config.tenant_id, retrieval_profile_id=config.retrieval_profile_id)
+            self._session.add(row)
+        row.feature_weights = config.feature_weights
+        row.abstention_threshold = config.abstention_threshold
+        row.emit_numeric_score = config.emit_numeric_score
+        row.min_labeled_entries = config.min_labeled_entries
+        row.active_model_id = config.active_model_id
+        row.updated_by = config.updated_by
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_confidence_config(row)
+
+    async def set_active_model(self, *, tenant_id: str, retrieval_profile_id: str, active_model_id: str | None, updated_by: str | None) -> ConfidenceConfig:
+        config = await self.get_or_default(tenant_id=tenant_id, retrieval_profile_id=retrieval_profile_id)
+        return await self.upsert(ConfidenceConfig(tenant_id, retrieval_profile_id, config.feature_weights, config.abstention_threshold, config.emit_numeric_score, config.min_labeled_entries, active_model_id, updated_by=updated_by))
+
+
 class SqlAlchemyIndexGenerationRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -967,6 +1404,12 @@ class SqlAlchemyChunkRepository:
         )
         rows = list(result.scalars().all())
         return [_to_chunk(row) for row in rows]
+
+    async def find_by_ids(self, *, tenant_id: str, chunk_ids: tuple[str, ...]) -> list[Chunk]:
+        if not chunk_ids:
+            return []
+        result = await self._session.execute(select(ChunkRecord).where(ChunkRecord.tenant_id == tenant_id, ChunkRecord.id.in_(chunk_ids)))
+        return [_to_chunk(row) for row in result.scalars()]
 
     async def create_many(self, *, tenant_id: str, chunks: list[dict[str, object]]) -> int:
         for chunk_data in chunks:
@@ -1317,6 +1760,99 @@ class SqlAlchemyDecompositionConfigRepository:
         return True
 
 
+class PlannerConfigRecord(Base):
+    __tablename__ = "rag_planner_configs"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    knowledge_base_id: Mapped[str] = mapped_column(
+        "knowledge_base_id", Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    model_profile_id: Mapped[str] = mapped_column(
+        "model_profile_id", Uuid(as_uuid=False),
+        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=False,
+    )
+    system_prompt: Mapped[str] = mapped_column(String, nullable=False)
+    user_prompt_template: Mapped[str] = mapped_column(String, nullable=False)
+    max_tasks: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
+    task_timeout_seconds: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    task_types_json: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["RAG", "MCP", "GENERAL"], nullable=False)
+    mcp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    guardrails_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_planner_config_tenant_kb"),)
+
+
+def _to_planner_config(row: PlannerConfigRecord) -> PlannerConfig:
+    return PlannerConfig(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        knowledge_base_id=row.knowledge_base_id,
+        enabled=row.enabled,
+        model_profile_id=row.model_profile_id,
+        system_prompt=row.system_prompt,
+        user_prompt_template=row.user_prompt_template,
+        max_tasks=row.max_tasks,
+        task_timeout_seconds=row.task_timeout_seconds,
+        task_types=tuple(row.task_types_json or []),
+        mcp_enabled=row.mcp_enabled,
+        guardrails=row.guardrails_json or {},
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+class SqlAlchemyPlannerConfigRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def find_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> PlannerConfig | None:
+        result = await self._session.execute(select(PlannerConfigRecord).where(
+            PlannerConfigRecord.tenant_id == tenant_id,
+            PlannerConfigRecord.knowledge_base_id == knowledge_base_id,
+        ))
+        row = result.scalar_one_or_none()
+        return _to_planner_config(row) if row else None
+
+    async def upsert(self, *, tenant_id: str, knowledge_base_id: str, enabled: bool, model_profile_id: str, system_prompt: str, user_prompt_template: str, max_tasks: int, task_timeout_seconds: int, task_types: tuple[str, ...], mcp_enabled: bool, guardrails: dict[str, object]) -> PlannerConfig:
+        result = await self._session.execute(select(PlannerConfigRecord).where(
+            PlannerConfigRecord.tenant_id == tenant_id,
+            PlannerConfigRecord.knowledge_base_id == knowledge_base_id,
+        ))
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = PlannerConfigRecord(id=str(uuid4()), tenant_id=tenant_id, knowledge_base_id=knowledge_base_id)
+            self._session.add(row)
+        row.enabled = enabled
+        row.model_profile_id = model_profile_id
+        row.system_prompt = system_prompt
+        row.user_prompt_template = user_prompt_template
+        row.max_tasks = max_tasks
+        row.task_timeout_seconds = task_timeout_seconds
+        row.task_types_json = list(task_types)
+        row.mcp_enabled = mcp_enabled
+        row.guardrails_json = guardrails
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_planner_config(row)
+
+    async def delete(self, *, tenant_id: str, knowledge_base_id: str) -> bool:
+        result = await self._session.execute(select(PlannerConfigRecord).where(
+            PlannerConfigRecord.tenant_id == tenant_id,
+            PlannerConfigRecord.knowledge_base_id == knowledge_base_id,
+        ))
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.commit()
+        return True
+
+
 # --- Memory ORM models -------------------------------------------------------
 
 class MemoryConfigRecord(Base):
@@ -1621,3 +2157,123 @@ class SqlAlchemyMemoryChunkRepository:
         )
         row = result.scalar_one_or_none()
         return _to_memory_chunk(row) if row else None
+
+
+class SqlAlchemyMcpServerRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(self, **values: object) -> McpServer:
+        row = McpServerRecord(id=str(uuid4()), **values)
+        self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_mcp_server(row)
+
+    async def find_by_id(self, *, tenant_id: str, server_id: str) -> McpServer | None:
+        result = await self._session.execute(select(McpServerRecord).where(McpServerRecord.tenant_id == tenant_id, McpServerRecord.id == server_id))
+        row = result.scalar_one_or_none()
+        return _to_mcp_server(row) if row else None
+
+    async def list(self, *, tenant_id: str) -> list[McpServer]:
+        result = await self._session.execute(select(McpServerRecord).where(McpServerRecord.tenant_id == tenant_id).order_by(McpServerRecord.name))
+        return [_to_mcp_server(row) for row in result.scalars().all()]
+
+    async def update(self, *, tenant_id: str, server_id: str, **changes: object) -> McpServer | None:
+        result = await self._session.execute(select(McpServerRecord).where(McpServerRecord.tenant_id == tenant_id, McpServerRecord.id == server_id))
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        for key, value in changes.items():
+            setattr(row, key, value)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_mcp_server(row)
+
+    async def delete(self, *, tenant_id: str, server_id: str) -> bool:
+        result = await self._session.execute(select(McpServerRecord).where(McpServerRecord.tenant_id == tenant_id, McpServerRecord.id == server_id))
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.commit()
+        return True
+
+
+class SqlAlchemyMcpToolRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert_discovered(self, *, tenant_id: str, server_id: str, tools: list[McpToolDescriptor], discovered_at: datetime) -> list[McpTool]:
+        result = await self._session.execute(select(McpToolRecord).where(McpToolRecord.tenant_id == tenant_id, McpToolRecord.server_id == server_id))
+        rows_by_name = {row.name: row for row in result.scalars().all()}
+        for row in rows_by_name.values():
+            row.is_stale = True
+        for descriptor in tools:
+            row = rows_by_name.get(descriptor.name)
+            if row is None:
+                row = McpToolRecord(id=str(uuid4()), tenant_id=tenant_id, server_id=server_id, name=descriptor.name, description=descriptor.description, input_schema=descriptor.input_schema, allowed=False, is_stale=False, last_discovered_at=discovered_at)
+                self._session.add(row)
+            else:
+                row.description = descriptor.description
+                row.input_schema = descriptor.input_schema
+                row.is_stale = False
+                row.last_discovered_at = discovered_at
+        await self._session.commit()
+        result = await self._session.execute(select(McpToolRecord).where(McpToolRecord.tenant_id == tenant_id, McpToolRecord.server_id == server_id))
+        return [_to_mcp_tool(row) for row in result.scalars().all()]
+
+    async def list(self, *, tenant_id: str, server_id: str, include_stale: bool = False) -> list[McpTool]:
+        statement = select(McpToolRecord).where(McpToolRecord.tenant_id == tenant_id, McpToolRecord.server_id == server_id)
+        if not include_stale:
+            statement = statement.where(McpToolRecord.is_stale == False)  # noqa: E712
+        result = await self._session.execute(statement.order_by(McpToolRecord.name))
+        return [_to_mcp_tool(row) for row in result.scalars().all()]
+
+    async def find_by_id(self, *, tenant_id: str, tool_id: str) -> McpTool | None:
+        result = await self._session.execute(select(McpToolRecord).where(McpToolRecord.tenant_id == tenant_id, McpToolRecord.id == tool_id))
+        row = result.scalar_one_or_none()
+        return _to_mcp_tool(row) if row else None
+
+    async def set_allowed(self, *, tenant_id: str, tool_id: str, allowed: bool) -> McpTool | None:
+        result = await self._session.execute(select(McpToolRecord).where(McpToolRecord.tenant_id == tenant_id, McpToolRecord.id == tool_id))
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        row.allowed = allowed
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_mcp_tool(row)
+
+
+class SqlAlchemyMcpInvocationRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(self, **values: object) -> McpInvocation:
+        row = McpInvocationRecord(id=str(uuid4()), **values)
+        self._session.add(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_mcp_invocation(row)
+
+    async def list(self, *, tenant_id: str, server_id: str | None = None, status: McpInvocationStatus | None = None, user_id: str | None = None, created_after: datetime | None = None, created_before: datetime | None = None, limit: int = 100) -> list[McpInvocation]:
+        statement = select(McpInvocationRecord).where(McpInvocationRecord.tenant_id == tenant_id)
+        if server_id is not None:
+            statement = statement.where(McpInvocationRecord.server_id == server_id)
+        if status is not None:
+            statement = statement.where(McpInvocationRecord.status == status)
+        if user_id is not None:
+            statement = statement.where(McpInvocationRecord.user_id == user_id)
+        if created_after is not None:
+            statement = statement.where(McpInvocationRecord.created_at >= created_after)
+        if created_before is not None:
+            statement = statement.where(McpInvocationRecord.created_at <= created_before)
+        result = await self._session.execute(statement.order_by(McpInvocationRecord.created_at.desc()).limit(limit))
+        return [_to_mcp_invocation(row) for row in result.scalars().all()]
+
+    async def prune(self, *, tenant_id: str, before: datetime) -> int:
+        from sqlalchemy import delete as sa_delete
+        result = await self._session.execute(sa_delete(McpInvocationRecord).where(McpInvocationRecord.tenant_id == tenant_id, McpInvocationRecord.created_at < before))
+        await self._session.commit()
+        return cast(int, result.rowcount or 0)

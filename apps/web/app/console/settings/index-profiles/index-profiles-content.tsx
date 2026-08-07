@@ -10,21 +10,47 @@ import {
   useIndexProfiles,
 } from "$/hooks/transactions/use-index-profiles"
 import { useModelProfiles } from "$/hooks/transactions/use-model-profiles"
+import {
+  useDeleteRetrievalConfig,
+  useRetrievalConfig,
+  useUpsertRetrievalConfig,
+} from "$/hooks/transactions/use-retrieval-config"
 import { cn } from "$/utils/cn"
 import {
   indexProfileChunkingStrategies,
   indexProfileCreateSchema,
   indexProfileDistanceMetrics,
+  retrievalConfigSchema,
 } from "@open-grounding/schemas"
 import type { IndexProfileResponseProps } from "@open-grounding/types"
 import { LayoutList, Plus, Zap } from "lucide-react"
-import { type ChangeEvent, useState } from "react"
+import { type ChangeEvent, useEffect, useState } from "react"
 
 export default function IndexProfilesContent() {
   const { data: profiles, isLoading } = useIndexProfiles()
   const { data: modelProfiles } = useModelProfiles()
   const createMutation = useCreateIndexProfile()
   const activateMutation = useActivateIndexProfile()
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
+    null,
+  )
+  const retrievalQuery = useRetrievalConfig(selectedProfileId)
+  const retrievalMutation = useUpsertRetrievalConfig(selectedProfileId ?? "")
+  const deleteRetrievalMutation = useDeleteRetrievalConfig(
+    selectedProfileId ?? "",
+  )
+  const [retrievalForm, setRetrievalForm] = useState({
+    denseWeight: 1,
+    sparseWeight: 1,
+    fusionK: 60,
+    denseCandidates: 50,
+    sparseCandidates: 50,
+    fusedCandidates: 40,
+    enabled: true,
+  })
+  const [retrievalErrors, setRetrievalErrors] = useState<
+    Record<string, string>
+  >({})
 
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
@@ -46,6 +72,51 @@ export default function IndexProfilesContent() {
     modelProfiles?.filter((p) => p.profileKind === "DENSE_EMBEDDING") ?? []
   const sparseProfiles =
     modelProfiles?.filter((p) => p.profileKind === "SPARSE_EMBEDDING") ?? []
+
+  useEffect(() => {
+    if (!retrievalQuery.data) return
+    setRetrievalForm({
+      denseWeight: retrievalQuery.data.denseWeight,
+      sparseWeight: retrievalQuery.data.sparseWeight,
+      fusionK: retrievalQuery.data.fusionK,
+      denseCandidates: retrievalQuery.data.denseCandidates,
+      sparseCandidates: retrievalQuery.data.sparseCandidates,
+      fusedCandidates: retrievalQuery.data.fusedCandidates,
+      enabled: retrievalQuery.data.enabled,
+    })
+    setRetrievalErrors({})
+  }, [retrievalQuery.data])
+
+  const validateRetrieval = () => {
+    const result = retrievalConfigSchema.safeParse(retrievalForm)
+    if (result.success) {
+      setRetrievalErrors({})
+      return result.data
+    }
+    setRetrievalErrors(
+      Object.fromEntries(
+        result.error.issues.map((issue) => [
+          issue.path[0]?.toString() ?? "form",
+          issue.message,
+        ]),
+      ),
+    )
+    return null
+  }
+
+  const updateRetrievalField = (
+    field: keyof typeof retrievalForm,
+    value: number | boolean,
+  ) => {
+    setRetrievalForm((current) => ({ ...current, [field]: value }))
+    const result = retrievalConfigSchema.shape[field].safeParse(value)
+    setRetrievalErrors((current) => {
+      const next = { ...current }
+      if (result.success) delete next[field]
+      else next[field] = result.error.issues[0]?.message ?? "Invalid value"
+      return next
+    })
+  }
 
   const handleCreate = async () => {
     setFormError("")
@@ -352,6 +423,105 @@ export default function IndexProfilesContent() {
             ))}
           </ul>
         )}
+      </PanelCard>
+
+      <PanelCard
+        title="Retrieval"
+        description="Tune dense and sparse retrieval fusion for an index profile."
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <label
+              htmlFor="retrieval-profile"
+              className="text-sm font-medium text-main-700"
+            >
+              Index Profile
+            </label>
+            <select
+              id="retrieval-profile"
+              value={selectedProfileId ?? ""}
+              onChange={(event) =>
+                setSelectedProfileId(event.target.value || null)
+              }
+              className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
+            >
+              <option value="">Select an index profile...</option>
+              {profiles?.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedProfileId ? (
+            <>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {(
+                  [
+                    ["denseWeight", "Dense Weight", "0 to 5"],
+                    ["sparseWeight", "Sparse Weight", "0 to 5"],
+                    ["fusionK", "Fusion K", "1 to 200"],
+                    ["denseCandidates", "Dense Candidates", "1 to 200"],
+                    ["sparseCandidates", "Sparse Candidates", "1 to 200"],
+                    ["fusedCandidates", "Fused Candidates", "1 to 200"],
+                  ] as const
+                ).map(([field, label, hint]) => (
+                  <Input
+                    key={field}
+                    label={label}
+                    hint={hint}
+                    type="number"
+                    min={field.endsWith("Weight") ? 0 : 1}
+                    max={field.endsWith("Weight") ? 5 : 200}
+                    step={field.endsWith("Weight") ? 0.1 : 1}
+                    value={retrievalForm[field].toString()}
+                    error={retrievalErrors[field]}
+                    onChange={(event) =>
+                      updateRetrievalField(field, Number(event.target.value))
+                    }
+                  />
+                ))}
+              </div>
+              <label className="flex items-center gap-2 text-sm font-medium text-main-700">
+                <input
+                  type="checkbox"
+                  checked={retrievalForm.enabled}
+                  onChange={(event) =>
+                    updateRetrievalField("enabled", event.target.checked)
+                  }
+                />
+                Enabled
+              </label>
+              {retrievalQuery.isLoading ? (
+                <p className="text-sm text-gray-500">Loading...</p>
+              ) : null}
+              <div className="flex gap-2">
+                <Button
+                  intent="primary"
+                  onClick={() => {
+                    const data = validateRetrieval()
+                    if (data) void retrievalMutation.mutateAsync(data)
+                  }}
+                  loading={retrievalMutation.isPending}
+                  disabled={
+                    Object.keys(retrievalErrors).length > 0 ||
+                    retrievalQuery.isLoading
+                  }
+                >
+                  Save Retrieval
+                </Button>
+                <Button
+                  intent="secondary"
+                  bordered
+                  onClick={() => void deleteRetrievalMutation.mutateAsync()}
+                  loading={deleteRetrievalMutation.isPending}
+                >
+                  Reset Defaults
+                </Button>
+              </div>
+            </>
+          ) : null}
+        </div>
       </PanelCard>
     </div>
   )

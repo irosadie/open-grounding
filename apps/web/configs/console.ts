@@ -1,11 +1,13 @@
 import {
   Brain,
+  ChartNoAxesColumnIncreasing,
   Cpu,
   Database,
   KeyRound,
   LayoutDashboard,
   LayoutList,
   MessageSquareText,
+  Network,
   Settings,
   Upload,
   Wrench,
@@ -71,6 +73,13 @@ export const consoleNavItems: ConsoleNavItem[] = [
     indent: true,
   },
   {
+    label: "Confidence",
+    href: "/console/settings/confidence",
+    icon: ChartNoAxesColumnIncreasing,
+    description: "Calibration and confidence settings",
+    indent: true,
+  },
+  {
     label: "Providers",
     href: "/console/settings/providers",
     icon: KeyRound,
@@ -82,6 +91,13 @@ export const consoleNavItems: ConsoleNavItem[] = [
     href: "/console/settings/tools",
     icon: Wrench,
     description: "Live tool registry and permissions",
+    indent: true,
+  },
+  {
+    label: "MCP Servers",
+    href: "/console/settings/mcp",
+    icon: Network,
+    description: "Connect and manage MCP servers",
     indent: true,
   },
 ]

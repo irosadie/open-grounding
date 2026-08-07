@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
@@ -19,6 +19,79 @@ class SuccessEnvelope(BaseModel):
     message: str
     data: Any | None = None
     meta: Any | None = None
+
+
+class CreateMcpServerRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    transport: Literal["stdio", "http", "sse"]
+    command: str | None = Field(default=None, max_length=1024)
+    args: list[str] = Field(default_factory=list, max_length=64)
+    url: str | None = Field(default=None, max_length=2048)
+    auth_type: Literal["none", "bearer", "header"] = "none"
+    credential: str | None = Field(default=None, max_length=4096)
+    credential_header: str | None = Field(default=None, max_length=120)
+    headers: dict[str, str] = Field(default_factory=dict)
+    timeout_seconds: int = Field(default=30, ge=1, le=120)
+    max_payload_bytes: int = Field(default=1_048_576, ge=65_536, le=10_485_760)
+    allow_insecure: bool = False
+    enabled: bool = True
+
+    model_config = {"extra": "forbid"}
+
+
+class McpServerResponse(BaseModel):
+    id: str
+    name: str
+    transport: str
+    command: str | None
+    args: list[str]
+    url: str | None
+    authType: str | None
+    hasCredential: bool
+    headers: dict[str, str]
+    timeoutSeconds: int
+    maxPayloadBytes: int
+    allowInsecure: bool
+    enabled: bool
+    status: str
+    lastError: str | None
+    createdAt: str
+    updatedAt: str
+
+
+class McpToolResponse(BaseModel):
+    id: str
+    serverId: str
+    name: str
+    description: str
+    inputSchema: dict[str, object]
+    allowed: bool
+    isStale: bool
+    lastDiscoveredAt: str
+
+
+class McpInvocationResponse(BaseModel):
+    id: str
+    serverId: str
+    toolId: str
+    userId: str
+    argsHash: str
+    status: str
+    resultText: str | None
+    durationMs: int
+    createdAt: str
+
+
+class InvokeToolRequest(BaseModel):
+    arguments: dict[str, object] = Field(default_factory=dict)
+
+    model_config = {"extra": "forbid"}
+
+
+class UpdateMcpToolRequest(BaseModel):
+    allowed: bool
+
+    model_config = {"extra": "forbid"}
 
 
 # --- RAG ingestion schemas ---------------------------------------------------
@@ -60,6 +133,14 @@ class DecompositionOverride(BaseModel):
     max_sub_queries: int | None = Field(default=None, ge=1, le=5, description="Override max sub-queries for this request")
 
 
+class PlannerOverride(BaseModel):
+    enabled: bool | None = Field(default=None, description="Override KB planner config for this request")
+    max_tasks: int | None = Field(default=None, ge=1, le=8, description="Override maximum planned tasks")
+    task_types: list[str] | None = Field(default=None, min_length=1, description="Allowed planner task types")
+
+    model_config = {"extra": "forbid"}
+
+
 class MemoryOverride(BaseModel):
     enabled: bool | None = Field(default=None, description="Override memory retrieval for this request")
 
@@ -71,6 +152,7 @@ class RagQueryRequest(BaseModel):
     mode: str = Field(default="grounded", pattern="^(grounded)$", description="Only grounded mode is supported")
     stream: bool = Field(default=False, description="Request an SSE response when enabled")
     decomposition: DecompositionOverride | None = Field(default=None, description="Optional per-request decomposition override")
+    planner: PlannerOverride | None = Field(default=None, description="Optional per-request planner override")
     memory: MemoryOverride | None = Field(default=None, description="Optional per-request memory override")
 
     model_config = {
@@ -113,6 +195,7 @@ class RagAnswerFeedbackRequest(BaseModel):
 
 # --- Knowledge base schemas --------------------------------------------------
 
+
 class CreateKnowledgeBaseRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -134,6 +217,7 @@ class KnowledgeBaseResponse(BaseModel):
 
 # --- Model profile schemas --------------------------------------------------
 
+
 class CreateModelProfileRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     profile_kind: str = Field(pattern=r"^(DENSE_EMBEDDING|SPARSE_EMBEDDING|RERANKER|GENERATION)$")
@@ -147,6 +231,7 @@ class CreateModelProfileRequest(BaseModel):
 
 
 # --- Index profile schemas --------------------------------------------------
+
 
 class CreateIndexProfileRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -164,7 +249,77 @@ class CreateIndexProfileRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class RetrievalConfigRequest(BaseModel):
+    dense_weight: float = Field(default=1.0, ge=0.0, le=5.0)
+    sparse_weight: float = Field(default=1.0, ge=0.0, le=5.0)
+    fusion_k: int = Field(default=60, ge=1, le=200)
+    dense_candidates: int = Field(default=50, ge=1, le=200)
+    sparse_candidates: int = Field(default=50, ge=1, le=200)
+    fused_candidates: int = Field(default=40, ge=1, le=200)
+    enabled: bool = True
+
+    model_config = {"extra": "forbid"}
+
+
+class RetrievalConfigResponse(BaseModel):
+    index_profile_id: str = Field(alias="indexProfileId")
+    dense_weight: float = Field(alias="denseWeight")
+    sparse_weight: float = Field(alias="sparseWeight")
+    fusion_k: int = Field(alias="fusionK")
+    dense_candidates: int = Field(alias="denseCandidates")
+    sparse_candidates: int = Field(alias="sparseCandidates")
+    fused_candidates: int = Field(alias="fusedCandidates")
+    enabled: bool
+
+    model_config = {"populate_by_name": True}
+
+
+# --- Numeric confidence schemas ---------------------------------------------
+
+
+class ConfidenceConfigResponse(BaseModel):
+    retrieval_profile_id: str = Field(alias="retrievalProfileId")
+    feature_weights: dict[str, float] | None = Field(alias="featureWeights")
+    abstention_threshold: float = Field(alias="abstentionThreshold")
+    emit_numeric_score: bool = Field(alias="emitNumericScore")
+    min_labeled_entries: int = Field(alias="minLabeledEntries")
+    active_model_id: str | None = Field(alias="activeModelId")
+    updated_at: str | None = Field(alias="updatedAt")
+    warning: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class ConfidenceConfigUpdateRequest(BaseModel):
+    feature_weights: dict[str, float] | None = None
+    abstention_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    emit_numeric_score: bool | None = None
+    min_labeled_entries: int | None = Field(default=None, ge=1, le=100_000)
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("feature_weights")
+    @classmethod
+    def validate_feature_weights(cls, value: dict[str, float] | None) -> dict[str, float] | None:
+        if value is not None and any(weight < 0 for weight in value.values()):
+            raise ValueError("Feature weights must be non-negative.")
+        return value
+
+
+class CalibrationFixtureResponse(BaseModel):
+    id: str
+    retrieval_profile_id: str = Field(alias="retrievalProfileId")
+    version: str
+    source: str
+    entry_count: int = Field(alias="entryCount")
+    is_active: bool = Field(alias="isActive")
+    created_at: str = Field(alias="createdAt")
+
+    model_config = {"populate_by_name": True}
+
+
 # --- Provider credential schemas --------------------------------------------
+
 
 class SetProviderCredentialRequest(BaseModel):
     provider: str = Field(min_length=1, max_length=60)
@@ -175,6 +330,7 @@ class SetProviderCredentialRequest(BaseModel):
 
 
 # --- Decomposition config schemas -------------------------------------------
+
 
 class CreateDecompositionConfigRequest(BaseModel):
     enabled: bool = Field(default=True)
@@ -204,7 +360,38 @@ class DecompositionConfigResponse(BaseModel):
     updated_at: str
 
 
+class CreatePlannerConfigRequest(BaseModel):
+    enabled: bool = True
+    model_profile_id: str = Field(min_length=1, max_length=120)
+    system_prompt: str = Field(min_length=1)
+    user_prompt_template: str = Field(min_length=1)
+    max_tasks: int = Field(default=4, ge=1, le=8)
+    task_timeout_seconds: int = Field(default=15, ge=1, le=60)
+    task_types: list[str] = Field(default_factory=lambda: ["RAG", "MCP", "GENERAL"], min_length=1)
+    mcp_enabled: bool = False
+    guardrails: dict[str, Any] = Field(default_factory=dict)
+
+    model_config = {"extra": "forbid"}
+
+
+class PlannerConfigResponse(BaseModel):
+    id: str
+    knowledge_base_id: str
+    enabled: bool
+    model_profile_id: str
+    system_prompt: str
+    user_prompt_template: str
+    max_tasks: int
+    task_timeout_seconds: int
+    task_types: list[str]
+    mcp_enabled: bool
+    guardrails: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+
 # --- Memory config schemas ---------------------------------------------------
+
 
 class CreateMemoryConfigRequest(BaseModel):
     enabled: bool = Field(default=False)
@@ -248,3 +435,98 @@ class MemoryChunkListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# --- Additional confidence DTOs --------------------------------------------
+
+
+class FixtureEntryResponse(BaseModel):
+    id: str
+    fixture_id: str = Field(alias="fixtureId")
+    answer_run_id: str | None = Field(alias="answerRunId")
+    query: str
+    answer: str
+    confidence_label: str = Field(alias="confidenceLabel")
+    created_at: str = Field(alias="createdAt")
+
+    model_config = {"populate_by_name": True}
+
+
+class UnlabeledAnswerRunResponse(BaseModel):
+    answer_run_id: str = Field(alias="answerRunId")
+    query_preview: str = Field(alias="queryPreview")
+    answer_preview: str = Field(alias="answerPreview")
+
+    model_config = {"populate_by_name": True}
+
+
+class LabelRequest(BaseModel):
+    answer_run_id: str
+    label: str
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("label")
+    @classmethod
+    def validate_label(cls, value: str) -> str:
+        allowed = {"SUPPORTED", "PARTIALLY_SUPPORTED", "UNSUPPORTED", "ABSTAIN"}
+        if value not in allowed:
+            raise ValueError(f"label must be one of {sorted(allowed)}")
+        return value
+
+
+class BulkLabelRequest(BaseModel):
+    labels: dict[str, str]
+
+    model_config = {"extra": "forbid"}
+
+    @field_validator("labels")
+    @classmethod
+    def validate_labels(cls, value: dict[str, str]) -> dict[str, str]:
+        allowed = {"SUPPORTED", "PARTIALLY_SUPPORTED", "UNSUPPORTED", "ABSTAIN"}
+        bad = [lbl for lbl in value.values() if lbl not in allowed]
+        if bad:
+            raise ValueError(f"Invalid labels: {bad}")
+        return value
+
+
+class CalibrateRequest(BaseModel):
+    fixture_id: str
+
+    model_config = {"extra": "forbid"}
+
+
+class CalibrateResponse(BaseModel):
+    job_id: str = Field(alias="jobId")
+
+    model_config = {"populate_by_name": True}
+
+
+class CalibrationStatusResponse(BaseModel):
+    job_id: str = Field(alias="jobId")
+    status: str
+    model_version_id: str | None = Field(alias="modelVersionId")
+    pr_curve_svg: str | None = Field(alias="prCurveSvg")
+    f1_optimal_threshold: float | None = Field(alias="f1OptimalThreshold")
+
+    model_config = {"populate_by_name": True}
+
+
+class ThresholdEvalResponse(BaseModel):
+    threshold: float
+    precision: float
+    recall: float
+    f1: float
+
+
+class PromoteRequest(BaseModel):
+    promoted_by: str | None = None
+
+    model_config = {"extra": "forbid"}
+
+
+class GenerateSyntheticRequest(BaseModel):
+    knowledge_base_id: str
+    count: int = Field(default=50, ge=1, le=500)
+
+    model_config = {"extra": "forbid"}

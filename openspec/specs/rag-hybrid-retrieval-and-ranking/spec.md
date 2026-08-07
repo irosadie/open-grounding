@@ -1,7 +1,10 @@
 # rag-hybrid-retrieval-and-ranking Specification
 
 ## Purpose
-TBD - created by archiving change rag-grounded-query. Update Purpose after archive.
+Defines hybrid dense/sparse retrieval with mandatory tenant and ACL filters, RRF-based
+fusion, configurable per-index-profile retrieval weights and candidates, diversity
+selection, cross-encoder reranking, and qualitative evidence confidence gating.
+
 ## Requirements
 ### Requirement: Dense and sparse retrieval share mandatory filters
 The system SHALL execute dense and sparse Qdrant retrieval with the same server-built
@@ -45,4 +48,29 @@ versioned calibration dataset is active.
   independent support
 - **THEN** the system performs at most one bounded retry, asks for clarification, or
   abstains rather than generating a confident factual answer
+
+### Requirement: Retrieval configuration is configurable per index profile
+The system SHALL provide an optional `RetrievalConfig` attached 1:1 to an `IndexProfile`
+containing: `dense_weight` (float, 0.0–5.0, default 1.0), `sparse_weight` (float,
+0.0–5.0, default 1.0), `fusion_k` (int, 1–200, default 60), `dense_candidates` (int,
+1–200, default 50), `sparse_candidates` (int, 1–200, default 50), `fused_candidates`
+(int, 1–200, default 40), `enabled` (bool, default true). If absent, defaults SHALL
+be applied. Deleting a `RetrievalConfig` SHALL revert the profile to defaults.
+
+#### Scenario: Sparse weight is set high for a keyword-heavy domain
+- **WHEN** an operator sets a high `sparse_weight` for an index profile
+- **THEN** the RRF fusion score weights lexical sparse results more heavily than dense
+  results, and the fused candidate list reflects that ordering
+
+### Requirement: RetrievalConfig is manageable via API and console UI
+The system SHALL expose `GET`, `PUT`, and `DELETE` endpoints at
+`/rag/index-profiles/{id}/retrieval` scoped to the tenant and ADMIN-gated for writes.
+The index profile settings page SHALL include a "Retrieval" section with fields for
+`dense_weight`, `sparse_weight`, `fusion_k`, candidate counts, and an enabled toggle
+with inline validation and error display.
+
+#### Scenario: Operator deletes retrieval config
+- **WHEN** an operator calls DELETE on the retrieval config for a profile
+- **THEN** the config record is removed and subsequent retrievals use default weights
+  and candidate counts as if no config existed
 

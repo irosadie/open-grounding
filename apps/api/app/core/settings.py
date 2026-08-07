@@ -48,6 +48,7 @@ class Settings(BaseSettings):
 
     # Redis URL for BullMQ worker
     redis_url: str = "redis://127.0.0.1:6379"
+    internal_api_secret: str = "dev-internal-secret"
 
     # Secret key for encrypting provider credentials at rest
     # CRITICAL: do not lose this key — credentials cannot be decrypted without it

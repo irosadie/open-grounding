@@ -10,9 +10,9 @@
     "lint": "uv run ruff check app tests",
     "format": "uv run ruff format app tests",
     "typecheck": "uv run mypy app",
-    "test": "uv run pytest",
-    "test:integration": "RUN_DATABASE_TESTS=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/open_grounding_test uv run pytest tests/test_repository_integration.py",
-    "test:smoke": "uv run pytest tests/test_system_routes.py",
+    "test": "uv run python -m pytest",
+    "test:integration": "RUN_DATABASE_TESTS=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/open_grounding_test uv run python -m pytest tests/test_repository_integration.py",
+    "test:smoke": "uv run python -m pytest tests/test_system_routes.py",
     "db:upgrade": "uv run alembic upgrade head",
     "db:stamp-baseline": "uv run alembic stamp 20260729_01",
     "openapi:generate": "uv run python -m app.export_openapi"

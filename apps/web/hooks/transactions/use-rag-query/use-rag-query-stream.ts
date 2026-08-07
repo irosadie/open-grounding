@@ -1,5 +1,6 @@
 "use client"
 
+import type { PlannerOverrideInput } from "@open-grounding/schemas"
 import type { RagCitationResponse } from "@open-grounding/types"
 import { useCallback, useRef, useState } from "react"
 
@@ -17,6 +18,9 @@ export type StreamCallbacks = {
     traceId: string
     evidenceLevel: string
     limitations: string[]
+    planner?: Record<string, unknown>
+    tasks?: Array<Record<string, unknown>>
+    resume?: Record<string, unknown>
   }) => void
   onFailed?: (code: string) => void
 }
@@ -25,6 +29,7 @@ type StreamArgs = {
   message: string
   knowledgeBaseIds: string[]
   conversationId?: string
+  planner?: PlannerOverrideInput
 } & StreamCallbacks
 
 type ParsedEvent = {
@@ -86,6 +91,9 @@ const dispatchEvent = (parsed: ParsedEvent, callbacks: StreamCallbacks) => {
         traceId: String(data.traceId ?? ""),
         evidenceLevel: String(data.evidenceLevel ?? ""),
         limitations: (data.limitations as string[]) ?? [],
+        planner: data.planner as Record<string, unknown> | undefined,
+        tasks: data.tasks as Array<Record<string, unknown>> | undefined,
+        resume: data.resume as Record<string, unknown> | undefined,
       })
       break
     case "response.failed":
@@ -103,6 +111,9 @@ export const useRagQueryStream = () => {
   const [limitations, setLimitations] = useState<string[]>([])
   const [traceId, setTraceId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [planner, setPlanner] = useState<Record<string, unknown> | null>(null)
+  const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([])
+  const [resume, setResume] = useState<Record<string, unknown> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const reset = useCallback(() => {
@@ -114,6 +125,9 @@ export const useRagQueryStream = () => {
     setLimitations([])
     setTraceId(null)
     setError(null)
+    setPlanner(null)
+    setTasks([])
+    setResume(null)
   }, [])
 
   const stream = useCallback(async (args: StreamArgs) => {
@@ -129,6 +143,9 @@ export const useRagQueryStream = () => {
     setLimitations([])
     setTraceId(null)
     setError(null)
+    setPlanner(null)
+    setTasks([])
+    setResume(null)
 
     const payload = {
       message: args.message,
@@ -136,6 +153,13 @@ export const useRagQueryStream = () => {
       conversation_id: args.conversationId,
       mode: "grounded",
       stream: true,
+      planner: args.planner
+        ? {
+            enabled: args.planner.enabled,
+            max_tasks: args.planner.maxTasks,
+            task_types: args.planner.taskTypes,
+          }
+        : undefined,
     }
 
     try {
@@ -178,6 +202,11 @@ export const useRagQueryStream = () => {
           }
           if (parsed.event === "response.completed") {
             setLimitations((parsed.data.limitations as string[]) ?? [])
+            setPlanner(parsed.data.planner as Record<string, unknown> | null)
+            setTasks(
+              (parsed.data.tasks as Array<Record<string, unknown>>) ?? [],
+            )
+            setResume(parsed.data.resume as Record<string, unknown> | null)
             setState("completed")
           }
           if (parsed.event === "response.failed") {
@@ -225,6 +254,9 @@ export const useRagQueryStream = () => {
     limitations,
     traceId,
     error,
+    planner,
+    tasks,
+    resume,
     stream,
     abort,
     reset,

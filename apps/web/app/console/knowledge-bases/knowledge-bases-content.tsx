@@ -184,16 +184,14 @@ export default function KnowledgeBasesContent() {
                   >
                     {kb.status === "ACTIVE" ? "Aktif" : kb.status}
                   </span>
-                  <Link
-                    href={`/console/knowledge-bases/${kb.id}/decomposition`}
-                  >
+                  <Link href={`/console/knowledge-bases/${kb.id}/planner`}>
                     <Button
                       intent="secondary"
                       size="small"
                       bordered
                       leftIcon={<Brain className="h-3.5 w-3.5" />}
                     >
-                      Decomposition
+                      Planner
                     </Button>
                   </Link>
                   <Link href={`/console/knowledge-bases/${kb.id}/memory`}>

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +17,9 @@ SUPPORTED_PROVIDERS = {
     "ollama": ["base_url"],
     "huggingface": ["token"],
     "fastembed": [],  # no credentials needed
+    # Internal MCP runtime credentials are tenant-scoped and never included in
+    # the provider credential status response.
+    "mcp": [],
 }
 
 
@@ -69,12 +71,14 @@ class ProviderCredentialService:
         for provider, keys in SUPPORTED_PROVIDERS.items():
             for key_name in keys:
                 row = configured.get((provider, key_name))
-                statuses.append(ProviderCredentialStatus(
-                    provider=provider,
-                    key_name=key_name,
-                    is_configured=row is not None,
-                    updated_at=row.updated_at.isoformat() if row else None,
-                ))
+                statuses.append(
+                    ProviderCredentialStatus(
+                        provider=provider,
+                        key_name=key_name,
+                        is_configured=row is not None,
+                        updated_at=row.updated_at.isoformat() if row else None,
+                    )
+                )
         return statuses
 
     async def get_decrypted(

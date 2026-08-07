@@ -1,6 +1,7 @@
 """Generate answers exclusively from a bounded evidence context."""
 
 import asyncio
+import json
 
 from app.core.settings import Settings
 from app.domain.rag.adapter_ports import GenerationAdapter
@@ -28,6 +29,19 @@ class RagGenerationService:
         if isinstance(response, dict) and "answer" in response:
             return parse_grounded_answer(response["answer"])
         return parse_grounded_answer(response)
+
+    async def generate_supplementary(self, *, tenant: TenantContext, question: str, profile_id: str) -> str:
+        """Generate bounded, explicitly non-citable context for a GENERAL task."""
+        response = await asyncio.wait_for(
+            self._generator.generate(
+                tenant=tenant,
+                prompt=f"Answer concisely from general knowledge only. Do not claim document citations.\n\nQUESTION:\n{question}",
+                model_profile_id=profile_id,
+                max_tokens=self._settings.rag_generation_max_output_tokens,
+            ),
+            timeout=self._settings.rag_generation_timeout_seconds,
+        )
+        return json.dumps(response, ensure_ascii=True)
 
 
 def _prompt(*, question: str, evidence: EvidenceContext, supplementary: str | None) -> str:

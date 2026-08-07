@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 from app.domain.rag.catalog import (
     Chunk,
     DecompositionConfig,
+    PlannerConfig,
     Document,
     DocumentVersion,
     IndexGeneration,
@@ -25,7 +26,7 @@ from app.domain.rag.catalog import (
     OutboxEvent,
     StageCheckpoint,
 )
-from app.domain.rag.profiles import IndexProfile, ModelProfile
+from app.domain.rag.profiles import IndexProfile, ModelProfile, RetrievalConfig
 
 
 class KnowledgeBaseRepository(Protocol):
@@ -103,6 +104,24 @@ class IndexProfileRepository(Protocol):
     async def activate(self, *, tenant_id: str, profile_id: str) -> IndexProfile | None: ...
 
 
+class RetrievalConfigRepository(Protocol):
+    async def find_by_profile(self, *, tenant_id: str, index_profile_id: str) -> RetrievalConfig | None: ...
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        index_profile_id: str,
+        dense_weight: float,
+        sparse_weight: float,
+        fusion_k: int,
+        dense_candidates: int,
+        sparse_candidates: int,
+        fused_candidates: int,
+        enabled: bool,
+    ) -> RetrievalConfig: ...
+    async def delete(self, *, tenant_id: str, index_profile_id: str) -> bool: ...
+
+
 class IndexGenerationRepository(Protocol):
     async def find_by_id(self, *, tenant_id: str, generation_id: str) -> IndexGeneration | None: ...
     async def find_active_for_version(self, *, tenant_id: str, document_version_id: str) -> IndexGeneration | None: ...
@@ -152,6 +171,7 @@ class OutboxEventRepository(Protocol):
 
 class ChunkRepository(Protocol):
     async def find_by_generation(self, *, tenant_id: str, generation_id: str) -> list[Chunk]: ...
+    async def find_by_ids(self, *, tenant_id: str, chunk_ids: tuple[str, ...]) -> list[Chunk]: ...
     async def create_many(self, *, tenant_id: str, chunks: list[dict[str, object]]) -> int: ...
     async def delete_by_generation(self, *, tenant_id: str, generation_id: str) -> None: ...
 
@@ -189,6 +209,26 @@ class DecompositionConfigRepository(Protocol):
         min_complexity_score: float,
         guardrails: dict[str, object],
     ) -> DecompositionConfig: ...
+    async def delete(self, *, tenant_id: str, knowledge_base_id: str) -> bool: ...
+
+
+class PlannerConfigRepository(Protocol):
+    async def find_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> PlannerConfig | None: ...
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        enabled: bool,
+        model_profile_id: str,
+        system_prompt: str,
+        user_prompt_template: str,
+        max_tasks: int,
+        task_timeout_seconds: int,
+        task_types: tuple[str, ...],
+        mcp_enabled: bool,
+        guardrails: dict[str, object],
+    ) -> PlannerConfig: ...
     async def delete(self, *, tenant_id: str, knowledge_base_id: str) -> bool: ...
 
 

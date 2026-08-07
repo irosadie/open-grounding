@@ -366,6 +366,893 @@
         }
       }
     },
+    "/confidence/config/{profile_id}": {
+      "get": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Get confidence configuration",
+        "description": "Return the persisted profile config or safe defaults in the active tenant.",
+        "operationId": "get_confidence_config_confidence_config__profile_id__get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Update confidence configuration",
+        "operationId": "update_confidence_config_confidence_config__profile_id__patch",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfidenceConfigUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Invalid configuration or missing active model"
+          }
+        }
+      }
+    },
+    "/confidence/fixtures": {
+      "get": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "List calibration fixtures",
+        "operationId": "list_calibration_fixtures_confidence_fixtures_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/confidence/fixtures/import": {
+      "post": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Import calibration fixture from CSV",
+        "operationId": "import_calibration_fixture_confidence_fixtures_import_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Version"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_import_calibration_fixture_confidence_fixtures_import_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Invalid CSV"
+          }
+        }
+      }
+    },
+    "/confidence/fixtures/generate-synthetic": {
+      "post": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Enqueue synthetic fixture generation",
+        "operationId": "generate_synthetic_fixture_confidence_fixtures_generate_synthetic_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateSyntheticRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/confidence/fixtures/{fixture_id}/entries": {
+      "get": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "List fixture entries",
+        "operationId": "list_fixture_entries_confidence_fixtures__fixture_id__entries_get",
+        "parameters": [
+          {
+            "name": "fixture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Fixture Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "404": {
+            "description": "Fixture not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/confidence/answer-runs/unlabeled": {
+      "get": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "List unlabeled answer runs",
+        "operationId": "list_unlabeled_answer_runs_confidence_answer_runs_unlabeled_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/confidence/fixtures/{fixture_id}/label": {
+      "post": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Label a single answer run",
+        "operationId": "label_answer_run_confidence_fixtures__fixture_id__label_post",
+        "parameters": [
+          {
+            "name": "fixture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Fixture Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Invalid label or missing feature vector"
+          }
+        }
+      }
+    },
+    "/confidence/fixtures/{fixture_id}/label-bulk": {
+      "post": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Bulk label answer runs",
+        "operationId": "bulk_label_answer_runs_confidence_fixtures__fixture_id__label_bulk_post",
+        "parameters": [
+          {
+            "name": "fixture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Fixture Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkLabelRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Invalid labels or missing feature vectors"
+          }
+        }
+      }
+    },
+    "/confidence/calibrate/{profile_id}": {
+      "post": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Enqueue calibration job",
+        "operationId": "enqueue_calibration_confidence_calibrate__profile_id__post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Insufficient labeled entries"
+          }
+        }
+      }
+    },
+    "/confidence/calibrate/{job_id}/status": {
+      "get": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Poll calibration job status",
+        "operationId": "get_calibration_status_confidence_calibrate__job_id__status_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/confidence/models/{model_version_id}/threshold": {
+      "get": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Evaluate threshold metrics",
+        "operationId": "evaluate_threshold_confidence_models__model_version_id__threshold_get",
+        "parameters": [
+          {
+            "name": "model_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Version Id"
+            }
+          },
+          {
+            "name": "threshold",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "title": "Threshold"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "404": {
+            "description": "Model version not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/confidence/models/{model_version_id}/promote": {
+      "post": {
+        "tags": [
+          "confidence"
+        ],
+        "summary": "Promote a calibration model",
+        "operationId": "promote_model_confidence_models__model_version_id__promote_post",
+        "parameters": [
+          {
+            "name": "model_version_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model Version Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tenant scope mismatch"
+          },
+          "404": {
+            "description": "Model version not found"
+          },
+          "422": {
+            "description": "Synthetic-only emit lock"
+          }
+        }
+      }
+    },
     "/rag/ingestion/intake": {
       "post": {
         "tags": [
@@ -1366,6 +2253,252 @@
         }
       }
     },
+    "/rag/knowledge-bases/{knowledge_base_id}/planner": {
+      "post": {
+        "tags": [
+          "Knowledge Bases"
+        ],
+        "summary": "Upsert Planner Config",
+        "operationId": "upsert_planner_config_rag_knowledge_bases__knowledge_base_id__planner_post",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePlannerConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Upsert Planner Config Rag Knowledge Bases  Knowledge Base Id  Planner Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Knowledge Bases"
+        ],
+        "summary": "Get Planner Config",
+        "operationId": "get_planner_config_rag_knowledge_bases__knowledge_base_id__planner_get",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Planner Config Rag Knowledge Bases  Knowledge Base Id  Planner Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Knowledge Bases"
+        ],
+        "summary": "Delete Planner Config",
+        "operationId": "delete_planner_config_rag_knowledge_bases__knowledge_base_id__planner_delete",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Planner Config Rag Knowledge Bases  Knowledge Base Id  Planner Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/knowledge-bases/{knowledge_base_id}/planner/defaults": {
+      "get": {
+        "tags": [
+          "Knowledge Bases"
+        ],
+        "summary": "Get Planner Defaults",
+        "operationId": "get_planner_defaults_rag_knowledge_bases__knowledge_base_id__planner_defaults_get",
+        "parameters": [
+          {
+            "name": "knowledge_base_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Knowledge Base Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Planner Defaults Rag Knowledge Bases  Knowledge Base Id  Planner Defaults Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/rag/model-profiles": {
       "post": {
         "tags": [
@@ -1706,6 +2839,179 @@
         }
       }
     },
+    "/rag/index-profiles/{profile_id}/retrieval": {
+      "get": {
+        "tags": [
+          "Index Profiles"
+        ],
+        "summary": "Get Retrieval Config",
+        "operationId": "get_retrieval_config_rag_index_profiles__profile_id__retrieval_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Index Profiles"
+        ],
+        "summary": "Upsert Retrieval Config",
+        "operationId": "upsert_retrieval_config_rag_index_profiles__profile_id__retrieval_put",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalConfigRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetrievalConfigResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Index Profiles"
+        ],
+        "summary": "Delete Retrieval Config",
+        "operationId": "delete_retrieval_config_rag_index_profiles__profile_id__retrieval_delete",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/rag/provider-credentials": {
       "post": {
         "tags": [
@@ -1871,6 +3177,775 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Revoke Provider Credential Rag Provider Credentials  Provider   Key Name  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/mcp/servers": {
+      "post": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "Register Mcp Server",
+        "operationId": "register_mcp_server_rag_mcp_servers_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMcpServerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Register Mcp Server Rag Mcp Servers Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "List Mcp Servers",
+        "operationId": "list_mcp_servers_rag_mcp_servers_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Mcp Servers Rag Mcp Servers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/mcp/servers/{server_id}": {
+      "get": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "Get Mcp Server",
+        "operationId": "get_mcp_server_rag_mcp_servers__server_id__get",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Mcp Server Rag Mcp Servers  Server Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "Update Mcp Server",
+        "operationId": "update_mcp_server_rag_mcp_servers__server_id__put",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMcpServerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Mcp Server Rag Mcp Servers  Server Id  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "Delete Mcp Server",
+        "operationId": "delete_mcp_server_rag_mcp_servers__server_id__delete",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Mcp Server Rag Mcp Servers  Server Id  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/mcp/servers/{server_id}/test": {
+      "post": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "Test Mcp Server",
+        "operationId": "test_mcp_server_rag_mcp_servers__server_id__test_post",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Test Mcp Server Rag Mcp Servers  Server Id  Test Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/mcp/servers/{server_id}/discover": {
+      "post": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "Discover Mcp Tools",
+        "operationId": "discover_mcp_tools_rag_mcp_servers__server_id__discover_post",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Discover Mcp Tools Rag Mcp Servers  Server Id  Discover Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/mcp/servers/{server_id}/tools": {
+      "get": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "List Mcp Tools",
+        "operationId": "list_mcp_tools_rag_mcp_servers__server_id__tools_get",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Stale"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Mcp Tools Rag Mcp Servers  Server Id  Tools Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/mcp/tools/{tool_id}": {
+      "put": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "Update Mcp Tool",
+        "operationId": "update_mcp_tool_rag_mcp_tools__tool_id__put",
+        "parameters": [
+          {
+            "name": "tool_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tool Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMcpToolRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Update Mcp Tool Rag Mcp Tools  Tool Id  Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/mcp/tools/{tool_id}/invoke": {
+      "post": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "Invoke Mcp Tool",
+        "operationId": "invoke_mcp_tool_rag_mcp_tools__tool_id__invoke_post",
+        "parameters": [
+          {
+            "name": "tool_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tool Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvokeToolRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Invoke Mcp Tool Rag Mcp Tools  Tool Id  Invoke Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/rag/mcp/invocations": {
+      "get": {
+        "tags": [
+          "MCP Runtime"
+        ],
+        "summary": "List Mcp Invocations",
+        "operationId": "list_mcp_invocations_rag_mcp_invocations_get",
+        "parameters": [
+          {
+            "name": "server_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Server Id"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "created_after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created After"
+            }
+          },
+          {
+            "name": "created_before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created Before"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Mcp Invocations Rag Mcp Invocations Get"
                 }
               }
             }
@@ -2349,6 +4424,20 @@
   },
   "components": {
     "schemas": {
+      "Body_import_calibration_fixture_confidence_fixtures_import_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_import_calibration_fixture_confidence_fixtures_import_post"
+      },
       "Body_upload_document_rag_ingestion_upload__document_version_id__put": {
         "properties": {
           "file": {
@@ -2362,6 +4451,37 @@
           "file"
         ],
         "title": "Body_upload_document_rag_ingestion_upload__document_version_id__put"
+      },
+      "BulkLabelRequest": {
+        "properties": {
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Labels"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "labels"
+        ],
+        "title": "BulkLabelRequest"
+      },
+      "CalibrateRequest": {
+        "properties": {
+          "fixture_id": {
+            "type": "string",
+            "title": "Fixture Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fixture_id"
+        ],
+        "title": "CalibrateRequest"
       },
       "CompleteIntakeRequest": {
         "properties": {
@@ -2384,6 +4504,64 @@
           "content_checksum"
         ],
         "title": "CompleteIntakeRequest"
+      },
+      "ConfidenceConfigUpdateRequest": {
+        "properties": {
+          "feature_weights": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Weights"
+          },
+          "abstention_threshold": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abstention Threshold"
+          },
+          "emit_numeric_score": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emit Numeric Score"
+          },
+          "min_labeled_entries": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Labeled Entries"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ConfidenceConfigUpdateRequest"
       },
       "CreateDecompositionConfigRequest": {
         "properties": {
@@ -2617,6 +4795,129 @@
         ],
         "title": "CreateKnowledgeBaseRequest"
       },
+      "CreateMcpServerRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "transport": {
+            "type": "string",
+            "enum": [
+              "stdio",
+              "http",
+              "sse"
+            ],
+            "title": "Transport"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Args"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "auth_type": {
+            "type": "string",
+            "enum": [
+              "none",
+              "bearer",
+              "header"
+            ],
+            "title": "Auth Type",
+            "default": "none"
+          },
+          "credential": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential"
+          },
+          "credential_header": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Header"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Headers"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "maximum": 120.0,
+            "minimum": 1.0,
+            "title": "Timeout Seconds",
+            "default": 30
+          },
+          "max_payload_bytes": {
+            "type": "integer",
+            "maximum": 10485760.0,
+            "minimum": 65536.0,
+            "title": "Max Payload Bytes",
+            "default": 1048576
+          },
+          "allow_insecure": {
+            "type": "boolean",
+            "title": "Allow Insecure",
+            "default": false
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "transport"
+        ],
+        "title": "CreateMcpServerRequest"
+      },
       "CreateMemoryConfigRequest": {
         "properties": {
           "enabled": {
@@ -2737,6 +5038,71 @@
         ],
         "title": "CreateModelProfileRequest"
       },
+      "CreatePlannerConfigRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "model_profile_id": {
+            "type": "string",
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Model Profile Id"
+          },
+          "system_prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "System Prompt"
+          },
+          "user_prompt_template": {
+            "type": "string",
+            "minLength": 1,
+            "title": "User Prompt Template"
+          },
+          "max_tasks": {
+            "type": "integer",
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Tasks",
+            "default": 4
+          },
+          "task_timeout_seconds": {
+            "type": "integer",
+            "maximum": 60.0,
+            "minimum": 1.0,
+            "title": "Task Timeout Seconds",
+            "default": 15
+          },
+          "task_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Task Types"
+          },
+          "mcp_enabled": {
+            "type": "boolean",
+            "title": "Mcp Enabled",
+            "default": false
+          },
+          "guardrails": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Guardrails"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "model_profile_id",
+          "system_prompt",
+          "user_prompt_template"
+        ],
+        "title": "CreatePlannerConfigRequest"
+      },
       "DecompositionOverride": {
         "properties": {
           "enabled": {
@@ -2769,6 +5135,27 @@
         "type": "object",
         "title": "DecompositionOverride"
       },
+      "GenerateSyntheticRequest": {
+        "properties": {
+          "knowledge_base_id": {
+            "type": "string",
+            "title": "Knowledge Base Id"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "default": 50
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "knowledge_base_id"
+        ],
+        "title": "GenerateSyntheticRequest"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2781,6 +5168,37 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "InvokeToolRequest": {
+        "properties": {
+          "arguments": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Arguments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "InvokeToolRequest"
+      },
+      "LabelRequest": {
+        "properties": {
+          "answer_run_id": {
+            "type": "string",
+            "title": "Answer Run Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "answer_run_id",
+          "label"
+        ],
+        "title": "LabelRequest"
       },
       "LoginRequest": {
         "properties": {
@@ -2821,6 +5239,73 @@
         },
         "type": "object",
         "title": "MemoryOverride"
+      },
+      "PlannerOverride": {
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled",
+            "description": "Override KB planner config for this request"
+          },
+          "max_tasks": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tasks",
+            "description": "Override maximum planned tasks"
+          },
+          "task_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "minItems": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Types",
+            "description": "Allowed planner task types"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PlannerOverride"
+      },
+      "PromoteRequest": {
+        "properties": {
+          "promoted_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted By"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PromoteRequest"
       },
       "RagAnswerFeedbackRequest": {
         "properties": {
@@ -2912,6 +5397,17 @@
             ],
             "description": "Optional per-request decomposition override"
           },
+          "planner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlannerOverride"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional per-request planner override"
+          },
           "memory": {
             "anyOf": [
               {
@@ -2970,6 +5466,108 @@
         ],
         "title": "RegisterRequest"
       },
+      "RetrievalConfigRequest": {
+        "properties": {
+          "dense_weight": {
+            "type": "number",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Dense Weight",
+            "default": 1.0
+          },
+          "sparse_weight": {
+            "type": "number",
+            "maximum": 5.0,
+            "minimum": 0.0,
+            "title": "Sparse Weight",
+            "default": 1.0
+          },
+          "fusion_k": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Fusion K",
+            "default": 60
+          },
+          "dense_candidates": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Dense Candidates",
+            "default": 50
+          },
+          "sparse_candidates": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Sparse Candidates",
+            "default": 50
+          },
+          "fused_candidates": {
+            "type": "integer",
+            "maximum": 200.0,
+            "minimum": 1.0,
+            "title": "Fused Candidates",
+            "default": 40
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RetrievalConfigRequest"
+      },
+      "RetrievalConfigResponse": {
+        "properties": {
+          "indexProfileId": {
+            "type": "string",
+            "title": "Indexprofileid"
+          },
+          "denseWeight": {
+            "type": "number",
+            "title": "Denseweight"
+          },
+          "sparseWeight": {
+            "type": "number",
+            "title": "Sparseweight"
+          },
+          "fusionK": {
+            "type": "integer",
+            "title": "Fusionk"
+          },
+          "denseCandidates": {
+            "type": "integer",
+            "title": "Densecandidates"
+          },
+          "sparseCandidates": {
+            "type": "integer",
+            "title": "Sparsecandidates"
+          },
+          "fusedCandidates": {
+            "type": "integer",
+            "title": "Fusedcandidates"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "indexProfileId",
+          "denseWeight",
+          "sparseWeight",
+          "fusionK",
+          "denseCandidates",
+          "sparseCandidates",
+          "fusedCandidates",
+          "enabled"
+        ],
+        "title": "RetrievalConfigResponse"
+      },
       "SetProviderCredentialRequest": {
         "properties": {
           "provider": {
@@ -3000,6 +5598,56 @@
           "value"
         ],
         "title": "SetProviderCredentialRequest"
+      },
+      "SuccessEnvelope": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "meta": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "SuccessEnvelope"
+      },
+      "UpdateMcpToolRequest": {
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "allowed"
+        ],
+        "title": "UpdateMcpToolRequest"
       },
       "ValidationError": {
         "properties": {

@@ -22,6 +22,9 @@ class QueryServiceStub:
         conversation_id: str | None,
         decomposition_enabled: bool | None = None,
         decomposition_max_sub_queries: int | None = None,
+        planner_enabled: bool | None = None,
+        planner_max_tasks: int | None = None,
+        planner_task_types: tuple[str, ...] | None = None,
         memory_enabled: bool | None = None,
         session: object = None,
     ) -> dict[str, object]:

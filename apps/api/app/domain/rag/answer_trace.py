@@ -17,6 +17,7 @@ class AnswerRun:
     profile_snapshot: dict[str, object]
     limitations: tuple[str, ...]
     created_at: datetime
+    feature_vector: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)

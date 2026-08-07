@@ -95,3 +95,28 @@ class DomainError(Exception):
     @classmethod
     def query_concurrency_limited(cls) -> "DomainError":
         return cls("QUERY_CONCURRENCY_LIMITED", "Too many concurrent queries. Try again shortly.", 429)
+
+    @classmethod
+    def invalid_calibration_fixture(cls, message: str, details: dict[str, object] | None = None) -> "DomainError":
+        return cls("INVALID_CALIBRATION_FIXTURE", message, 422, details)
+
+    @classmethod
+    def calibration_not_ready(cls, *, current: int, required: int) -> "DomainError":
+        return cls(
+            "CALIBRATION_NOT_READY",
+            "Not enough operator-labeled entries to run calibration.",
+            422,
+            {"current": current, "required": required},
+        )
+
+    @classmethod
+    def calibration_model_not_found(cls) -> "DomainError":
+        return cls("CALIBRATION_MODEL_NOT_FOUND", "Calibration model was not found.", 404)
+
+    @classmethod
+    def synthetic_calibration_emit_locked(cls) -> "DomainError":
+        return cls(
+            "SYNTHETIC_CALIBRATION_EMIT_LOCKED",
+            "Operator-labeled data is required before numeric confidence can be emitted.",
+            422,
+        )

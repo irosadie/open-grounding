@@ -19,6 +19,13 @@ const askRag = async (payload: RagQueryProps) => {
       conversation_id: validated.conversationId,
       mode: validated.mode,
       stream: false,
+      planner: validated.planner
+        ? {
+            enabled: validated.planner.enabled,
+            max_tasks: validated.planner.maxTasks,
+            task_types: validated.planner.taskTypes,
+          }
+        : undefined,
     },
   })
   return result

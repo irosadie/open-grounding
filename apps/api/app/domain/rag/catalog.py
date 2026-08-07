@@ -238,3 +238,23 @@ class DecompositionConfig:
     guardrails: dict[str, object]
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class PlannerConfig:
+    """Per-KB configuration for typed query planning."""
+
+    id: str
+    tenant_id: str
+    knowledge_base_id: str
+    enabled: bool
+    model_profile_id: str
+    system_prompt: str
+    user_prompt_template: str
+    max_tasks: int
+    task_timeout_seconds: int
+    task_types: tuple[str, ...]
+    mcp_enabled: bool
+    guardrails: dict[str, object]
+    created_at: datetime
+    updated_at: datetime

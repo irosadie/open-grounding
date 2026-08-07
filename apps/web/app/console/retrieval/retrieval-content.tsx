@@ -214,6 +214,44 @@ export function RetrievalContent() {
             </div>
           ) : null}
 
+          {stream.tasks.length > 0 ? (
+            <div className="mt-4 rounded-lg border border-gray-200 p-4">
+              <h4 className="text-sm font-semibold text-gray-900">Task Run</h4>
+              <div className="mt-2 flex flex-col gap-2">
+                {stream.tasks.map((task) => (
+                  <div
+                    key={String(task.id)}
+                    className="flex items-center justify-between rounded border border-gray-100 px-3 py-2 text-xs"
+                  >
+                    <span className="font-medium text-gray-700">
+                      {String(task.id)} · {String(task.type)}
+                    </span>
+                    <span className="text-gray-500">
+                      {String(task.status)}
+                      {task.reason ? ` · ${String(task.reason)}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {stream.resume ? (
+                <p className="mt-3 text-xs text-gray-500">
+                  Resume: {String(stream.resume.rerank_route ?? "unknown")} ·{" "}
+                  {String(stream.resume.merged_evidence_count ?? 0)} evidence ·{" "}
+                  {String(stream.resume.supplementary_blocks ?? 0)}{" "}
+                  supplementary blocks
+                </p>
+              ) : null}
+              {stream.planner ? (
+                <p className="mt-1 text-xs text-gray-500">
+                  Planner:{" "}
+                  {stream.planner.planner_fallback ? "fallback" : "active"} ·{" "}
+                  {String(stream.planner.task_count ?? stream.tasks.length)}{" "}
+                  tasks
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
           {stream.citations.length > 0 ? (
             <div className="mt-4">
               <h4 className="text-sm font-semibold text-gray-900">

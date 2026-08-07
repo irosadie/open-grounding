@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { plannerOverrideSchema } from "./planner"
 
 export const ragQueryRoutes = ["grounded", "clarify", "abstain"] as const
 
@@ -48,6 +49,7 @@ export const ragQuerySchema = z.object({
     .optional(),
   mode: z.literal("grounded").default("grounded"),
   stream: z.boolean().default(false),
+  planner: plannerOverrideSchema.optional(),
 })
 
 export type RagQueryProps = z.infer<typeof ragQuerySchema>

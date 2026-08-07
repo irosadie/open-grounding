@@ -14,7 +14,7 @@ from app.domain.rag.catalog import KnowledgeBase
 from app.domain.rag.conversation import ConversationMessage
 from app.domain.rag.query import QueryRoute, normalize_query, plan_query
 from app.domain.tenant_context import TenantContext
-from app.interfaces.http.schemas import RagQueryRequest, RagQueryStreamRequest
+from app.interfaces.http.schemas import PlannerOverride, RagQueryRequest, RagQueryStreamRequest
 
 
 @pytest.mark.parametrize("field_name", ["tenant_id", "acl_principals", "clearance", "active_generation_ids", "filter"])
@@ -28,6 +28,17 @@ def test_stream_contract_is_explicit_and_cannot_be_disabled() -> None:
     assert stream_request.stream is True
     with pytest.raises(ValidationError):
         RagQueryStreamRequest(message="hello", knowledge_base_ids=["kb"], stream=False)
+
+
+def test_planner_override_validates_bounds_and_extra_fields() -> None:
+    request = RagQueryRequest(
+        message="hello",
+        knowledge_base_ids=["kb"],
+        planner={"enabled": True, "max_tasks": 4, "task_types": ["RAG", "GENERAL"]},
+    )
+    assert request.planner == PlannerOverride(enabled=True, max_tasks=4, task_types=["RAG", "GENERAL"])
+    with pytest.raises(ValidationError):
+        RagQueryRequest(message="hello", knowledge_base_ids=["kb"], planner={"max_tasks": 9})
 
 
 def test_query_plan_clarifies_empty_message_and_abstains_without_knowledge_base() -> None:

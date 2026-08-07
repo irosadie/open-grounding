@@ -1,7 +1,11 @@
 # rag-query-decomposition Specification
 
 ## Purpose
-TBD - created by archiving change rag-query-deferred-followups. Update Purpose after archive.
+Defines the opt-in, evaluation-gated multi-query decomposition capability. LLM-driven
+sub-query generation (multi-query, HyDE, step-back) is only enabled after an evaluation
+set proves recall improvement without degrading groundedness or abstention quality.
+Superseded for most use cases by `rag-query-task-planner` which provides typed task
+planning with async parallel execution.
 ## Requirements
 ### Requirement: Multi-hop decomposition is opt-in and evaluation-gated
 The system SHALL perform LLM-driven multi-query, HyDE, step-back, or multi-hop planning
