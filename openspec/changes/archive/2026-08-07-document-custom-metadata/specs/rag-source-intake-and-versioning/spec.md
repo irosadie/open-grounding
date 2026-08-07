@@ -8,9 +8,11 @@ knowledge base. The API MUST NOT buffer the source file in application memory.
 The intake request MAY include an optional flat `metadata` field (string key-value pairs,
 max 20 keys, max 256 chars per key and value) which MUST be persisted on the document version.
 
-#### Scenario: Caller uploads a supported source without metadata
-- **WHEN** an authorized caller creates and completes an intake request for a supported file within configured limits without a `metadata` field
-- **THEN** the raw object is stored under the active tenant namespace and the API returns an asynchronous ingestion identity with null metadata on the document version
+#### Scenario: Caller uploads a supported source
+- **WHEN** an authorized caller creates and completes an intake request for a supported
+  file within configured limits without a `metadata` field
+- **THEN** the raw object is stored under the active tenant namespace and the API
+  returns an asynchronous ingestion identity
 
 #### Scenario: Caller uploads a supported source with metadata
 - **WHEN** an authorized caller creates and completes an intake request for a supported file with a valid `metadata` field

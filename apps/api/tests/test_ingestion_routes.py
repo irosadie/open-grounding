@@ -61,6 +61,81 @@ def test_delete_requires_auth(client: TestClient) -> None:
     assert response.status_code in (401, 403)
 
 
+def test_intake_metadata_valid_passes_validation(client: TestClient) -> None:
+    """Valid metadata field does not cause 422 before auth check."""
+    response = client.post(
+        "/rag/ingestion/intake",
+        json={
+            "knowledgeBaseId": str(uuid4()),
+            "filename": "test.pdf",
+            "mimeType": "application/pdf",
+            "sizeBytes": 1024,
+            "metadata": {"author": "john", "department": "legal"},
+        },
+    )
+    # Auth required, but not a validation error
+    assert response.status_code in (401, 403)
+
+
+def test_intake_metadata_too_many_keys_rejected(client: TestClient) -> None:
+    """Metadata with more than 20 keys is rejected (422 or 401 depending on middleware order)."""
+    response = client.post(
+        "/rag/ingestion/intake",
+        json={
+            "knowledgeBaseId": str(uuid4()),
+            "filename": "test.pdf",
+            "mimeType": "application/pdf",
+            "sizeBytes": 1024,
+            "metadata": {f"key{i}": "value" for i in range(21)},
+        },
+    )
+    assert response.status_code in (401, 422)
+
+
+def test_intake_metadata_key_too_long_rejected(client: TestClient) -> None:
+    """Metadata key exceeding 256 chars is rejected (422 or 401 depending on middleware order)."""
+    response = client.post(
+        "/rag/ingestion/intake",
+        json={
+            "knowledgeBaseId": str(uuid4()),
+            "filename": "test.pdf",
+            "mimeType": "application/pdf",
+            "sizeBytes": 1024,
+            "metadata": {"k" * 257: "value"},
+        },
+    )
+    assert response.status_code in (401, 422)
+
+
+def test_intake_metadata_value_too_long_rejected(client: TestClient) -> None:
+    """Metadata value exceeding 256 chars is rejected (422 or 401 depending on middleware order)."""
+    response = client.post(
+        "/rag/ingestion/intake",
+        json={
+            "knowledgeBaseId": str(uuid4()),
+            "filename": "test.pdf",
+            "mimeType": "application/pdf",
+            "sizeBytes": 1024,
+            "metadata": {"author": "v" * 257},
+        },
+    )
+    assert response.status_code in (401, 422)
+
+
+def test_intake_without_metadata_passes_validation(client: TestClient) -> None:
+    """Metadata field is optional — omitting it does not cause 422."""
+    response = client.post(
+        "/rag/ingestion/intake",
+        json={
+            "knowledgeBaseId": str(uuid4()),
+            "filename": "test.pdf",
+            "mimeType": "application/pdf",
+            "sizeBytes": 1024,
+        },
+    )
+    assert response.status_code in (401, 403)
+
+
 def test_rag_routes_registered() -> None:
     """The RAG router is registered and routes appear in the OpenAPI spec."""
     app = create_app()

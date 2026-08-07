@@ -152,3 +152,31 @@ async def test_catalog_lifecycle_intake_to_deletion(session: AsyncSession) -> No
     await service.soft_delete(tenant=tenant, document_version_id=intake.document_version_id)
     status_after = await service.get_status(tenant=tenant, document_version_id=intake.document_version_id)
     assert status_after["lifecycleState"] == "DELETING"
+
+
+async def test_catalog_intake_metadata_persisted(session: AsyncSession) -> None:
+    """E2E: metadata supplied at intake is persisted on the document version."""
+    from app.application.ingestion_intake_service import IngestionIntakeService
+    from app.domain.tenant_context import TenantContext
+    from app.infrastructure.rag_catalog import SqlAlchemyDocumentVersionRepository, SqlAlchemyKnowledgeBaseRepository
+
+    tenant = TenantContext(tenant_id=TENANT_ID, membership_id=str(uuid4()), user_id=str(uuid4()))
+    kb_repo = SqlAlchemyKnowledgeBaseRepository(session)
+    kb = await kb_repo.create(tenant_id=TENANT_ID, slug="e2e-kb-meta", name="E2E KB Meta", status="ACTIVE")
+
+    service = IngestionIntakeService(session, Settings(_env_file=None))
+    custom_metadata = {"author": "jane", "department": "legal", "source_system": "erp"}
+    intake = await service.create_intake(
+        tenant=tenant,
+        knowledge_base_id=kb.id,
+        filename="meta-test.pdf",
+        mime_type="application/pdf",
+        size_bytes=2048,
+        title="Metadata Test",
+        metadata=custom_metadata,
+    )
+
+    version_repo = SqlAlchemyDocumentVersionRepository(session)
+    version = await version_repo.find_by_id(tenant_id=TENANT_ID, version_id=intake.document_version_id)
+    assert version is not None
+    assert version.metadata == custom_metadata
