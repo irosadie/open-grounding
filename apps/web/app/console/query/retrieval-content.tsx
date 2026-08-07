@@ -268,7 +268,7 @@ export function RetrievalContent() {
                         {citation.title}
                       </span>
                       <a
-                        href="/console/ingestion"
+                        href="/console/document"
                         className="text-xs text-primary-600 hover:underline"
                       >
                         {citation.locator ?? citation.documentVersionId}

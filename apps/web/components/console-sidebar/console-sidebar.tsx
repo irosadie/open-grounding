@@ -30,7 +30,7 @@ export function ConsoleSidebar({ onNavClick }: ConsoleSidebarProps) {
         const Icon = item.icon
         const isSettingsParent = item.href === "/console/settings"
         const isSubItem = item.indent
-        const isIngestion = item.href === "/console/ingestion"
+        const isIngestion = item.href === "/console/document"
         const badge = isIngestion && pendingReviewCount ? pendingReviewCount : 0
 
         if (isSubItem && !settingsOpen) {

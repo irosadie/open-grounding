@@ -330,7 +330,7 @@ export function IngestionContent() {
                   </span>
                   {doc.lifecycleState === "NEEDS_REVIEW" ? (
                     <Link
-                      href={`/console/ingestion/review/${doc.documentVersionId}`}
+                      href={`/console/document/review/${doc.documentVersionId}`}
                       className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200"
                     >
                       <ClipboardCheck className="h-3 w-3" />

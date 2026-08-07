@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/console/ingestion",
+  usePathname: () => "/console/document",
   useRouter: () => ({
     replace: vi.fn(),
     push: vi.fn(),

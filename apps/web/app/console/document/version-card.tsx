@@ -81,7 +81,7 @@ export function IngestionVersionCard({
             )}
             {isNeedsReview ? (
               <Link
-                href={`/console/ingestion/review/${documentVersionId}`}
+                href={`/console/document/review/${documentVersionId}`}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
               >
                 <ClipboardCheck className="h-3.5 w-3.5" />

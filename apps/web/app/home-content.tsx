@@ -61,13 +61,13 @@ export default function HomeContent() {
               Start Here
             </p>
             <h2 className="mt-4 text-2xl font-semibold">
-              Mulai dari flow, bukan dari demo
+              Start from the flow, not the demo
             </h2>
             <ul className="mt-2 space-y-2 text-sm text-slate-300">
-              <li>Ketik `Mulai` untuk onboarding session.</li>
-              <li>Buat PRD/TRD fitur pertama di `docs/features/`.</li>
+              <li>Type `Start` to begin the onboarding session.</li>
+              <li>Create a PRD/TRD for your first feature in `docs/features/`.</li>
               <li>
-                Gunakan skill flow untuk bootstrap tiket dan implementasi.
+                Use the flow skill to bootstrap tickets and implementation.
               </li>
             </ul>
           </div>

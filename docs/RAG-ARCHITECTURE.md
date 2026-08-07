@@ -1,105 +1,120 @@
 # Advanced RAG Architecture
 
-## 1. Tujuan
+## Documentation index
 
-Dokumen ini mendefinisikan arsitektur target untuk platform RAG open-source yang:
+| Document | Scope |
+|---|---|
+| **This file** | System overview, data model, delivery phases, architecture decisions, and design rationale |
+| [`INGESTION-ARCHITECTURE.md`](./INGESTION-ARCHITECTURE.md) | Complete offline knowledge plane: intake, human review gate, parser, normalization, chunking, embedding, atomic index publication — with ready/not-ready status per layer |
+| [`RETRIEVAL-ARCHITECTURE.md`](./RETRIEVAL-ARCHITECTURE.md) | Complete online answer plane: query security, hybrid retrieval, reranking, confidence gate, context builder, grounded generation, SSE streaming, async path, traces, evaluation — with ready/not-ready status per layer |
+| [`RAG-PLATFORM-OPERATIONS.md`](./RAG-PLATFORM-OPERATIONS.md) | Runtime config, env vars, Docker services, health/readiness, backup/restore, derived-index rebuild |
+| [`RAG-CONSOLE-UI.md`](./RAG-CONSOLE-UI.md) | Console UI routes, BFF proxy, SSE streaming route, ingestion workbench, retrieval conversation, settings |
+| [`TENANT-DEPLOYMENT.md`](./TENANT-DEPLOYMENT.md) | Single-deployment tenant mode, bootstrap, immutability, backup/restore |
+| [`TENANT-MIGRATION-PATHS.md`](./TENANT-MIGRATION-PATHS.md) | Future paths: shared SaaS, dedicated enterprise, RLS, containerization |
+| [`OPERATION.md`](./OPERATION.md) | Local dev commands, env matrix, auth/proxy flow, queue/worker workflow, CI |
 
-- local-first dan dapat dijalankan dengan Docker;
-- mendukung PDF, dokumen office, teks, web, API, database, email, dan source code;
-- memiliki ingestion yang versioned, idempotent, dapat dilanjutkan setelah gagal, dan dapat di-reindex;
-- memakai hybrid retrieval, reranking, confidence gate, citation, dan safe abstention;
-- provider-neutral untuk parser, embedding, reranker, LLM, object store, vector DB, dan graph DB;
-- tenant-ready, meskipun mode instalasi awal dapat single-tenant;
-- dapat dievaluasi secara objektif sebelum strategi advanced dijadikan default.
+---
 
-Arsitektur ini dibagi menjadi dua data plane:
+## 1. Purpose
 
-1. **Offline knowledge plane** — menerima, memproses, dan mengindeks pengetahuan.
-2. **Online answer plane** — memproses pertanyaan sampai menghasilkan jawaban grounded.
+This document defines the target architecture for an open-source RAG platform that is:
 
-Control plane bersama mengelola konfigurasi, policy, observability, evaluasi, dan audit.
+- local-first and runnable with Docker;
+- supports PDF, office documents, text, web, API, database, email, and source code;
+- has versioned, idempotent, resumable, and reindexable ingestion;
+- uses hybrid retrieval, reranking, confidence gating, citations, and safe abstention;
+- provider-neutral for parser, embedding, reranker, LLM, object store, vector DB, and graph DB;
+- tenant-ready, though the initial installation mode may be single-tenant;
+- objectively evaluable before advanced strategies become the default.
 
-## 2. Keputusan arsitektur
+The architecture is split into two data planes:
 
-| Area | Default | Alasan |
+1. **Offline knowledge plane** — receives, processes, and indexes knowledge.
+2. **Online answer plane** — processes questions and produces grounded answers.
+
+A shared control plane manages configuration, policy, observability, evaluation, and audit.
+
+## 2. Architecture decisions
+
+| Area | Default | Reason |
 | --- | --- | --- |
-| Metadata dan lifecycle | PostgreSQL | Transaksi, relasi, audit, ACL, dan versioning |
-| File mentah dan artefak parser | S3-compatible object store | Binary besar tidak cocok disimpan di relational/vector DB |
-| Dense dan sparse retrieval | Qdrant | Docker-friendly, payload filtering, named vectors, hybrid query, RRF |
-| Queue dan cache | Redis + BullMQ | Sudah tersedia dan cocok untuk pipeline asynchronous |
-| Graph retrieval | Adapter opsional | Berguna untuk multi-hop/entity traversal, tetapi bukan dependency MVP |
-| API/orchestration | FastAPI | HTTP, streaming, policy, dan use-case orchestration |
-| Ingestion worker | Worker terpisah | Parsing/OCR/embedding tidak boleh memblokir request API |
+| Metadata and lifecycle | PostgreSQL | Transactions, relations, audit, ACL, and versioning |
+| Raw files and parser artifacts | S3-compatible object store | Large binaries do not belong in a relational or vector DB |
+| Dense and sparse retrieval | Qdrant | Docker-friendly, payload filtering, named vectors, hybrid query, RRF |
+| Queue and cache | Redis + BullMQ | Already available and well-suited for async pipelines |
+| Graph retrieval | Optional adapter | Useful for multi-hop/entity traversal, but not an MVP dependency |
+| API/orchestration | FastAPI | HTTP, streaming, policy, and use-case orchestration |
+| Ingestion worker | Separate worker | Parsing/OCR/embedding must not block API requests |
 
 ### 2.1 Source of truth
 
-PostgreSQL adalah source of truth untuk:
+PostgreSQL is the source of truth for:
 
-- tenant, user, role, dan policy;
-- knowledge base dan connector;
-- document identity, version, lifecycle, dan processing status;
-- chunk manifest dan lineage;
+- tenant, user, role, and policy;
+- knowledge base and connector;
+- document identity, version, lifecycle, and processing status;
+- chunk manifest and lineage;
 - model/index profile;
-- conversation, answer trace, citation, feedback, dan audit.
+- conversation, answer trace, citation, feedback, and audit.
 
-Object store adalah source of truth untuk binary dan artefak besar:
+Object store is the source of truth for binaries and large artifacts:
 
-- file asli;
-- hasil OCR;
-- normalized document;
-- gambar halaman;
-- tabel terstruktur;
+- raw source files;
+- OCR output;
+- normalized documents;
+- page images;
+- structured tables;
 - parser output;
-- optional exported dataset.
+- optional exported datasets.
 
-Qdrant dan graph DB adalah **derived projections**. Keduanya harus dapat dihapus dan
-dibangun ulang dari PostgreSQL + object store. Vector DB tidak boleh menjadi satu-satunya
-tempat penyimpanan konten.
+Qdrant and graph DB are **derived projections**. Both must be deletable and
+rebuildable from PostgreSQL and the object store. The vector DB must never be
+the sole storage location for content.
 
-## 3. Topologi Docker open-source
+## 3. Open-source Docker topology
 
-Pada workspace development saat ini, service data plane ditempatkan di shared Docker
+In the current development workspace, data plane services are placed in a shared Docker
 service:
 
 ```text
 /Users/binarydev/Program/General/service/docker-compose.yml
 ```
 
-Path tersebut adalah konfigurasi operator lokal, bukan bagian dari kontrak aplikasi.
-Distribusi open-source harus menerima lokasi Compose melalui konfigurasi, misalnya
-`SHARED_COMPOSE_FILE`, dan menyediakan contoh Compose yang portable tanpa absolute path
-ke machine maintainer.
+That path is local operator configuration, not part of the application contract.
+The open-source distribution must accept the Compose location through configuration,
+for example `SHARED_COMPOSE_FILE`, and provide a portable Compose example without
+absolute paths to the maintainer's machine.
 
-Target service:
+Target services:
 
-| Service | Wajib | Port internal | Persistence |
+| Service | Required | Internal port | Persistence |
 | --- | --- | --- | --- |
-| PostgreSQL | Ya | `5433` | volume `postgres-data` |
-| Redis | Ya | `6380` | volume `redis-data` |
-| Qdrant | Ya untuk RAG | `6334`, `6334` | `qdrant-storage`, `qdrant-snapshots` |
-| SeaweedFS S3 gateway | Ya untuk production profile | service network only | `seaweed-data` |
-| Neo4j Community | Opsional profile `graph` | `7474`, `7687` | `neo4j-data` |
-| Local model runtime | Opsional profile `local-models` | provider-specific | model cache |
+| PostgreSQL | Yes | `5433` | volume `postgres-data` |
+| Redis | Yes | `6380` | volume `redis-data` |
+| Qdrant | Yes for RAG | `6334` | `qdrant-storage`, `qdrant-snapshots` |
+| SeaweedFS S3 gateway | Yes for production profile | service network only | `seaweed-data` |
+| Neo4j Community | Optional profile `graph` | `7474`, `7687` | `neo4j-data` |
+| Local model runtime | Optional profile `local-models` | provider-specific | model cache |
 
-Untuk development sederhana, `LocalFileObjectStore` boleh dipakai. Production profile
-harus memakai `S3ObjectStore`. SeaweedFS direkomendasikan sebagai default open-source
-karena menyediakan S3 API dan berlisensi Apache-2.0. Implementasi tetap memakai kontrak
-S3 agar pengguna dapat menggantinya dengan layanan kompatibel lain.
+For simple development, `LocalFileObjectStore` may be used. The production profile
+must use `S3ObjectStore`. SeaweedFS is recommended as the default open-source option
+because it provides an S3 API and is licensed Apache-2.0. The implementation always
+uses the S3 contract so operators can replace it with any compatible service.
 
-Qdrant harus:
+Qdrant must:
 
-- memakai image version yang dipin, bukan `latest`;
-- menggunakan persistent volume;
-- memakai API key;
-- tidak diekspos publik pada deployment production;
-- memakai payload index untuk filter wajib;
-- mengaktifkan strict mode;
-- mempunyai snapshot dan restore procedure.
+- use a pinned image version, not `latest`;
+- use a persistent volume;
+- use an API key;
+- not be exposed publicly in production deployments;
+- use payload indexes for mandatory filters;
+- have strict mode enabled;
+- have a snapshot and restore procedure.
 
-Graph DB tidak ikut default profile. Pengguna mengaktifkannya hanya jika use case dan
-benchmark menunjukkan graph retrieval memberi peningkatan kualitas.
+Graph DB is not included in the default profile. Operators enable it only when use
+case benchmarks show that graph retrieval produces a measurable quality improvement.
 
-## 4. Gambaran sistem
+## 4. System overview
 
 ```mermaid
 flowchart TB
@@ -180,12 +195,12 @@ flowchart TB
 | Source code | Git repository | Webhook, commit sync, scheduled fetch |
 | Live API | Internal/external API | Snapshot for indexing or tool-only |
 
-Data yang sering berubah dan membutuhkan freshness ketat tidak selalu harus diindeks.
-Router connector harus memilih:
+Data that changes frequently and requires strict freshness does not always need to be
+indexed. The connector router must choose:
 
-- **index snapshot** untuk pengetahuan yang cocok menjadi corpus;
-- **tool-only** untuk data transactional/live;
-- **index + tool** untuk dokumentasi historis yang juga memiliki status live.
+- **index snapshot** for knowledge that is suitable as a corpus;
+- **tool-only** for transactional or live data;
+- **index + tool** for historical documentation that also has a live status.
 
 ### 5.2 Upload and intake flow
 
@@ -213,8 +228,8 @@ sequenceDiagram
     W->>Q: Continue parse/chunk/embed/index stages
 ```
 
-File upload besar harus menggunakan presigned URL. API tidak boleh menahan file besar
-di memory. Intake melakukan:
+Large file uploads must use presigned URLs. The API must never hold large files in
+memory. Intake performs:
 
 - tenant and knowledge-base authorization;
 - extension, MIME, magic-byte, size, and checksum validation;
@@ -256,36 +271,36 @@ stateDiagram-v2
     DELETING --> DELETED
 ```
 
-Hanya `READY` version yang boleh diretrieve. Version baru dipromosikan menjadi aktif
-setelah seluruh projection lolos validasi. Version lama tetap aktif selama indexing
-version baru agar update tidak menimbulkan retrieval gap.
+Only `READY` versions may be retrieved. A new version is promoted to active after all
+projections pass validation. The prior version remains active during indexing of the
+new version so that updates do not cause a retrieval gap.
 
 ### 5.4 Idempotency and versioning
 
-Identity harus dipisahkan:
+Identity must be separated by concern:
 
-- `document_id`: identitas logis stabil;
-- `document_version_id`: satu revision konten;
-- `source_revision`: ETag, commit SHA, row version, atau remote updated time;
-- `content_checksum`: SHA-256 raw content;
+- `document_id`: stable logical identity;
+- `document_version_id`: one content revision;
+- `source_revision`: ETag, commit SHA, row version, or remote updated time;
+- `content_checksum`: SHA-256 of raw content;
 - `pipeline_fingerprint`: parser + chunker + embedding + configuration versions;
-- `chunk_id`: deterministic hash dari version, hierarchy path, offsets, dan chunker version.
+- `chunk_id`: deterministic hash of version, hierarchy path, offsets, and chunker version.
 
-Aturan:
+Rules:
 
-- checksum dan pipeline fingerprint sama → `NO_OP`;
-- checksum berubah → document version baru;
-- pipeline berubah → reprocess version yang sama menjadi index generation baru;
-- delete source → soft delete segera, kemudian purge semua projection secara asynchronous;
-- retry memakai idempotency key per stage dan tidak boleh membuat duplicate vectors.
+- same checksum and pipeline fingerprint → `NO_OP`;
+- checksum changes → new document version;
+- pipeline changes → reprocess the same version into a new index generation;
+- source deleted → soft delete immediately, then purge all projections asynchronously;
+- retry uses an idempotency key per stage and must not create duplicate vectors.
 
 ### 5.5 Parser routing
 
-Parser router memilih strategi berdasarkan MIME dan inspeksi isi:
+The parser router selects a strategy based on MIME type and content inspection:
 
 | Content | Default parser strategy | Advanced fallback |
 | --- | --- | --- |
-| Digital PDF | Native text + layout elements | `hi_res` bila struktur buruk |
+| Digital PDF | Native text + layout elements | `hi_res` when structure is poor |
 | Scanned PDF/image | OCR + layout detection | multimodal parser |
 | DOCX/PPTX/HTML/Markdown | structure-aware elements | visual/layout parser |
 | XLSX/CSV/table | sheet/table preservation | table summary + row groups |
@@ -293,7 +308,7 @@ Parser router memilih strategi berdasarkan MIME dan inspeksi isi:
 | Code | language parser + AST boundaries | repository graph |
 | Audio/video transcript | timestamped segments | diarization |
 
-Parser output bukan string tunggal. Output canonical berbentuk ordered elements:
+Parser output is not a single string. The canonical output is an ordered list of elements:
 
 ```text
 DocumentElement
@@ -308,8 +323,8 @@ DocumentElement
 └── extraction_confidence
 ```
 
-Artefak parser disimpan di object store agar chunking dapat diulang tanpa menjalankan
-OCR kembali.
+Parser artifacts are stored in the object store so that chunking can be retried without
+re-running OCR.
 
 ### 5.6 Normalization and quality gate
 
@@ -324,7 +339,7 @@ Normalization:
 - table normalization;
 - secret/PII detection and classification.
 
-Quality gate menghitung:
+The quality gate computes:
 
 - text extraction coverage;
 - OCR confidence;
@@ -334,28 +349,28 @@ Quality gate menghitung:
 - duplicate ratio;
 - language confidence.
 
-Dokumen dengan kualitas di bawah threshold masuk `NEEDS_REVIEW` atau memakai parser
-fallback. Dokumen tidak boleh diam-diam menjadi `READY` dengan konten kosong.
+Documents with quality below threshold enter `NEEDS_REVIEW` or use a parser
+fallback. Documents must never silently become `READY` with empty content.
 
 ### 5.7 Chunking strategy
 
-Chunking dipilih berdasarkan content profile, bukan satu splitter global.
+Chunking is selected based on content profile, not a single global splitter.
 
 #### Default: structure-aware parent-child chunking
 
-- parent: section/title/page-level context, tidak langsung di-embed untuk final retrieval;
-- child: unit retrieval yang di-embed;
-- leaf: optional sentence/table-row/code-symbol unit untuk advanced retrieval;
-- source offsets, page, hierarchy, dan parent ID wajib dipertahankan.
+- parent: section/title/page-level context, not directly embedded for final retrieval;
+- child: retrieval unit that is embedded;
+- leaf: optional sentence/table-row/code-symbol unit for advanced retrieval;
+- source offsets, page, hierarchy, and parent ID must be preserved.
 
-Target awal harus dihitung dalam token model embedding, bukan hanya karakter:
+Target sizes must be calculated in embedding model tokens, not characters:
 
 - preferred child: 300–500 tokens;
 - hard maximum: 700 tokens;
-- overlap hanya ketika elemen besar harus dipotong;
-- normal section boundaries tidak diberi overlap global;
+- overlap only when a large element must be split;
+- normal section boundaries are not given global overlap;
 - parent context: 1,000–2,000 tokens;
-- table dan code tidak dipotong dengan aturan narrative biasa.
+- tables and code are not split using narrative rules.
 
 #### Strategy by content
 
@@ -370,11 +385,11 @@ Target awal harus dihitung dalam token model embedding, bukan hanya karakter:
 | Structured rows | schema-aware text representation per record/entity |
 
 Late chunking, semantic chunking, and multi-vector representations are feature flags.
-Mereka hanya diaktifkan bila evaluation set menunjukkan peningkatan.
+They are only activated when an evaluation set shows measurable improvement.
 
 ### 5.8 Metadata enrichment
 
-Enrichment terbagi menjadi:
+Enrichment is split into categories:
 
 - deterministic: title, page, headings, source, author, dates, MIME, checksum;
 - policy: tenant, ACL principals, role tags, classification, retention;
@@ -382,12 +397,12 @@ Enrichment terbagi menjadi:
 - relational: parent-child, previous-next, attachment, version, references;
 - model-generated: summary, hypothetical questions, entity relations.
 
-Model-generated metadata harus menyimpan provider, model, prompt version, confidence,
-dan timestamp. Metadata ini tidak boleh menggantikan fakta source.
+Model-generated metadata must store provider, model, prompt version, confidence,
+and timestamp. It must never replace source facts.
 
 ### 5.9 Embedding and sparse representation
 
-`EmbeddingProfile` mendefinisikan:
+`EmbeddingProfile` defines:
 
 - provider and model;
 - vector dimension and distance metric;
@@ -397,17 +412,17 @@ dan timestamp. Metadata ini tidak boleh menggantikan fakta source.
 - normalization;
 - profile version.
 
-Embedding batching harus:
+Embedding batching must:
 
-- memakai content-addressed cache;
-- bounded by token and item count;
-- mempunyai provider rate limiter;
+- use a content-addressed cache;
+- be bounded by token and item count;
+- have a provider rate limiter;
 - retry partial failures;
-- menyimpan usage and latency metrics;
-- menolak vector dengan dimension salah atau NaN.
+- store usage and latency metrics;
+- reject vectors with wrong dimension or NaN values.
 
-Qdrant collection default adalah satu collection per compatible embedding profile,
-bukan satu collection per user. Tenant dan knowledge base dipartisi melalui payload.
+The default Qdrant collection is one collection per compatible embedding profile,
+not one collection per user. Tenant and knowledge base are partitioned through payload.
 
 Named vectors:
 
@@ -437,27 +452,27 @@ is_active
 ```
 
 `tenant_id`, `knowledge_base_id`, `document_version_id`, `classification`,
-`acl_principals`, dan `is_active` harus memiliki payload index sebelum data di-upload.
+`acl_principals`, and `is_active` must have payload indexes before data is uploaded.
 
 ### 5.10 Atomic index publication
 
-PostgreSQL, object store, Qdrant, dan graph DB tidak mempunyai satu distributed
-transaction. Pipeline memakai saga + outbox:
+PostgreSQL, object store, Qdrant, and graph DB do not share a single distributed
+transaction. The pipeline uses a saga + outbox pattern:
 
-1. PostgreSQL membuat pending index generation.
-2. Worker menulis artefak object store.
-3. Worker meng-upsert vectors dengan generation ID.
-4. Optional graph projector menulis nodes/edges dengan generation ID.
-5. Validator membandingkan manifest count, vector count, checksum, dan sample retrieval.
-6. Transaksi PostgreSQL mempromosikan generation menjadi aktif.
-7. Query filter beralih ke active generation.
-8. Projection lama dibersihkan asynchronous setelah grace period.
+1. PostgreSQL creates a pending index generation.
+2. Worker writes object store artifacts.
+3. Worker upserts vectors with the generation ID.
+4. Optional graph projector writes nodes/edges with the generation ID.
+5. Validator compares manifest count, vector count, checksum, and sample retrieval.
+6. PostgreSQL transaction promotes the generation to active.
+7. Query filter switches to the active generation.
+8. Prior projections are cleaned up asynchronously after a grace period.
 
-Worker harus dapat menjalankan compensating cleanup untuk generation yang gagal.
+The worker must be able to run compensating cleanup for failed generations.
 
 ### 5.11 Optional graph projection
 
-Graph dipakai untuk:
+Graph is used for:
 
 - entity-centric and multi-hop questions;
 - explicit document references;
@@ -477,9 +492,9 @@ Graph schema minimum:
 (:DocumentVersion)-[:HAS_CHUNK]->(:Chunk)
 ```
 
-Setiap node/edge wajib mempunyai tenant, source chunk, extraction model, confidence,
-dan generation ID. LLM-generated relation tanpa source evidence tidak boleh dianggap
-fakta kuat.
+Every node/edge must carry tenant, source chunk, extraction model, confidence,
+and generation ID. LLM-generated relations without source evidence must not be
+treated as strong facts.
 
 ## 6. Canonical data model
 
@@ -509,8 +524,8 @@ Conversation
         └── EvaluationResult
 ```
 
-Status, lineage, dan configuration snapshot harus disimpan pada setiap `IngestionRun`
-dan `AnswerRun` agar hasil dapat direproduksi.
+Status, lineage, and configuration snapshots must be stored on every `IngestionRun`
+and `AnswerRun` so that results are reproducible.
 
 ## 7. Online query-to-response architecture
 
@@ -568,12 +583,12 @@ sequenceDiagram
 }
 ```
 
-Client tidak boleh mengirim `tenant_id`, ACL, atau classification clearance sebagai
-authority. Semuanya diturunkan dari authenticated session.
+The client must not send `tenant_id`, ACL, or classification clearance as
+authority. All of these are derived from the authenticated session.
 
 ### 7.3 Input security and preprocessing
 
-Urutan wajib:
+Required order:
 
 1. authentication and tenant resolution;
 2. rate, token, payload, and concurrency limits;
@@ -585,24 +600,24 @@ Urutan wajib:
 8. standalone query generation;
 9. query risk and freshness analysis.
 
-Original query tidak diubah. Standalone/rewrite/decomposed queries disimpan sebagai
-derived trace.
+The original query is never modified. Standalone, rewritten, and decomposed queries
+are stored as derived trace entries only.
 
 ### 7.4 Memory manager
 
-Memory mempunyai tiga lapisan:
+Memory has three layers:
 
 - recent message window;
 - rolling conversation summary;
 - explicit user preferences with consent.
 
-Retrieved knowledge tidak otomatis dimasukkan ke long-term memory. Memory store tidak
-boleh menggantikan knowledge base dan tidak boleh menyimpan sensitive content tanpa
+Retrieved knowledge is not automatically written to long-term memory. The memory store
+must not replace the knowledge base and must not store sensitive content without a
 retention policy.
 
 ### 7.5 Query analyzer and bounded planner
 
-Analyzer menghasilkan structured output:
+The analyzer produces structured output:
 
 ```text
 intent
@@ -616,7 +631,7 @@ requires_evidence
 requires_tool
 ```
 
-Planner hanya boleh memilih dari strategi yang diizinkan:
+The planner may only select from permitted strategies:
 
 | Route | Condition |
 | --- | --- |
@@ -628,29 +643,29 @@ Planner hanya boleh memilih dari strategi yang diizinkan:
 | Clarify | Ambiguous intent or missing scope |
 | Abstain | Policy violation or no permitted evidence path |
 
-LLM planner harus memakai schema validation, timeout, token budget, maximum subquery,
-maximum tool calls, dan deterministic fallback. Planner tidak boleh mengubah ACL.
+The LLM planner must use schema validation, timeout, token budget, maximum subqueries,
+maximum tool calls, and a deterministic fallback. The planner must not modify ACL.
 
 ### 7.6 Query transformation
 
-Default path hanya memakai query normalization dan standalone query.
+The default path uses only query normalization and standalone query generation.
 
-Advanced transformations dipilih oleh analyzer:
+Advanced transformations are selected by the analyzer:
 
-- multi-query: meningkatkan recall untuk terminology variation;
-- HyDE: optional untuk semantic gap, tidak dipakai untuk exact fact lookup;
+- multi-query: increases recall for terminology variation;
+- HyDE: optional for semantic gap, not used for exact fact lookup;
 - step-back: conceptual or broad reasoning;
 - decomposition: comparison and multi-hop;
 - domain synonym expansion: curated dictionary first;
 - temporal rewrite: explicit time ranges;
-- entity linking: mapping alias ke canonical entity.
+- entity linking: mapping aliases to canonical entities.
 
-Setiap transformation memiliki budget dan original query selalu ikut retrieval untuk
-mencegah query drift.
+Each transformation has its own budget and the original query always participates
+in retrieval to prevent query drift.
 
 ### 7.7 Security filter builder
 
-Filter dibuat server-side:
+The filter is built server-side:
 
 ```text
 tenant_id == current_tenant
@@ -663,22 +678,22 @@ AND (effective_to IS NULL OR effective_to > now)
 AND optional user filters
 ```
 
-Filter yang sama harus berlaku pada dense, sparse, graph, metadata, parent expansion,
-dan source fetch. Post-filtering setelah retrieval bukan security boundary.
+The same filter must apply to dense, sparse, graph, metadata, parent expansion,
+and source fetch. Post-filtering after retrieval is not a security boundary.
 
 ### 7.8 Retrieval
 
 #### Default production path
 
-1. Embed standalone query dengan active embedding profile.
-2. Buat sparse representation.
-3. Jalankan dense dan sparse prefetch paralel di Qdrant dengan filter yang sama.
-4. Gabungkan peringkat dengan RRF.
-5. Tambahkan optional metadata/recency boost setelah fusion.
-6. Ambil top candidates untuk deduplication and reranking.
+1. Embed the standalone query with the active embedding profile.
+2. Build a sparse representation.
+3. Run dense and sparse prefetch in parallel on Qdrant with the same filter.
+4. Combine rankings with RRF.
+5. Add optional metadata/recency boost after fusion.
+6. Take top candidates for deduplication and reranking.
 
-RRF adalah default aman karena dense dan sparse score berada pada skala berbeda.
-Weighted RRF hanya digunakan setelah bobot dituning dengan evaluation set.
+RRF is the safe default because dense and sparse scores are on different scales.
+Weighted RRF is only used after weights are tuned with an evaluation set.
 
 #### Candidate budgets
 
@@ -693,12 +708,12 @@ Initial starting profile:
 | Cross-encoder input | 24 candidates |
 | Context selection | 6–12 chunks |
 
-Angka tersebut configuration profile, bukan hard-coded global. Profil harus dituning
-berdasarkan recall, latency, dan model context window.
+These are configuration profile values, not hard-coded globals. Profiles must be tuned
+based on recall, latency, and model context window.
 
 #### Optional graph retrieval
 
-Graph traversal menerima linked entities dan memakai depth/edge allowlist:
+Graph traversal accepts linked entities and uses a depth/edge allowlist:
 
 - maximum depth;
 - maximum node expansion;
@@ -707,11 +722,11 @@ Graph traversal menerima linked entities dan memakai depth/edge allowlist:
 - timeout;
 - evidence chunk required for every returned fact.
 
-Graph results masuk candidate fusion sebagai evidence references, bukan text bebas.
+Graph results enter candidate fusion as evidence references, not free text.
 
 ### 7.9 Fusion, deduplication, and diversity
 
-Candidate identity menggunakan `chunk_id`, tetapi dedup juga memeriksa:
+Candidate identity uses `chunk_id`, but deduplication also checks:
 
 - exact content checksum;
 - near-duplicate similarity;
@@ -719,13 +734,13 @@ Candidate identity menggunakan `chunk_id`, tetapi dedup juga memeriksa:
 - superseded version;
 - attachment duplication.
 
-MMR atau diversity heuristic membatasi dominasi satu source. Diversity tidak boleh
-mendorong dokumen irrelevan hanya untuk variasi.
+MMR or a diversity heuristic limits dominance by a single source. Diversity must not
+push irrelevant documents into context just for variety.
 
 ### 7.10 Reranking
 
-Default reranker adalah cross-encoder yang menerima query + chunk. Reranker provider
-harus memiliki:
+The default reranker is a cross-encoder that receives query + chunk. The reranker
+provider must have:
 
 - batching;
 - timeout and fallback;
@@ -734,15 +749,15 @@ harus memiliki:
 - score calibration dataset;
 - CPU and optional GPU implementation.
 
-LLM reranker hanya fallback untuk low-volume complex queries karena latency dan biaya.
-ColBERT/multi-vector reranking menjadi profile opsional.
+The LLM reranker is fallback only for low-volume complex queries due to latency and cost.
+ColBERT/multi-vector reranking is an optional profile.
 
 ### 7.11 Retrieval confidence gate
 
-Confidence bukan satu raw vector score. Gate memakai calibrated features:
+Confidence is not a single raw vector score. The gate uses calibrated features:
 
 - top reranker score and score margin;
-- agreement dense vs sparse;
+- agreement between dense and sparse;
 - number of independent sources;
 - query coverage across decomposed subquestions;
 - source freshness;
@@ -762,7 +777,7 @@ Outcome:
 | Low/no evidence | Abstain with limitations |
 
 Maximum retrieval replans default `1`; maximum total generation repair default `1`.
-Loop tanpa batas dilarang.
+Unbounded loops are forbidden.
 
 ### 7.12 Context builder
 
@@ -865,8 +880,8 @@ response.failed
 }
 ```
 
-Confidence score hanya dipublikasikan setelah calibration tersedia. Sebelum itu,
-client hanya menerima categorical evidence status.
+The confidence score is only published after calibration is available. Until then,
+clients receive only a categorical evidence status.
 
 ## 8. Caching
 
@@ -881,8 +896,8 @@ Cache layers:
 | Semantic answer cache | tenant + policy + normalized query + generation | short TTL + generation change |
 | Tool cache | tool + normalized args + auth scope | tool-specific TTL |
 
-Cache key wajib mengandung tenant dan policy hash. Semantic cache tidak digunakan untuk
-high-risk, personal, permission-sensitive, atau live-data queries.
+The cache key must include tenant and policy hash. Semantic cache is not used for
+high-risk, personal, permission-sensitive, or live-data queries.
 
 ## 9. Failure handling
 
@@ -898,7 +913,7 @@ high-risk, personal, permission-sensitive, atau live-data queries.
 | Delete projection fails | Keep tombstone active and retry purge |
 
 Dead-letter jobs retain stage, sanitized error, retry count, config snapshot, and source
-manifest. Operator dapat retry dari checkpoint.
+manifest. Operators can retry from checkpoint.
 
 ## 10. API surface
 
@@ -938,25 +953,25 @@ graph.project
 evaluation.run
 ```
 
-Concurrency diatur per stage. OCR, embedding, dan graph extraction mempunyai resource
-pool terpisah. Payload queue hanya berisi ID/reference, bukan file atau chunk besar.
+Concurrency is configured per stage. OCR, embedding, and graph extraction have separate
+resource pools. Queue payloads contain only IDs and references, never raw file content
+or chunk text.
 
 ## 12. Security and governance
 
-- Tenant and ACL filter berlaku sebelum retrieval.
-- Raw files and parsed content diperlakukan sebagai untrusted input.
-- Secrets tidak masuk prompt, trace, queue payload, atau audit body.
-- Object download memakai short-lived signed URL dan policy check.
-- Hard delete menghapus object, vectors, graph projection, cache, dan retained traces
-  sesuai retention policy.
-- Audit mencatat actor, tenant, policy decision, source IDs, tool calls, dan deletion.
-- Self-hosted telemetry bersifat opt-in.
-- Model/provider tidak boleh melatih dari data pengguna kecuali dinyatakan dan
-  diizinkan secara eksplisit.
+- Tenant and ACL filters apply before retrieval.
+- Raw files and parsed content are treated as untrusted input.
+- Secrets must not enter prompts, traces, queue payloads, or audit bodies.
+- Object downloads use short-lived signed URLs and a policy check.
+- Hard delete removes objects, vectors, graph projections, cache entries, and retained
+  traces according to the retention policy.
+- Audit records actor, tenant, policy decision, source IDs, tool calls, and deletions.
+- Self-hosted telemetry is opt-in.
+- Model/provider must not train on user data unless explicitly stated and permitted.
 
 ## 13. Observability and evaluation
 
-Setiap ingestion run merekam:
+Every ingestion run records:
 
 - latency per stage;
 - pages/elements/chunks;
@@ -966,7 +981,7 @@ Setiap ingestion run merekam:
 - projection counts;
 - retries and failures.
 
-Setiap answer run merekam:
+Every answer run records:
 
 - route and plan;
 - query transformations;
@@ -989,8 +1004,8 @@ Release gate:
 - indexing throughput and failure rate;
 - cost per indexed page and answered query.
 
-Advanced strategy menjadi default hanya jika benchmark mengungguli baseline tanpa
-melanggar latency, security, dan cost budgets.
+An advanced strategy becomes the default only if benchmarks outperform the baseline
+without violating latency, security, and cost budgets.
 
 ## 14. Target module boundaries
 
@@ -1024,8 +1039,8 @@ apps/worker/src/
 └── evaluation/
 ```
 
-Domain/application tidak boleh mengimpor SDK Qdrant, S3, Neo4j, atau model provider.
-Semua SDK berada di infrastructure adapter.
+Domain and application layers must not import Qdrant, S3, Neo4j, or model provider SDKs.
+All SDKs live exclusively in infrastructure adapters.
 
 ## 15. Delivery phases
 
@@ -1073,15 +1088,15 @@ Semua SDK berada di infrastructure adapter.
 
 ## 17. Open decisions before OpenSpec proposal
 
-1. Apakah SeaweedFS diterima sebagai default S3-compatible object store?
-2. Apakah mode v1 single-tenant dengan schema tenant-ready, atau multi-tenant aktif?
-3. Apakah PDF/Markdown/TXT cukup untuk ingestion v1?
-4. Embedding dan generation provider lokal apa yang resmi didukung pertama?
-5. Sparse encoder apa yang menjadi default Qdrant sparse vector?
-6. Cross-encoder apa yang harus berjalan baik pada CPU?
-7. Apakah graph profile memakai Neo4j Community atau adapter tanpa default engine?
-8. Berapa target p95 latency, indexing throughput, dan hardware minimum?
-9. Dataset evaluasi pertama berasal dari domain apa?
+1. Is SeaweedFS accepted as the default S3-compatible object store?
+2. Is v1 mode single-tenant with a tenant-ready schema, or active multi-tenant?
+3. Are PDF/Markdown/TXT sufficient for ingestion v1?
+4. Which local embedding and generation providers are officially supported first?
+5. Which sparse encoder becomes the default Qdrant sparse vector?
+6. Which cross-encoder must run well on CPU?
+7. Does the graph profile use Neo4j Community or an adapter with no default engine?
+8. What are the target p95 latency, indexing throughput, and minimum hardware specs?
+9. What domain does the first evaluation dataset come from?
 
 ## 18. Primary references
 

@@ -37,13 +37,13 @@ export const consoleNavItems: ConsoleNavItem[] = [
   },
   {
     label: "Documents",
-    href: "/console/ingestion",
+    href: "/console/document",
     icon: Upload,
     description: "Upload and track documents",
   },
   {
     label: "Query",
-    href: "/console/retrieval",
+    href: "/console/query",
     icon: MessageSquareText,
     description: "Ask grounded questions",
   },

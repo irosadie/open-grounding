@@ -51,12 +51,12 @@ export function ReviewContent({ versionId }: Props) {
 
   const handleApprove = async () => {
     await approveMutation.mutateAsync()
-    router.push("/console/ingestion")
+    router.push("/console/document")
   }
 
   const handleReject = async () => {
     await rejectMutation.mutateAsync()
-    router.push("/console/ingestion")
+    router.push("/console/document")
   }
 
   if (isLoading) {
@@ -82,7 +82,7 @@ export function ReviewContent({ versionId }: Props) {
       <div className="flex-1 space-y-4 px-6 py-6 pb-32">
         <div className="flex items-center gap-2">
           <Link
-            href="/console/ingestion"
+            href="/console/document"
             className="text-sm text-blue-600 hover:underline"
           >
             ← Kembali ke Ingestion
