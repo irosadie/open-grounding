@@ -10,7 +10,8 @@ import { useRagDocuments } from "$/hooks/transactions/use-rag-ingestion"
 import type { DocumentVersionItem } from "$/hooks/transactions/use-rag-ingestion"
 import { ingestionMimeTypes } from "@open-grounding/schemas"
 import type { KnowledgeBaseResponseProps } from "@open-grounding/types"
-import { FileUp, RefreshCw, Upload, X } from "lucide-react"
+import { ClipboardCheck, FileUp, RefreshCw, Upload, X } from "lucide-react"
+import Link from "next/link"
 import {
   type ChangeEvent,
   type DragEvent,
@@ -327,11 +328,21 @@ export function IngestionContent() {
                       ? `${(doc.sizeBytes / 1024).toFixed(1)} KB`
                       : "—"}
                   </span>
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${lifecycleBadgeClass[doc.lifecycleState] ?? "bg-blue-100 text-blue-700"}`}
-                  >
-                    {lifecycleLabel[doc.lifecycleState] ?? doc.lifecycleState}
-                  </span>
+                  {doc.lifecycleState === "NEEDS_REVIEW" ? (
+                    <Link
+                      href={`/console/ingestion/review/${doc.documentVersionId}`}
+                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200"
+                    >
+                      <ClipboardCheck className="h-3 w-3" />
+                      Perlu Ditinjau
+                    </Link>
+                  ) : (
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${lifecycleBadgeClass[doc.lifecycleState] ?? "bg-blue-100 text-blue-700"}`}
+                    >
+                      {lifecycleLabel[doc.lifecycleState] ?? doc.lifecycleState}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
