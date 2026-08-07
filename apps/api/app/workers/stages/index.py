@@ -113,6 +113,8 @@ async def index_chunks(
             payload["effective_from"] = effective_from
         if effective_to is not None:
             payload["effective_to"] = effective_to
+        if version.metadata:
+            payload["metadata"] = version.metadata
         points.append(
             PointStruct(
                 id=chunk_id,

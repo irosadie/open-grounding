@@ -64,6 +64,7 @@ class IngestionIntakeService:
         size_bytes: int,
         title: str | None = None,
         source_revision: str | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> IntakeResult:
         """Create a pending document version and return an upload target."""
         if mime_type not in self._settings.ingestion_supported_mime_types_set:
@@ -105,6 +106,7 @@ class IngestionIntakeService:
             size_bytes=size_bytes,
             mime_type=mime_type,
             acl_principals=(f"user:{tenant.user_id}", f"role:{tenant.role.value}"),
+            metadata=metadata,
         )
         return IntakeResult(
             document_id=doc.id,

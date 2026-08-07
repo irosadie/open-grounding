@@ -688,6 +688,7 @@ async def create_intake(
         size_bytes=payload.size_bytes,
         title=payload.title,
         source_revision=payload.source_revision,
+        metadata=payload.metadata,
     )
     return success(
         "Intake created",

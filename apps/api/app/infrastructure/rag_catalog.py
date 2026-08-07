@@ -122,6 +122,7 @@ class DocumentVersionRecord(Base):
     source_revision: Mapped[str | None] = mapped_column(String(512), nullable=True)
     pipeline_fingerprint: Mapped[str | None] = mapped_column(String(512), nullable=True)
     parsed_text: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
     object_key_raw: Mapped[str] = mapped_column(String(1024), nullable=False)
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -436,6 +437,7 @@ def _to_document_version(row: DocumentVersionRecord) -> DocumentVersion:
         source_revision=row.source_revision,
         pipeline_fingerprint=row.pipeline_fingerprint,
         parsed_text=row.parsed_text,
+        metadata=dict(row.metadata_json) if row.metadata_json else None,
         object_key_raw=row.object_key_raw,
         size_bytes=row.size_bytes,
         mime_type=row.mime_type,
@@ -738,6 +740,7 @@ class SqlAlchemyDocumentVersionRepository:
         mime_type: str | None,
         classification: str = "INTERNAL",
         acl_principals: tuple[str, ...] = (),
+        metadata: dict[str, str] | None = None,
     ) -> DocumentVersion:
         row = DocumentVersionRecord(
             id=str(uuid4()),
@@ -752,6 +755,7 @@ class SqlAlchemyDocumentVersionRepository:
             mime_type=mime_type,
             classification=Classification(classification),
             acl_principals=list(acl_principals),
+            metadata_json=metadata,
         )
         self._session.add(row)
         await self._session.commit()

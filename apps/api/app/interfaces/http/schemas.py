@@ -104,6 +104,23 @@ class CreateIntakeRequest(BaseModel):
     size_bytes: int = Field(ge=1)
     source_revision: str | None = Field(default=None, max_length=512)
     title: str | None = Field(default=None, max_length=512)
+    metadata: dict[str, str] | None = Field(default=None)
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        if v is None:
+            return v
+        if len(v) > 20:
+            raise ValueError("metadata cannot have more than 20 keys")
+        for key, value in v.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise ValueError("metadata keys and values must be strings")
+            if len(key) > 256:
+                raise ValueError(f"metadata key '{key[:32]}...' exceeds 256 characters")
+            if len(value) > 256:
+                raise ValueError(f"metadata value for key '{key}' exceeds 256 characters")
+        return v
 
 
 class IntakeResponse(BaseModel):

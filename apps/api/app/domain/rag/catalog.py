@@ -118,6 +118,7 @@ class DocumentVersion:
     source_revision: str | None
     pipeline_fingerprint: str | None
     parsed_text: str | None
+    metadata: dict[str, str] | None
     object_key_raw: str
     size_bytes: int | None
     mime_type: str | None
