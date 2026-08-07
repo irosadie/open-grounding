@@ -60,7 +60,7 @@ export const getDocumentVersionLifecycleLabel = (
 export const isTerminalLifecycleState = (
   value: string,
 ): value is (typeof documentVersionLifecycleStates)[number] => {
-  return value === "READY" || value === "FAILED"
+  return value === "READY" || value === "FAILED" || value === "NEEDS_REVIEW"
 }
 
 export const createIntakeSchema = z.object({

@@ -10,7 +10,8 @@ import {
   ingestionStages,
   isIngestionTerminal,
 } from "$/utils/ingestion-pipeline"
-import { Check, CircleAlert, Loader2 } from "lucide-react"
+import { Check, CircleAlert, ClipboardCheck, Loader2 } from "lucide-react"
+import Link from "next/link"
 import { useState } from "react"
 
 type VersionCardProps = {
@@ -35,6 +36,7 @@ export function IngestionVersionCard({
   const currentIndex = getCurrentStageIndex(lifecycleState)
   const isFailed = lifecycleState === "FAILED"
   const isReady = lifecycleState === "READY"
+  const isNeedsReview = lifecycleState === "NEEDS_REVIEW"
   const isTerminal = isIngestionTerminal(lifecycleState)
   const stageLabel = getIngestionStageLabel(lifecycleState)
 
@@ -61,17 +63,31 @@ export function IngestionVersionCard({
         </div>
         {isTerminal ? (
           <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                isReady
-                  ? "bg-success-100 text-success-700"
-                  : "bg-danger-100 text-danger-700",
-              )}
-            >
-              {isReady ? "Ready" : "Failed"}
-            </span>
-            {confirmingDelete ? (
+            {isNeedsReview ? (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                Perlu Ditinjau
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                  isReady
+                    ? "bg-success-100 text-success-700"
+                    : "bg-danger-100 text-danger-700",
+                )}
+              >
+                {isReady ? "Ready" : "Failed"}
+              </span>
+            )}
+            {isNeedsReview ? (
+              <Link
+                href={`/console/ingestion/review/${documentVersionId}`}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
+              >
+                <ClipboardCheck className="h-3.5 w-3.5" />
+                Review
+              </Link>
+            ) : confirmingDelete ? (
               <div className="flex items-center gap-1">
                 <Button
                   intent="danger"
@@ -110,9 +126,11 @@ export function IngestionVersionCard({
 
       <ol className="mt-4 flex items-center">
         {ingestionStages.map((stage, index) => {
-          const isCompleted = isReady || (!isFailed && index < currentIndex)
+          const isCompleted =
+            isReady || (!isFailed && !isNeedsReview && index < currentIndex)
           const isCurrent = !isTerminal && index === currentIndex
           const isFailedStage = isFailed && index === currentIndex
+          const isReviewStage = isNeedsReview && index === currentIndex
 
           return (
             <li
@@ -129,9 +147,12 @@ export function IngestionVersionCard({
                       "border-primary-500 bg-primary-50 text-primary-700",
                     isFailedStage &&
                       "border-danger-500 bg-danger-50 text-danger-700",
+                    isReviewStage &&
+                      "border-amber-500 bg-amber-50 text-amber-700",
                     !isCompleted &&
                       !isCurrent &&
                       !isFailedStage &&
+                      !isReviewStage &&
                       "border-gray-300 bg-white text-gray-400",
                   )}
                 >
@@ -139,6 +160,8 @@ export function IngestionVersionCard({
                     <Check className="h-3.5 w-3.5" />
                   ) : isFailedStage ? (
                     <CircleAlert className="h-3.5 w-3.5" />
+                  ) : isReviewStage ? (
+                    <ClipboardCheck className="h-3.5 w-3.5" />
                   ) : isCurrent ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
@@ -148,7 +171,7 @@ export function IngestionVersionCard({
                 <span
                   className={cn(
                     "mt-1.5 text-[10px] font-medium",
-                    isCompleted || isCurrent
+                    isCompleted || isCurrent || isReviewStage
                       ? "text-gray-700"
                       : "text-gray-400",
                   )}
