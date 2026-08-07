@@ -157,6 +157,7 @@ class ConfidenceService:
 
     async def enqueue_calibration(self, *, tenant: TenantContext, profile_id: str, fixture_id: str, trace_id: str, redis_url: str) -> str:
         from uuid import uuid4
+        from bullmq import Queue
 
         from app.application.calibration_service import validate_calibration_ready
 
@@ -166,27 +167,19 @@ class ConfidenceService:
             tenant_id=tenant.tenant_id,
             retrieval_profile_id=profile_id,
         )
-        import json
-
-        import redis.asyncio as aioredis
 
         job_id = str(uuid4())
-        payload = {
-            "id": job_id,
-            "name": "calibrate",
-            "data": {
-                "tenant_id": tenant.tenant_id,
-                "profile_id": profile_id,
-                "fixture_id": fixture_id,
-                "trace_id": trace_id,
-            },
-            "opts": {},
+        data = {
+            "tenant_id": tenant.tenant_id,
+            "profile_id": profile_id,
+            "fixture_id": fixture_id,
+            "trace_id": trace_id,
         }
-        r = aioredis.from_url(redis_url)
+        q = Queue("calibration", {"connection": redis_url})
         try:
-            await r.lpush("bull:calibration:wait", json.dumps(payload))
+            await q.add("calibrate", data, {"jobId": job_id, "attempts": 3, "backoff": {"type": "exponential", "delay": 5000}})
         finally:
-            await r.aclose()
+            await q.close()
         return job_id
 
     async def get_calibration_status(self, *, job_id: str, redis_url: str) -> dict[str, object]:
@@ -264,29 +257,22 @@ class ConfidenceService:
         return _model_version_response(promoted)
 
     async def enqueue_synthetic(self, *, tenant: TenantContext, profile_id: str, knowledge_base_id: str, count: int, trace_id: str, redis_url: str) -> str:
-        import json
         from uuid import uuid4
-
-        import redis.asyncio as aioredis
+        from bullmq import Queue
 
         job_id = str(uuid4())
-        payload = {
-            "id": job_id,
-            "name": "generate-synthetic",
-            "data": {
-                "tenant_id": tenant.tenant_id,
-                "profile_id": profile_id,
-                "kb_id": knowledge_base_id,
-                "count": count,
-                "trace_id": trace_id,
-            },
-            "opts": {},
+        data = {
+            "tenant_id": tenant.tenant_id,
+            "profile_id": profile_id,
+            "kb_id": knowledge_base_id,
+            "count": count,
+            "trace_id": trace_id,
         }
-        r = aioredis.from_url(redis_url)
+        q = Queue("synthetic-fixture", {"connection": redis_url})
         try:
-            await r.lpush("bull:synthetic-fixture:wait", json.dumps(payload))
+            await q.add("generate-synthetic", data, {"jobId": job_id, "attempts": 3, "backoff": {"type": "exponential", "delay": 5000}})
         finally:
-            await r.aclose()
+            await q.close()
         return job_id
 
 

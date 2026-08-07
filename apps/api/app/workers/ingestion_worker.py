@@ -1,18 +1,17 @@
-"""Ingestion pipeline worker — consumes BullMQ jobs from Redis.
+"""Ingestion pipeline workers — BullMQ-backed via python-bullmq.
 
-Reads jobs from BullMQ queue format (Redis streams/lists).
-Processes: parse → chunk → embed → index → validate.
+Replaces the hand-rolled IngestionWorker class with proper bullmq.Worker
+instances. Each stage gets its own Worker for independent concurrency control.
+Stage-to-stage chaining uses bullmq.Queue.add() to keep job lifecycle within
+BullMQ's Lua-managed state machine.
 """
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-import redis.asyncio as aioredis
-from sqlalchemy.ext.asyncio import AsyncSession
+from bullmq import Job, Queue, Worker
 
 from app.core.settings import Settings
 from app.infrastructure.database import create_session_factory
@@ -24,6 +23,9 @@ from app.workers.stages.memory_summarize import summarize_conversation
 from app.workers.stages.parse import parse_document
 from app.workers.stages.validate import validate_and_finalize
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
 logger = logging.getLogger(__name__)
 
 QUEUE_PARSE = "ingestion.parse"
@@ -34,221 +36,178 @@ QUEUE_VALIDATE = "ingestion.validate"
 QUEUE_MEMORY_SUMMARIZE = "memory.summarize"
 QUEUE_MEMORY_PRUNE = "memory.prune"
 
-POLL_INTERVAL = 2  # seconds
-MEMORY_PRUNE_INTERVAL = 24 * 60 * 60  # 24 hours
+_DEFAULT_JOB_OPTS: dict[str, object] = {
+    "attempts": 3,
+    "backoff": {"type": "exponential", "delay": 5000},
+}
 
 
-@dataclass
-class IngestionJob:
-    document_version_id: str
-    tenant_id: str
-    knowledge_base_id: str | None = None
-    user_id: str | None = None
+async def enqueue_memory_summarize(
+    *,
+    conversation_id: str,
+    tenant_id: str,
+    knowledge_base_id: str,
+    user_id: str,
+    redis_url: str,
+) -> None:
+    """Enqueue a memory.summarize job. Called from application layer."""
+    q = Queue(QUEUE_MEMORY_SUMMARIZE, {"connection": redis_url})
+    try:
+        await q.add(
+            "summarize",
+            {
+                "conversationId": conversation_id,
+                "tenantId": tenant_id,
+                "knowledgeBaseId": knowledge_base_id,
+                "userId": user_id,
+            },
+            {**_DEFAULT_JOB_OPTS, "jobId": f"mem:{conversation_id}"},
+        )
+    finally:
+        await q.close()
 
 
-class IngestionWorker:
-    def __init__(self, settings: Settings, redis_url: str) -> None:
-        self._settings = settings
-        self._redis_url = redis_url
-        self._running = False
-        self._session_factory = create_session_factory(settings)
-        self._last_prune_at = 0.0
+async def _mark_failed(
+    document_version_id: str,
+    tenant_id: str,
+    session_factory: "async_sessionmaker",
+) -> None:
+    from app.infrastructure.rag_catalog import SqlAlchemyDocumentVersionRepository
 
-    async def start(self) -> None:
-        self._running = True
-        self._redis = aioredis.from_url(self._redis_url, decode_responses=True)
-        logger.info("Ingestion worker started. Listening on queues: parse, chunk, embed, index, validate, memory.summarize, memory.prune")
-
-        while self._running:
-            await self._poll_queues()
-            await self._maybe_run_prune()
-            await asyncio.sleep(POLL_INTERVAL)
-
-    async def stop(self) -> None:
-        self._running = False
-        if self._redis:
-            await self._redis.aclose()
-        logger.info("Ingestion worker stopped")
-
-    async def _maybe_run_prune(self) -> None:
-        """Run memory prune daily (not more than once per interval)."""
-        import time
-        now = time.monotonic()
-        if now - self._last_prune_at < MEMORY_PRUNE_INTERVAL:
-            return
-        self._last_prune_at = now
-        logger.info("Running scheduled memory.prune (daily)")
-        try:
-            async with self._session_factory() as session:
-                await prune_expired_memory(
-                    session=session,
-                    settings=self._settings,
-                )
-        except Exception as e:
-            logger.warning("Scheduled memory.prune failed: %s", e)
-
-    async def _poll_queues(self) -> None:
-        """Poll all ingestion queues in priority order."""
-        for queue_name, handler in [
-            (QUEUE_PARSE, self._handle_parse),
-            (QUEUE_CHUNK, self._handle_chunk),
-            (QUEUE_EMBED, self._handle_embed),
-            (QUEUE_INDEX, self._handle_index),
-            (QUEUE_VALIDATE, self._handle_validate),
-            (QUEUE_MEMORY_SUMMARIZE, self._handle_memory_summarize),
-            (QUEUE_MEMORY_PRUNE, self._handle_memory_prune),
-        ]:
-            job = await self._dequeue(queue_name)
-            if job:
-                async with self._session_factory() as session:
-                    await handler(job, session)
-
-    async def _dequeue(self, queue_name: str) -> IngestionJob | None:
-        """Dequeue one job from BullMQ wait list (RPOPLPUSH pattern)."""
-        key = f"bull:{queue_name}:wait"
-        job_id = await self._redis.rpoplpush(key, f"bull:{queue_name}:active")
-        if not job_id:
-            return None
-        job_key = f"bull:{queue_name}:{job_id}"
-        data_raw = await self._redis.hget(job_key, "data")
-        if not data_raw:
-            return None
-        try:
-            data = json.loads(data_raw)
-            return IngestionJob(
-                document_version_id=data.get("documentVersionId", ""),
-                tenant_id=data["tenantId"],
-                knowledge_base_id=data.get("knowledgeBaseId"),
-                user_id=data.get("userId"),
-            )
-        except (KeyError, json.JSONDecodeError) as e:
-            logger.error("Failed to parse job data from %s: %s", queue_name, e)
-            return None
-
-    async def _ack(self, queue_name: str, job_id: str) -> None:
-        """Remove job from active list after successful processing."""
-        key = f"bull:{queue_name}:active"
-        await self._redis.lrem(key, 1, job_id)
-
-    async def _enqueue_next(self, queue_name: str, job: IngestionJob) -> None:
-        """Enqueue job to next stage queue."""
-        key = f"bull:{queue_name}:wait"
-        job_id = f"auto:{job.document_version_id}"
-        job_key = f"bull:{queue_name}:{job_id}"
-        data = json.dumps({
-            "documentVersionId": job.document_version_id,
-            "tenantId": job.tenant_id,
-            "knowledgeBaseId": job.knowledge_base_id,
-            "userId": job.user_id,
-        })
-        await self._redis.hset(job_key, "data", data)
-        await self._redis.lpush(key, job_id)
-
-    async def _handle_parse(self, job: IngestionJob, session: AsyncSession) -> None:
-        logger.info("[parse] %s", job.document_version_id)
-        try:
-            await parse_document(job.document_version_id, job.tenant_id, session, self._settings)
-            await self._enqueue_next(QUEUE_CHUNK, job)
-            await self._ack(QUEUE_PARSE, job.document_version_id)
-        except Exception as e:
-            logger.error("[parse] FAILED %s: %s", job.document_version_id, e)
-            await self._mark_failed(job.document_version_id, job.tenant_id, session)
-
-    async def _handle_chunk(self, job: IngestionJob, session: AsyncSession) -> None:
-        logger.info("[chunk] %s", job.document_version_id)
-        try:
-            await chunk_document(job.document_version_id, job.tenant_id, session, self._settings)
-            await self._enqueue_next(QUEUE_EMBED, job)
-            await self._ack(QUEUE_CHUNK, job.document_version_id)
-        except Exception as e:
-            logger.error("[chunk] FAILED %s: %s", job.document_version_id, e)
-            await self._mark_failed(job.document_version_id, job.tenant_id, session)
-
-    async def _handle_embed(self, job: IngestionJob, session: AsyncSession) -> None:
-        logger.info("[embed] %s", job.document_version_id)
-        try:
-            await embed_chunks(job.document_version_id, job.tenant_id, session, self._settings)
-            await self._enqueue_next(QUEUE_INDEX, job)
-            await self._ack(QUEUE_EMBED, job.document_version_id)
-        except Exception as e:
-            logger.error("[embed] FAILED %s: %s", job.document_version_id, e)
-            await self._mark_failed(job.document_version_id, job.tenant_id, session)
-
-    async def _handle_index(self, job: IngestionJob, session: AsyncSession) -> None:
-        logger.info("[index] %s", job.document_version_id)
-        try:
-            await index_chunks(job.document_version_id, job.tenant_id, session, self._settings)
-            await self._enqueue_next(QUEUE_VALIDATE, job)
-            await self._ack(QUEUE_INDEX, job.document_version_id)
-        except Exception as e:
-            logger.error("[index] FAILED %s: %s", job.document_version_id, e)
-            await self._mark_failed(job.document_version_id, job.tenant_id, session)
-
-    async def _handle_validate(self, job: IngestionJob, session: AsyncSession) -> None:
-        logger.info("[validate] %s", job.document_version_id)
-        try:
-            await validate_and_finalize(job.document_version_id, job.tenant_id, session, self._settings)
-            await self._ack(QUEUE_VALIDATE, job.document_version_id)
-        except Exception as e:
-            logger.error("[validate] FAILED %s: %s", job.document_version_id, e)
-            await self._mark_failed(job.document_version_id, job.tenant_id, session)
-
-    async def _handle_memory_summarize(self, job: IngestionJob, session: AsyncSession) -> None:
-        """Handle memory.summarize job. document_version_id carries conversation_id."""
-        conversation_id = job.document_version_id
-        knowledge_base_id = job.knowledge_base_id or ""
-        user_id = job.user_id or ""
-        logger.info("[memory.summarize] conversation=%s kb=%s", conversation_id, knowledge_base_id)
-        try:
-            await summarize_conversation(
-                conversation_id=conversation_id,
-                tenant_id=job.tenant_id,
-                knowledge_base_id=knowledge_base_id,
-                user_id=user_id,
-                session=session,
-                settings=self._settings,
-            )
-            await self._ack(QUEUE_MEMORY_SUMMARIZE, conversation_id)
-        except Exception as e:
-            logger.error("[memory.summarize] FAILED conversation=%s: %s", conversation_id, e)
-            await self._ack(QUEUE_MEMORY_SUMMARIZE, conversation_id)
-
-    async def enqueue_memory_summarize(
-        self,
-        *,
-        conversation_id: str,
-        tenant_id: str,
-        knowledge_base_id: str,
-        user_id: str,
-    ) -> None:
-        """Enqueue a memory.summarize job for a completed conversation."""
-        queue_name = QUEUE_MEMORY_SUMMARIZE
-        job_id = f"mem:{conversation_id}"
-        job_key = f"bull:{queue_name}:{job_id}"
-        data = json.dumps({
-            "documentVersionId": conversation_id,
-            "tenantId": tenant_id,
-            "knowledgeBaseId": knowledge_base_id,
-            "userId": user_id,
-        })
-        await self._redis.hset(job_key, "data", data)
-        await self._redis.lpush(f"bull:{queue_name}:wait", job_id)
-
-    async def _handle_memory_prune(self, job: IngestionJob, session: AsyncSession) -> None:
-        logger.info("[memory.prune] running batch prune")
-        try:
-            deleted = await prune_expired_memory(session=session, settings=self._settings)
-            logger.info("[memory.prune] deleted %d chunks", deleted)
-            await self._ack(QUEUE_MEMORY_PRUNE, job.document_version_id)
-        except Exception as e:
-            logger.error("[memory.prune] FAILED: %s", e)
-            await self._ack(QUEUE_MEMORY_PRUNE, job.document_version_id)
-
-    async def _mark_failed(self, document_version_id: str, tenant_id: str, session: AsyncSession) -> None:
-        from app.infrastructure.rag_catalog import SqlAlchemyDocumentVersionRepository
+    async with session_factory() as session:
         repo = SqlAlchemyDocumentVersionRepository(session)
         await repo.update_lifecycle_state(
             tenant_id=tenant_id,
             version_id=document_version_id,
             lifecycle_state="FAILED",
         )
+
+
+def create_ingestion_workers(
+    settings: Settings,
+    session_factory: "async_sessionmaker",
+    redis_url: str,
+) -> list[Worker]:
+    """Create all ingestion + memory BullMQ workers."""
+
+    def _on_failed_ingestion(job: Job | None, error: Exception) -> None:
+        """Mark document version FAILED after all retry attempts exhausted."""
+        if job is None:
+            return
+        max_attempts = (job.opts or {}).get("attempts", _DEFAULT_JOB_OPTS["attempts"])
+        if job.attemptsMade >= max_attempts:
+            import asyncio
+            version_id = (job.data or {}).get("documentVersionId", "")
+            tenant_id = (job.data or {}).get("tenantId", "")
+            if version_id and tenant_id:
+                asyncio.create_task(
+                    _mark_failed(version_id, tenant_id, session_factory)
+                )
+
+    async def handle_parse(job: Job, token: str) -> None:
+        data = job.data
+        version_id = data["documentVersionId"]
+        tenant_id = data["tenantId"]
+        logger.info("[parse] %s", version_id)
+        async with session_factory() as session:
+            await parse_document(version_id, tenant_id, session, settings)
+        q = Queue(QUEUE_CHUNK, {"connection": redis_url})
+        try:
+            await q.add("chunk", data, _DEFAULT_JOB_OPTS)
+        finally:
+            await q.close()
+
+    async def handle_chunk(job: Job, token: str) -> None:
+        data = job.data
+        version_id = data["documentVersionId"]
+        tenant_id = data["tenantId"]
+        logger.info("[chunk] %s", version_id)
+        async with session_factory() as session:
+            await chunk_document(version_id, tenant_id, session, settings)
+        q = Queue(QUEUE_EMBED, {"connection": redis_url})
+        try:
+            await q.add("embed", data, _DEFAULT_JOB_OPTS)
+        finally:
+            await q.close()
+
+    async def handle_embed(job: Job, token: str) -> None:
+        data = job.data
+        version_id = data["documentVersionId"]
+        tenant_id = data["tenantId"]
+        logger.info("[embed] %s", version_id)
+        async with session_factory() as session:
+            await embed_chunks(version_id, tenant_id, session, settings)
+        q = Queue(QUEUE_INDEX, {"connection": redis_url})
+        try:
+            await q.add("index", data, _DEFAULT_JOB_OPTS)
+        finally:
+            await q.close()
+
+    async def handle_index(job: Job, token: str) -> None:
+        data = job.data
+        version_id = data["documentVersionId"]
+        tenant_id = data["tenantId"]
+        logger.info("[index] %s", version_id)
+        async with session_factory() as session:
+            await index_chunks(version_id, tenant_id, session, settings)
+        q = Queue(QUEUE_VALIDATE, {"connection": redis_url})
+        try:
+            await q.add("validate", data, _DEFAULT_JOB_OPTS)
+        finally:
+            await q.close()
+
+    async def handle_validate(job: Job, token: str) -> None:
+        data = job.data
+        version_id = data["documentVersionId"]
+        tenant_id = data["tenantId"]
+        logger.info("[validate] %s", version_id)
+        async with session_factory() as session:
+            await validate_and_finalize(version_id, tenant_id, session, settings)
+
+    async def handle_memory_summarize(job: Job, token: str) -> None:
+        data = job.data
+        logger.info("[memory.summarize] conversation=%s", data.get("conversationId"))
+        async with session_factory() as session:
+            await summarize_conversation(
+                conversation_id=data["conversationId"],
+                tenant_id=data["tenantId"],
+                knowledge_base_id=data.get("knowledgeBaseId", ""),
+                user_id=data.get("userId", ""),
+                session=session,
+                settings=settings,
+            )
+
+    async def handle_memory_prune(job: Job, token: str) -> None:
+        logger.info("[memory.prune] running batch prune")
+        async with session_factory() as session:
+            deleted = await prune_expired_memory(session=session, settings=settings)
+        logger.info("[memory.prune] deleted %d chunks", deleted)
+
+    conn = {"connection": redis_url}
+    ingestion_opts = {**conn, "concurrency": 4}
+
+    parse_worker = Worker(QUEUE_PARSE, handle_parse, {**ingestion_opts})
+    chunk_worker = Worker(QUEUE_CHUNK, handle_chunk, {**ingestion_opts})
+    embed_worker = Worker(QUEUE_EMBED, handle_embed, {**ingestion_opts})
+    index_worker = Worker(QUEUE_INDEX, handle_index, {**ingestion_opts})
+    validate_worker = Worker(QUEUE_VALIDATE, handle_validate, {**ingestion_opts})
+
+    for w in (parse_worker, chunk_worker, embed_worker, index_worker, validate_worker):
+        w.on("failed", _on_failed_ingestion)
+
+    memory_summarize_worker = Worker(
+        QUEUE_MEMORY_SUMMARIZE, handle_memory_summarize, {**conn, "concurrency": 3}
+    )
+    memory_prune_worker = Worker(
+        QUEUE_MEMORY_PRUNE, handle_memory_prune, {**conn, "concurrency": 1}
+    )
+
+    return [
+        parse_worker,
+        chunk_worker,
+        embed_worker,
+        index_worker,
+        validate_worker,
+        memory_summarize_worker,
+        memory_prune_worker,
+    ]
