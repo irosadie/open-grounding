@@ -3,6 +3,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime
 from typing import Annotated
 
+from bullmq import Queue
 from fastapi import APIRouter, Depends, File, Header, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,7 @@ from app.core.security import decode_refresh_token
 from app.core.settings import Settings, get_settings
 from app.domain.models import UserRole
 from app.infrastructure.database import get_session
+from app.infrastructure.rag_catalog import SqlAlchemyRagQueryJobRepository
 from app.interfaces.http.dependencies import (
     AuthContextDependency,
     AuthServiceDependency,
@@ -1016,10 +1018,7 @@ async def async_query_rag(
     from datetime import UTC, datetime as dt
     from uuid import uuid4
 
-    from bullmq import Queue
-
     from app.domain.rag.query_job import RagQueryJob, RagQueryJobStatus
-    from app.infrastructure.rag_catalog import SqlAlchemyRagQueryJobRepository
 
     job_id = str(uuid4())
     conversation_id = payload.conversation_id or str(uuid4())
@@ -1052,6 +1051,7 @@ async def async_query_rag(
     job_data = {
         "job_id": job_id,
         "tenant_id": tenant.tenant_id,
+        "membership_id": tenant.membership_id,
         "user_id": tenant.user_id,
         "message": payload.message,
         "knowledge_base_ids": payload.knowledge_base_ids,
@@ -1083,8 +1083,6 @@ async def get_rag_query_job(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, object]:
     from fastapi import HTTPException
-
-    from app.infrastructure.rag_catalog import SqlAlchemyRagQueryJobRepository
 
     repo = SqlAlchemyRagQueryJobRepository(session)
     job = await repo.get_by_id_and_tenant(job_id, tenant.tenant_id)

@@ -18,6 +18,7 @@ from app.core.settings import get_settings
 from app.infrastructure.database import create_session_factory
 from app.workers.calibration_worker import create_calibration_workers
 from app.workers.ingestion_worker import create_ingestion_workers
+from app.workers.query_worker import create_query_worker
 from app.workers.tool_worker import create_tool_worker
 
 logging.basicConfig(
@@ -37,6 +38,7 @@ ALL_QUEUES = [
     "tool-execution",
     "calibration",
     "synthetic-fixture",
+    "rag.query",
 ]
 
 
@@ -52,6 +54,7 @@ async def main() -> None:
         *create_ingestion_workers(settings, session_factory, redis_url),
         create_tool_worker(settings, session_factory, redis_url),
         *create_calibration_workers(settings, session_factory, redis_url),
+        create_query_worker(settings, session_factory, redis_url),
     ]
 
     logger.info(
