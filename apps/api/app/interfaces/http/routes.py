@@ -58,6 +58,9 @@ from app.interfaces.http.schemas import (
     CalibrateRequest,
     PromoteRequest,
     GenerateSyntheticRequest,
+    AsyncRagQueryRequest,
+    AsyncRagQueryResponse,
+    RagQueryJobResponse,
 )
 
 system_router = APIRouter(tags=["System"])
@@ -995,6 +998,107 @@ async def query_rag(
         session=session,
     )
     return success("Query completed", result)
+
+
+@rag_query_router.post(
+    "/async",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Submit a RAG query for async processing",
+    description="Enqueues a RAG query job and returns immediately. Poll GET /rag/query/jobs/{jobId} for result.",
+    responses={401: {"description": "Authentication required"}, 422: {"description": "Validation error"}},
+)
+async def async_query_rag(
+    payload: AsyncRagQueryRequest,
+    tenant: TenantContextDependency,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, object]:
+    from datetime import UTC, datetime as dt
+    from uuid import uuid4
+
+    from bullmq import Queue
+
+    from app.domain.rag.query_job import RagQueryJob, RagQueryJobStatus
+    from app.infrastructure.rag_catalog import SqlAlchemyRagQueryJobRepository
+
+    job_id = str(uuid4())
+    conversation_id = payload.conversation_id or str(uuid4())
+
+    job = RagQueryJob(
+        id=job_id,
+        tenant_id=tenant.tenant_id,
+        user_id=tenant.user_id,
+        status=RagQueryJobStatus.PENDING,
+        request={
+            "message": payload.message,
+            "knowledge_base_ids": payload.knowledge_base_ids,
+            "conversation_id": conversation_id,
+            "webhook_url": payload.webhook_url,
+            "mode": payload.mode,
+            "decomposition": payload.decomposition,
+            "planner": payload.planner,
+            "memory": payload.memory,
+        },
+        result=None,
+        error=None,
+        webhook_url=payload.webhook_url,
+        created_at=dt.now(UTC),
+        completed_at=None,
+    )
+
+    repo = SqlAlchemyRagQueryJobRepository(session)
+    await repo.create(job)
+
+    job_data = {
+        "job_id": job_id,
+        "tenant_id": tenant.tenant_id,
+        "user_id": tenant.user_id,
+        "message": payload.message,
+        "knowledge_base_ids": payload.knowledge_base_ids,
+        "conversation_id": conversation_id,
+        "webhook_url": payload.webhook_url,
+        "mode": payload.mode,
+        "decomposition": payload.decomposition,
+        "planner": payload.planner,
+        "memory": payload.memory,
+    }
+    q = Queue("rag.query", {"connection": settings.redis_url})
+    try:
+        await q.add(job_id, job_data, {"jobId": job_id, "attempts": 2, "backoff": {"type": "exponential", "delay": 3000}})
+    finally:
+        await q.close()
+
+    return AsyncRagQueryResponse(jobId=job_id, conversationId=conversation_id).model_dump()
+
+
+@rag_query_router.get(
+    "/jobs/{job_id}",
+    summary="Poll async RAG query job status",
+    description="Returns status and result for an async query job. Cross-tenant jobs are returned as 404.",
+    responses={401: {"description": "Authentication required"}, 404: {"description": "Job not found"}},
+)
+async def get_rag_query_job(
+    job_id: str,
+    tenant: TenantContextDependency,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    from fastapi import HTTPException
+
+    from app.infrastructure.rag_catalog import SqlAlchemyRagQueryJobRepository
+
+    repo = SqlAlchemyRagQueryJobRepository(session)
+    job = await repo.get_by_id_and_tenant(job_id, tenant.tenant_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return RagQueryJobResponse(
+        jobId=job.id,
+        status=job.status.value,
+        result=job.result,
+        error=job.error,
+        createdAt=job.created_at.isoformat(),
+        completedAt=job.completed_at.isoformat() if job.completed_at else None,
+    ).model_dump()
 
 
 @rag_query_router.get(

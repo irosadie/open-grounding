@@ -115,6 +115,10 @@ class IngestionIntakeService:
             object_key_raw=object_key_raw,
         )
 
+    async def get_pending_review_count(self, *, tenant: TenantContext) -> int:
+        """Return count of document versions in NEEDS_REVIEW state for this tenant."""
+        return await self._version_repo.count_needs_review(tenant_id=tenant.tenant_id)
+
     async def complete_intake(
         self,
         *,

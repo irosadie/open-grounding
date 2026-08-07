@@ -559,3 +559,38 @@ class GenerateSyntheticRequest(BaseModel):
     count: int = Field(default=50, ge=1, le=500)
 
     model_config = {"extra": "forbid"}
+
+
+# --- Async RAG query schemas -------------------------------------------------
+
+
+class AsyncRagQueryRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8192)
+    knowledge_base_ids: list[str] = Field(min_length=1, max_length=20)
+    conversation_id: str | None = None
+    webhook_url: str | None = Field(default=None, max_length=2048)
+    mode: Literal["grounded"] = "grounded"
+    decomposition: dict[str, Any] | None = None
+    planner: dict[str, Any] | None = None
+    memory: dict[str, Any] | None = None
+
+    @field_validator("webhook_url")
+    @classmethod
+    def webhook_must_be_https(cls, v: str | None) -> str | None:
+        if v is not None and not v.startswith("https://"):
+            raise ValueError("webhook_url must use https://")
+        return v
+
+
+class AsyncRagQueryResponse(BaseModel):
+    jobId: str
+    conversationId: str
+
+
+class RagQueryJobResponse(BaseModel):
+    jobId: str
+    status: str
+    result: dict[str, Any] | None
+    error: str | None
+    createdAt: str
+    completedAt: str | None

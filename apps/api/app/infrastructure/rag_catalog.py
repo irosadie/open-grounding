@@ -810,6 +810,16 @@ class SqlAlchemyDocumentVersionRepository:
         return row.parsed_text if row else None
 
     async def count_needs_review(self, *, tenant_id: str) -> int:
+        from sqlalchemy import func, select
+        result = await self._session.execute(
+            select(func.count()).where(
+                DocumentVersionRecord.tenant_id == tenant_id,
+                DocumentVersionRecord.lifecycle_state == DocumentVersionLifecycleState.NEEDS_REVIEW,
+            )
+        )
+        return result.scalar_one() or 0
+
+    async def count_needs_review(self, *, tenant_id: str) -> int:
         """Return count of document versions in NEEDS_REVIEW state for a tenant."""
         from sqlalchemy import func
         result = await self._session.execute(
@@ -2326,3 +2336,104 @@ class SqlAlchemyMcpInvocationRepository:
         result = await self._session.execute(sa_delete(McpInvocationRecord).where(McpInvocationRecord.tenant_id == tenant_id, McpInvocationRecord.created_at < before))
         await self._session.commit()
         return cast(int, result.rowcount or 0)
+
+
+# --- RagQueryJob ORM + Repository --------------------------------------------
+
+
+class RagQueryJobRecord(Base):
+    __tablename__ = "rag_query_jobs"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    request: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(String, nullable=True)
+    webhook_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_rag_query_jobs_tenant_id", "tenant_id"),
+        Index("ix_rag_query_jobs_status", "status"),
+    )
+
+
+def _to_rag_query_job(row: RagQueryJobRecord) -> "RagQueryJob":
+    from app.domain.rag.query_job import RagQueryJob, RagQueryJobStatus
+    return RagQueryJob(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        user_id=row.user_id,
+        status=RagQueryJobStatus(row.status),
+        request=dict(row.request),
+        result=dict(row.result) if row.result is not None else None,
+        error=row.error,
+        webhook_url=row.webhook_url,
+        created_at=row.created_at,
+        completed_at=row.completed_at,
+    )
+
+
+class SqlAlchemyRagQueryJobRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(self, job: "RagQueryJob") -> None:
+        row = RagQueryJobRecord(
+            id=job.id,
+            tenant_id=job.tenant_id,
+            user_id=job.user_id,
+            status=job.status.value,
+            request=job.request,
+            result=job.result,
+            error=job.error,
+            webhook_url=job.webhook_url,
+            created_at=job.created_at,
+            completed_at=job.completed_at,
+        )
+        self._session.add(row)
+        await self._session.commit()
+
+    async def get_by_id_and_tenant(self, job_id: str, tenant_id: str) -> "RagQueryJob | None":
+        result = await self._session.execute(
+            select(RagQueryJobRecord).where(
+                RagQueryJobRecord.id == job_id,
+                RagQueryJobRecord.tenant_id == tenant_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_rag_query_job(row) if row else None
+
+    async def update_running(self, job_id: str) -> None:
+        result = await self._session.execute(
+            select(RagQueryJobRecord).where(RagQueryJobRecord.id == job_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            row.status = "running"
+            await self._session.commit()
+
+    async def update_completed(self, job_id: str, result_data: dict) -> None:
+        result = await self._session.execute(
+            select(RagQueryJobRecord).where(RagQueryJobRecord.id == job_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            row.status = "completed"
+            row.result = result_data
+            row.completed_at = utc_now()
+            await self._session.commit()
+
+    async def update_failed(self, job_id: str, error: str) -> None:
+        result = await self._session.execute(
+            select(RagQueryJobRecord).where(RagQueryJobRecord.id == job_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            row.status = "failed"
+            row.error = error
+            row.completed_at = utc_now()
+            await self._session.commit()
