@@ -8,30 +8,84 @@ It is designed to be called by any external client or business orchestrator via 
 
 ## How It Works
 
+A query goes through two stages before an answer is returned: **decomposition + routing**, then **grounding**.
+
+### Stage 1 — Decomposition & Routing (async)
+
+When a query arrives, the platform first analyzes intent and decomposes it into one or more sub-tasks. Each sub-task is routed independently and executed as an async job:
+
 ```
 External client (REST API or MCP)
         │
         ▼
-  Query Router
-  ┌─────────────────────────────────┐
-  │  RAG route?                     │
-  │  → hybrid retrieval             │
-  │  → reranking                    │
-  │  → confidence gate              │
-  │  → grounded answer + citations  │
-  │                                 │
-  │  General route?                 │
-  │  → pass directly to LLM         │
-  │                                 │
-  │  Tool route?                    │
-  │  → MCP tool execution           │
-  └─────────────────────────────────┘
+  POST /rag/query  →  job enqueued (returns jobId immediately)
         │
         ▼
-  Answer to client
+  ┌─────────────────────────────────────────────┐
+  │  Query Analysis & Decomposition             │
+  │  → standalone query rewrite                 │
+  │  → intent analysis                          │
+  │  → decompose into sub-tasks (if needed)     │
+  └──────────────────┬──────────────────────────┘
+                     │
+         ┌───────────┼───────────┐
+         ▼           ▼           ▼
+    RAG task    General task  Tool task
+    → hybrid    → pass to     → MCP tool
+      retrieval   LLM           execution
+    → reranking
+    → confidence
+      gate
 ```
 
-Routing is decided by a query analyzer based on intent, evidence availability, and confidence threshold. If evidence is insufficient, the platform abstains — it does not fabricate answers.
+Each sub-task type:
+
+| Route | When | What happens |
+|---|---|---|
+| `RAG` | Query answerable from knowledge base | Hybrid retrieval → rerank → confidence gate → grounded generation |
+| `General` | No relevant KB evidence | Passed directly to LLM without retrieval |
+| `Tool` | Registered MCP tool matches intent | MCP tool executed, result injected into context |
+| `Abstain` | Insufficient evidence + low confidence | Platform declines to answer — never fabricates |
+
+### Stage 2 — Grounding & Answer Assembly
+
+After all sub-tasks complete, results are merged into a single grounded response:
+
+```
+  Sub-task results (RAG chunks + tool output + general LLM)
+        │
+        ▼
+  Context builder + citation IDs
+        │
+        ▼
+  Grounded generation (LLM with evidence-only prompt)
+        │
+        ▼
+  Answer + citations + limitations  →  client (polled via GET /rag/query/{jobId})
+```
+
+The client polls `GET /rag/query/{jobId}` for the result, or receives it via webhook if configured. Answers only reference cited evidence — if evidence is insufficient, the platform responds with `abstain` rather than fabricating.
+
+---
+
+## How It Works (summary diagram)
+
+```
+Client
+  │
+  ├── POST /rag/query ─────────────────────────────┐
+  │         returns: { jobId }                      │
+  │                                                 ▼
+  │                                    Decompose → route tasks async
+  │                                    ┌──────────────────────────┐
+  │                                    │  RAG   General   Tool    │
+  │                                    └──────────┬───────────────┘
+  │                                               ▼
+  │                                    Ground + assemble answer
+  │
+  └── GET /rag/query/{jobId} ◄── poll for result
+            returns: { answer, citations, limitations }
+```
 
 ---
 
@@ -85,16 +139,28 @@ When human review is enabled on a knowledge base, the pipeline halts at `NEEDS_R
 ### Online answer plane (Retrieval)
 
 ```
-Query + knowledge base IDs
-  → Auth + tenant + ACL filter
-  → Standalone query + intent analysis
-  → Route: RAG | General | Tool | Abstain
-  → Hybrid retrieval (dense + sparse + RRF)
-  → Cross-encoder reranking
-  → Confidence gate
-  → Context builder + citation IDs
-  → Grounded generation
-  → Answer + citations + limitations
+POST /rag/query  →  job enqueued  →  returns jobId
+  │
+  ▼
+Query Analysis & Decomposition
+  → standalone query rewrite
+  → intent analysis
+  → decompose into sub-tasks (RAG / General / Tool / Abstain)
+  │
+  ├── RAG task    → hybrid retrieval (dense + sparse + RRF)
+  │                → cross-encoder reranking
+  │                → confidence gate
+  │                → grounded generation
+  │
+  ├── General task → LLM direct (no retrieval)
+  │
+  └── Tool task   → MCP tool execution
+  │
+  ▼
+Ground + assemble: context builder + citation IDs + grounded LLM call
+  │
+  ▼
+GET /rag/query/{jobId}  →  answer + citations + limitations
 ```
 
 Answers are only generated when evidence is sufficient. Otherwise the platform responds with `abstain` — never fabricates.
@@ -219,8 +285,8 @@ Open Grounding is designed to be called by an external business orchestrator —
 
 The orchestrator is responsible for domain-specific logic (order state, required field collection, business rules). Open Grounding handles:
 
-- Answering questions from the knowledge base (grounded, cited)
-- Executing tools via registered MCP servers
+- Decomposing and routing queries to RAG, General LLM, or MCP tools
+- Executing tasks asynchronously and grounding the final answer against cited evidence
 - Maintaining conversation history per `conversation_id`
 
 **Typical integration flow:**
@@ -231,16 +297,22 @@ Business Orchestrator (Node.js / Python / etc.)
   ├── Manage session state (Redis or DB)
   ├── Inject context via system prompt per request
   │
-  └── POST /rag/query
-        {
-          "message": "user message",
-          "knowledge_base_ids": ["kb-id"],
-          "conversation_id": "session-123"
-        }
-        → grounded answer + citations + tool results
+  ├── POST /rag/query
+  │       {
+  │         "message": "user message",
+  │         "knowledge_base_ids": ["kb-id"],
+  │         "conversation_id": "session-123"
+  │       }
+  │       ← { jobId: "job-xyz" }
+  │
+  ├── poll GET /rag/query/job-xyz
+  │       until status === "completed"
+  │
+  └── receive { answer, citations, limitations }
+        → grounded answer, never fabricated
 ```
 
-The `conversation_id` is shared between the orchestrator and the platform, so conversation history accumulates naturally across turns.
+The `conversation_id` is shared between the orchestrator and the platform, so conversation history accumulates naturally across turns. Alternatively, configure a `webhook_url` in the request body to receive the result via HTTP POST when the job completes — no polling needed.
 
 ---
 
