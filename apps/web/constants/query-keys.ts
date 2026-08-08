@@ -24,6 +24,7 @@ export const queryKeys = {
       plannerDefaults: "ragKnowledgeBasesPlannerDefaults",
       memoryConfig: "ragKnowledgeBasesMemoryConfig",
       memoryConfigDefaults: "ragKnowledgeBasesMemoryConfigDefaults",
+      ingestionConfig: "ragKnowledgeBasesIngestionConfig",
     },
     memory: {
       list: "ragMemoryList",

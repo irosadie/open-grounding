@@ -7,11 +7,18 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dev_trace import get_tracer
 from app.core.settings import Settings
+from app.domain.rag.catalog import INGESTION_CONFIG_DEFAULTS
 from app.domain.rag.elements import ParsedDocument, ParserProfile
+from app.domain.rag.normalizer import QualityGate, compute_invalid_char_ratio, compute_quality, normalize_document
 from app.domain.tenant_context import TenantContext
 from app.infrastructure.rag.parsers.docling_adapter import DoclingParserAdapter
-from app.infrastructure.rag_catalog import SqlAlchemyDocumentVersionRepository
+from app.infrastructure.rag_catalog import (
+    SqlAlchemyDocumentRepository,
+    SqlAlchemyDocumentVersionRepository,
+    SqlAlchemyIngestionConfigRepository,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +38,25 @@ async def parse_document(
     settings: Settings,
 ) -> str:
     """Extract text from raw document. Returns extracted text."""
-    repo = SqlAlchemyDocumentVersionRepository(session)
+    version_repo = SqlAlchemyDocumentVersionRepository(session)
+    doc_repo = SqlAlchemyDocumentRepository(session)
+    config_repo = SqlAlchemyIngestionConfigRepository(session)
 
-    version = await repo.find_by_id(tenant_id=tenant_id, version_id=document_version_id)
+    version = await version_repo.find_by_id(tenant_id=tenant_id, version_id=document_version_id)
     if version is None:
         raise ValueError(f"Document version {document_version_id} not found")
 
-    await repo.update_lifecycle_state(
+    # Fetch KB id via parent document to load per-KB ingestion config
+    document = await doc_repo.find_by_id(tenant_id=tenant_id, document_id=version.document_id)
+    kb_config = None
+    if document is not None:
+        kb_config = await config_repo.get_by_kb(
+            tenant_id=tenant_id,
+            knowledge_base_id=document.knowledge_base_id,
+        )
+    cfg = kb_config or INGESTION_CONFIG_DEFAULTS
+
+    await version_repo.update_lifecycle_state(
         tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="PARSING"
     )
 
@@ -46,22 +65,67 @@ async def parse_document(
 
     # Parse based on MIME type — try Docling first, fall back to pdfminer
     mime_type = version.mime_type or "text/plain"
-    text = await _parse_with_docling_or_fallback(
+    parsed_doc = await _parse_with_docling_or_fallback(
         raw_content=raw_content,
         mime_type=mime_type,
         filename=version.object_key_raw,
         tenant_id=tenant_id,
     )
 
-    # Store parsed text in DB and set lifecycle to NEEDS_REVIEW
-    await repo.update_parsed_text(
-        tenant_id=tenant_id,
-        version_id=document_version_id,
-        parsed_text=text,
-    )
-    # Pipeline halts here — approval required before NORMALIZING
+    # Normalize and compute quality
+    if isinstance(parsed_doc, ParsedDocument):
+        normalized = normalize_document(parsed_doc)
+        is_pdf = mime_type == "application/pdf"
+        quality = compute_quality(normalized.elements, is_pdf=is_pdf)
+        invalid_ratio = compute_invalid_char_ratio(normalized.elements)
+        text = _serialize_parsed_document(normalized)
+    else:
+        # fallback path returned plain str
+        text = parsed_doc
+        quality = None
+        invalid_ratio = 0.0
 
-    logger.info("[parse] persisted %d chars for %s", len(text), document_version_id)
+    # Apply quality gate with per-KB thresholds
+    if cfg.auto_review:
+        next_state = "NEEDS_REVIEW"
+    elif quality is not None:
+        gate = QualityGate(
+            min_text_coverage=cfg.min_text_coverage,
+            max_invalid_char_ratio=cfg.max_invalid_char_ratio,
+            min_aggregate_confidence=cfg.min_aggregate_confidence,
+            min_page_coverage=cfg.min_page_coverage,
+        )
+        gate_result = gate.evaluate(quality, invalid_char_ratio=invalid_ratio)
+        next_state = gate_result if gate_result in ("NEEDS_REVIEW", "FAILED") else "NEEDS_REVIEW"
+        # Only skip review (go to next stage) if gate returns READY
+        if gate_result == "READY":
+            next_state = "NORMALIZING"
+        elif gate_result == "FAILED":
+            next_state = "FAILED"
+        else:
+            next_state = "NEEDS_REVIEW"
+    else:
+        next_state = "NEEDS_REVIEW"
+
+    # Store parsed text and set lifecycle state
+    tracer = get_tracer()
+    async with tracer.op(
+        "ingestion.parse",
+        version_id=document_version_id,
+        chars=len(text),
+        next_state=next_state,
+        verbose_meta={"mime_type": mime_type},
+    ):
+        await version_repo.update_parsed_text(
+            tenant_id=tenant_id,
+            version_id=document_version_id,
+            parsed_text=text,
+        )
+        await version_repo.update_lifecycle_state(
+            tenant_id=tenant_id, version_id=document_version_id, lifecycle_state=next_state
+        )
+
+    logger.info("[parse] %s chars, state=%s for %s", len(text), next_state, document_version_id)
     return text
 
 
@@ -71,7 +135,7 @@ async def _parse_with_docling_or_fallback(
     mime_type: str,
     filename: str,
     tenant_id: str,
-) -> str:
+) -> ParsedDocument | str:
     """Try DoclingParserAdapter; fall back to _extract_text() on missing install."""
     from app.domain.errors import DomainError
 
@@ -81,13 +145,12 @@ async def _parse_with_docling_or_fallback(
             expected_tenant_id=tenant_id,
             profile=_DEFAULT_PARSER_PROFILE,
         )
-        parsed_doc = await adapter.parse(
+        return await adapter.parse(
             tenant=tenant,
             source=raw_content,
             mime_type=mime_type,
             parser_profile_id=_DEFAULT_PARSER_PROFILE.id,
         )
-        return _serialize_parsed_document(parsed_doc)
     except DomainError as exc:
         if getattr(exc, "code", None) == "PARSER_NOT_INSTALLED":
             logger.warning(

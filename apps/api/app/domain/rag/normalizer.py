@@ -44,6 +44,18 @@ def normalize_document(doc: ParsedDocument) -> ParsedDocument:
 _INVALID_CHAR_RE = re.compile(r"[\x00-\x08\x0e-\x1f\x7f-\x9f]")
 
 
+def compute_invalid_char_ratio(elements: list[DocumentElement]) -> float:
+    """Return ratio of invalid characters to total characters across all elements."""
+    total_chars = 0
+    invalid_chars = 0
+    for e in elements:
+        total_chars += len(e.text)
+        invalid_chars += len(_INVALID_CHAR_RE.findall(e.text))
+    if total_chars == 0:
+        return 0.0
+    return invalid_chars / total_chars
+
+
 def compute_quality(elements: list[DocumentElement], *, is_pdf: bool = False, pages_expected: int = 0) -> ParserQualitySummary:
     """Compute a bounded quality summary from a list of elements."""
     total = len(elements)
@@ -95,11 +107,20 @@ class QualityGate:
         self._min_confidence = min_aggregate_confidence
         self._min_page_coverage = min_page_coverage
 
-    def evaluate(self, quality: ParserQualitySummary, *, is_pdf: bool = False, pages_expected: int = 0) -> str:
+    def evaluate(
+        self,
+        quality: ParserQualitySummary,
+        *,
+        is_pdf: bool = False,
+        pages_expected: int = 0,
+        invalid_char_ratio: float = 0.0,
+    ) -> str:
         """Return 'READY', 'NEEDS_REVIEW', or 'FAILED' based on quality signals."""
         if quality.element_count == 0 or quality.text_coverage < 0.05:
             return "FAILED"
         if quality.text_coverage < self._min_text_coverage:
+            return "NEEDS_REVIEW"
+        if invalid_char_ratio > self._max_invalid_ratio:
             return "NEEDS_REVIEW"
         if quality.aggregate_confidence is not None and quality.aggregate_confidence < self._min_confidence:
             return "NEEDS_REVIEW"

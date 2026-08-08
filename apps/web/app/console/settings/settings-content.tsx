@@ -26,7 +26,7 @@ function CopyableId({ label, value }: { label: string; value: string }) {
           type="button"
           onClick={handleCopy}
           className="shrink-0 rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          aria-label={`Salin ${label}`}
+          aria-label={`Copy ${label}`}
         >
           {copied ? (
             <Check className="h-3.5 w-3.5 text-success-600" />
@@ -50,13 +50,13 @@ export function SettingsContent() {
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Settings</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Status platform dan informasi tenant untuk keperluan diagnostik.
+          Platform status and tenant information for diagnostics.
         </p>
       </div>
 
       <PanelCard
-        title="Status Platform"
-        description="Kesehatan dependensi: PostgreSQL, Redis, Qdrant, object storage, dan tenant."
+        title="Platform Status"
+        description="Dependency health: PostgreSQL, Redis, Qdrant, object storage, and tenant."
       >
         {readiness.isLoading ? (
           <LoadingSpinner />
@@ -77,10 +77,10 @@ export function SettingsContent() {
                     : "bg-warning-100 text-warning-700",
                 )}
               >
-                {isReady ? "Siap" : "Terdegradasi"}
+                {isReady ? "Ready" : "Degraded"}
               </span>
               <span className="text-xs text-gray-500">
-                RAG {readiness.data.ragEnabled ? "aktif" : "nonaktif"} ·{" "}
+                RAG {readiness.data.ragEnabled ? "enabled" : "disabled"} ·{" "}
                 {readiness.data.ragRuntimeMode}
               </span>
             </div>
@@ -111,8 +111,8 @@ export function SettingsContent() {
                       )}
                     >
                       {component.available
-                        ? "Tersedia"
-                        : (component.detail ?? "Tidak tersedia")}
+                        ? "Available"
+                        : (component.detail ?? "Unavailable")}
                     </span>
                   </div>
                 </li>
@@ -120,15 +120,13 @@ export function SettingsContent() {
             </ul>
           </div>
         ) : (
-          <p className="text-sm text-gray-500">
-            Tidak dapat memuat laporan status.
-          </p>
+          <p className="text-sm text-gray-500">Unable to load status report.</p>
         )}
       </PanelCard>
 
       <PanelCard
-        title="Informasi Tenant"
-        description="Data tenant, membership, dan identitas user yang aktif (read-only)."
+        title="Tenant Information"
+        description="Active tenant, membership, and user identity (read-only)."
       >
         {tenant.isLoading ? (
           <LoadingSpinner />
@@ -146,20 +144,20 @@ export function SettingsContent() {
           </div>
         ) : (
           <p className="text-sm text-gray-500">
-            Tidak dapat memuat informasi tenant.
+            Unable to load tenant information.
           </p>
         )}
       </PanelCard>
 
       <PanelCard
-        title="Knowledge Bases & Profil"
-        description="Metadata knowledge base dan profil model/indeks milik tenant (read-only)."
+        title="Knowledge Bases & Profiles"
+        description="Tenant knowledge base and model/index profile metadata (read-only)."
       >
         <div className="rounded-lg bg-gray-50 p-4">
           <p className="text-sm text-gray-600">
-            Manajemen knowledge base dan profil menunggu endpoint catalog write
-            tersedia. Untuk saat ini, gunakan halaman <strong>Ingestion</strong>{" "}
-            untuk mengupload dokumen ke knowledge base yang sudah ada.
+            Knowledge base and profile management is pending catalog write
+            endpoints. For now, use the <strong>Ingestion</strong> page to
+            upload documents to an existing knowledge base.
           </p>
         </div>
       </PanelCard>

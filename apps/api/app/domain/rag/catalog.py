@@ -15,6 +15,7 @@ generations are versioned and never overwrite an active generation in place.
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol
 
 from app.domain.rag.policy import Classification
 
@@ -260,3 +261,52 @@ class PlannerConfig:
     guardrails: dict[str, object]
     created_at: datetime
     updated_at: datetime
+
+
+@dataclass(frozen=True)
+class IngestionConfig:
+    """Per-KB configuration for ingestion quality gate and auto-review behavior."""
+
+    id: str
+    tenant_id: str
+    knowledge_base_id: str
+    min_text_coverage: float
+    max_invalid_char_ratio: float
+    min_aggregate_confidence: float
+    min_page_coverage: float
+    auto_review: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+# Default values matching QualityGate constructor defaults
+INGESTION_CONFIG_DEFAULTS = IngestionConfig(
+    id="",
+    tenant_id="",
+    knowledge_base_id="",
+    min_text_coverage=0.3,
+    max_invalid_char_ratio=0.1,
+    min_aggregate_confidence=0.5,
+    min_page_coverage=0.5,
+    auto_review=False,
+    created_at=datetime.min,
+    updated_at=datetime.min,
+)
+
+
+class IngestionConfigRepository(Protocol):
+    """Repository protocol for per-KB ingestion configuration."""
+
+    async def get_by_kb(self, *, tenant_id: str, knowledge_base_id: str) -> IngestionConfig | None: ...
+
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        min_text_coverage: float,
+        max_invalid_char_ratio: float,
+        min_aggregate_confidence: float,
+        min_page_coverage: float,
+        auto_review: bool,
+    ) -> IngestionConfig: ...

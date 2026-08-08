@@ -6,6 +6,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dev_trace import get_tracer
 from app.core.settings import Settings
 from app.infrastructure.rag_catalog import (
     SqlAlchemyDocumentVersionRepository,
@@ -30,8 +31,14 @@ async def chunk_document(
         tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="CHUNKING"
     )
 
-    # Get parsed text
+    # Get parsed text — fallback to DB if in-memory cache is cold (e.g. after worker restart)
     text = _parsed_cache.get(document_version_id)
+    if not text:
+        version = await repo.find_by_id(tenant_id=tenant_id, version_id=document_version_id)
+        if version is not None and version.parsed_text:
+            text = version.parsed_text
+            _parsed_cache[document_version_id] = text
+            logger.info("[chunk] cache miss — loaded parsed_text from DB for %s", document_version_id)
     if not text:
         raise ValueError(f"No parsed text found for {document_version_id}. Parse stage must run first.")
 
@@ -46,7 +53,16 @@ async def chunk_document(
 
     chunks = _split_text(text, strategy=strategy, chunk_size=chunk_size, overlap=overlap)
 
-    _chunks_cache[document_version_id] = chunks
+    tracer = get_tracer()
+    async with tracer.op(
+        "ingestion.chunk",
+        version_id=document_version_id,
+        chunks=len(chunks),
+        strategy=strategy,
+        chunk_size=chunk_size,
+        verbose_meta={"overlap": overlap},
+    ):
+        _chunks_cache[document_version_id] = chunks
 
     logger.info("[chunk] %d chunks from %s (strategy=%s, size=%d)", len(chunks), document_version_id, strategy, chunk_size)
     return chunks

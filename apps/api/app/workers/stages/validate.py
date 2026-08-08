@@ -6,6 +6,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dev_trace import get_tracer
 from app.core.settings import Settings
 from app.infrastructure.rag_catalog import (
     SqlAlchemyDocumentVersionRepository,
@@ -31,7 +32,6 @@ async def validate_and_finalize(
     )
 
     chunks = _chunks_cache.get(document_version_id, [])
-    vectors = _vectors_cache.get(document_version_id, [])
     expected_count = len(chunks)
 
     index_profile = await index_repo.find_active(tenant_id=tenant_id)
@@ -86,5 +86,15 @@ async def validate_and_finalize(
     _parsed_cache.pop(document_version_id, None)
     _chunks_cache.pop(document_version_id, None)
     _vectors_cache.pop(document_version_id, None)
+
+    tracer = get_tracer()
+    async with tracer.op(
+        "ingestion.validate",
+        version_id=document_version_id,
+        final_state="READY",
+        vectors=actual_count,
+        verbose_meta={"expected": expected_count},
+    ):
+        pass
 
     logger.info("[validate] READY %s (%d vectors)", document_version_id, actual_count)

@@ -13,7 +13,9 @@ import asyncio
 import logging
 import os
 import signal
+import sys
 
+from app.core.dev_trace import get_tracer
 from app.core.settings import get_settings
 from app.infrastructure.database import create_session_factory
 from app.workers.calibration_worker import create_calibration_workers
@@ -49,6 +51,11 @@ async def main() -> None:
 
     logger.info("Starting Open Grounding unified worker")
     logger.info("Redis: %s", redis_url)
+
+    tracer = get_tracer()
+    if tracer.enabled:
+        sys.stdout.write(f"[DEV] dev trace active mode={tracer.mode}\n")
+        sys.stdout.flush()
 
     workers = [
         *create_ingestion_workers(settings, session_factory, redis_url),

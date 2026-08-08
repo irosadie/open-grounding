@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+from time import monotonic
 
+from app.core.dev_trace import get_tracer
 from app.core.settings import Settings
 from app.domain.rag.adapter_ports import GenerationAdapter
 from app.domain.rag.answer import GroundedAnswer, parse_grounded_answer
@@ -16,20 +18,50 @@ class RagGenerationService:
         self._generator = generator
 
     async def generate(self, *, tenant: TenantContext, question: str, evidence: EvidenceContext, profile_id: str, supplementary: str | None = None, messages: list[dict[str, str]] | None = None) -> GroundedAnswer:
+        prompt = _prompt(question=question, evidence=evidence, supplementary=supplementary)
+        tracer = get_tracer()
+        history_turns = len(messages) if messages else 0
+
+        tracer.emit(
+            "query.llm_context",
+            system_tail=tracer._tail(prompt) if tracer.enabled else "",
+            user_tail=tracer._tail(question) if tracer.enabled else "",
+            history_turns=history_turns,
+            verbose_meta={
+                "token_estimate": len(prompt) // 4,
+                "evidence_chars": len(evidence.prompt_data or ""),
+            } if tracer.enabled else {},
+        )
+
+        t0 = monotonic()
         response = await asyncio.wait_for(
             self._generator.generate(
                 tenant=tenant,
-                prompt=_prompt(question=question, evidence=evidence, supplementary=supplementary),
+                prompt=prompt,
                 model_profile_id=profile_id,
                 max_tokens=self._settings.rag_generation_max_output_tokens,
                 messages=messages or [],
             ),
             timeout=self._settings.rag_generation_timeout_seconds,
         )
+        llm_ms = round((monotonic() - t0) * 1000, 1)
+
         # Support both {"answer": {...}} (legacy) and direct structured dict
         if isinstance(response, dict) and "answer" in response:
-            return parse_grounded_answer(response["answer"])
-        return parse_grounded_answer(response)
+            answer = parse_grounded_answer(response["answer"])
+        else:
+            answer = parse_grounded_answer(response)
+
+        tracer.emit(
+            "query.generation",
+            ms=llm_ms,
+            facts=len(answer.facts),
+            inferences=len(answer.inferences),
+            conflicts=len(answer.conflicts),
+            limitations=len(answer.limitations),
+        )
+
+        return answer
 
     async def generate_supplementary(self, *, tenant: TenantContext, question: str, profile_id: str) -> str:
         """Generate bounded, explicitly non-citable context for a GENERAL task."""

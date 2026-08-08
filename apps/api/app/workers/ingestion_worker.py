@@ -111,6 +111,13 @@ def create_ingestion_workers(
         logger.info("[parse] %s", version_id)
         async with session_factory() as session:
             await parse_document(version_id, tenant_id, session, settings)
+            # Check lifecycle state — only continue to chunk if not waiting for human review
+            from app.infrastructure.rag_catalog import SqlAlchemyDocumentVersionRepository
+            repo = SqlAlchemyDocumentVersionRepository(session)
+            version = await repo.find_by_id(tenant_id=tenant_id, version_id=version_id)
+            if version is None or version.lifecycle_state in ("NEEDS_REVIEW", "FAILED"):
+                logger.info("[parse] halting pipeline — state=%s for %s", version.lifecycle_state if version else "NOT_FOUND", version_id)
+                return
         q = Queue(QUEUE_CHUNK, {"connection": redis_url})
         try:
             await q.add("chunk", data, _DEFAULT_JOB_OPTS)

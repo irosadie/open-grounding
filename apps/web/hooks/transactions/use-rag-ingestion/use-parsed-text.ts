@@ -6,7 +6,10 @@ import type { ParsedTextResponse } from "@open-grounding/types"
 import { useQuery } from "@tanstack/react-query"
 
 const fetchParsedText = async (versionId: string) => {
-  const url = apiRouters.rag.ingestion.parsedText.replace(":versionId", versionId)
+  const url = apiRouters.rag.ingestion.parsedText.replace(
+    ":versionId",
+    versionId,
+  )
   const result = await axios<ParsedTextResponse>({
     method: "GET",
     url,

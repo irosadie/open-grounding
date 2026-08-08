@@ -120,7 +120,7 @@ async def test_parse_with_docling_calls_adapter_and_returns_text() -> None:
             tenant_id="tenant-1",
         )
 
-    assert result == "Docling extracted text"
+    assert result == parsed_doc
     mock_adapter.parse.assert_awaited_once()
 
 

@@ -1,13 +1,27 @@
+import { FileText } from "lucide-react"
+
 const lifecycleBadgeClass: Record<string, string> = {
-  READY: "bg-green-100 text-green-700",
-  FAILED: "bg-red-100 text-red-700",
+  READY: "bg-success-100 text-success-700",
+  FAILED: "bg-danger-100 text-danger-700",
   DELETING: "bg-gray-100 text-gray-500",
-  NEEDS_REVIEW: "bg-amber-100 text-amber-700",
-  PARSING: "bg-blue-100 text-blue-700",
-  NORMALIZING: "bg-blue-100 text-blue-700",
-  CHUNKING: "bg-blue-100 text-blue-700",
-  EMBEDDING: "bg-blue-100 text-blue-700",
-  INDEXING: "bg-blue-100 text-blue-700",
+  NEEDS_REVIEW: "bg-warning-100 text-warning-700",
+  PARSING: "bg-info-100 text-info-700",
+  NORMALIZING: "bg-info-100 text-info-700",
+  CHUNKING: "bg-info-100 text-info-700",
+  EMBEDDING: "bg-info-100 text-info-700",
+  INDEXING: "bg-info-100 text-info-700",
+}
+
+const lifecycleLabel: Record<string, string> = {
+  READY: "Ready",
+  FAILED: "Rejected",
+  DELETING: "Deleting",
+  NEEDS_REVIEW: "Needs Review",
+  PARSING: "Parsing",
+  NORMALIZING: "Normalizing",
+  CHUNKING: "Chunking",
+  EMBEDDING: "Embedding",
+  INDEXING: "Indexing",
 }
 
 type Props = {
@@ -18,30 +32,32 @@ type Props = {
 
 export function DocumentMetaCard({ filename, lifecycleState, uploadedAt }: Props) {
   const badgeClass = lifecycleBadgeClass[lifecycleState] ?? "bg-gray-100 text-gray-700"
+  const label = lifecycleLabel[lifecycleState] ?? lifecycleState
   const formattedDate = uploadedAt
-    ? new Intl.DateTimeFormat("id-ID", {
+    ? new Intl.DateTimeFormat("en-US", {
         dateStyle: "medium",
         timeStyle: "short",
       }).format(new Date(uploadedAt))
-    : "-"
+    : "—"
 
   return (
-    <div className="rounded-lg border bg-white p-4 shadow-sm">
-      <h2 className="text-sm font-semibold text-gray-500 mb-3">Informasi Dokumen</h2>
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500 w-28 shrink-0">Nama File</span>
-          <span className="text-sm font-medium text-gray-900 truncate">{filename}</span>
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-xs">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100">
+          <FileText className="h-4 w-4 text-gray-500" />
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500 w-28 shrink-0">Status</span>
-          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badgeClass}`}>
-            {lifecycleState}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-gray-500 w-28 shrink-0">Diunggah</span>
-          <span className="text-sm text-gray-700">{formattedDate}</span>
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-sm font-medium text-gray-900">{filename}</p>
+            <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${badgeClass}`}>
+              {label}
+            </span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-gray-500">
+              Uploaded: <span className="text-gray-700">{formattedDate}</span>
+            </span>
+          </div>
         </div>
       </div>
     </div>

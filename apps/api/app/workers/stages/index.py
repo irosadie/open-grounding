@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dev_trace import get_tracer
 from app.core.settings import Settings
 from app.infrastructure.rag_catalog import (
     SqlAlchemyDocumentRepository,
@@ -130,6 +131,17 @@ async def index_chunks(
         await client.upsert(collection_name=index_profile.collection, points=batch)
 
     await client.close()
+
+    tracer = get_tracer()
+    async with tracer.op(
+        "ingestion.index",
+        version_id=document_version_id,
+        upserted=len(points),
+        collection=index_profile.collection,
+        verbose_meta={"generation_id": generation_id},
+    ):
+        pass  # timing wraps the already-completed upsert — emits event with ms≈0 overhead
+
     logger.info("[index] upserted %d vectors to collection %s (generation=%s)", len(points), index_profile.collection, generation_id)
 
     return len(points)

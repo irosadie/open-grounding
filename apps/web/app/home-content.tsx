@@ -9,12 +9,12 @@ export default function HomeContent() {
             open-grounding
           </p>
           <h1 className="mt-3 text-3xl font-bold text-slate-900">
-            Starter kosong untuk mulai vibe coding dari nol
+            Blank starter for vibe coding from scratch
           </h1>
           <p className="mt-3 max-w-3xl text-slate-600">
-            Repo ini sengaja dimulai tanpa feature aktif. Yang disediakan adalah
-            scaffold web, API, worker, dokumentasi, dan sistem agent supaya
-            fitur pertama bisa dibangun dengan flow yang rapi.
+            This repo is intentionally started without active features. It
+            provides a web, API, worker, documentation, and agent system
+            scaffold so the first feature can be built with a clean flow.
           </p>
         </div>
       </PanelCard>
@@ -26,7 +26,7 @@ export default function HomeContent() {
           description="Next.js App Router"
         >
           <p className="text-xl font-semibold text-slate-900">
-            Homepage starter sudah siap dipakai
+            Homepage starter ready to use
           </p>
         </PanelCard>
 
@@ -36,7 +36,7 @@ export default function HomeContent() {
           description="FastAPI + Clean Architecture"
         >
           <p className="text-xl font-semibold text-slate-900">
-            Baseline route ` / ` dan ` /health ` aktif
+            Baseline routes ` / ` and ` /health ` active
           </p>
         </PanelCard>
 
@@ -46,7 +46,7 @@ export default function HomeContent() {
           description="Background runtime scaffold"
         >
           <p className="text-xl font-semibold text-slate-900">
-            Belum ada queue aktif secara default
+            No active queue by default
           </p>
         </PanelCard>
       </section>
@@ -65,14 +65,16 @@ export default function HomeContent() {
             </h2>
             <ul className="mt-2 space-y-2 text-sm text-slate-300">
               <li>Type `Start` to begin the onboarding session.</li>
-              <li>Create a PRD/TRD for your first feature in `docs/features/`.</li>
+              <li>
+                Create a PRD/TRD for your first feature in `docs/features/`.
+              </li>
               <li>
                 Use the flow skill to bootstrap tickets and implementation.
               </li>
             </ul>
           </div>
           <div className="rounded-2xl bg-white/10 px-5 py-4 text-sm text-slate-200">
-            Tidak ada route demo yang dikunci di starter ini.
+            No demo routes locked in this starter.
           </div>
         </div>
       </PanelCard>

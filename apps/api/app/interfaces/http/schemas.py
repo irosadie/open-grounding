@@ -594,3 +594,29 @@ class RagQueryJobResponse(BaseModel):
     error: str | None
     createdAt: str
     completedAt: str | None
+
+
+# --- Ingestion config schemas ------------------------------------------------
+
+
+class IngestionConfigWriteRequest(BaseModel):
+    min_text_coverage: float = Field(default=0.3, ge=0.0, le=1.0)
+    max_invalid_char_ratio: float = Field(default=0.1, ge=0.0, le=1.0)
+    min_aggregate_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    min_page_coverage: float = Field(default=0.5, ge=0.0, le=1.0)
+    auto_review: bool = Field(default=False)
+
+    model_config = {"extra": "forbid"}
+
+
+class IngestionConfigResponse(BaseModel):
+    id: str | None
+    knowledge_base_id: str
+    min_text_coverage: float
+    max_invalid_char_ratio: float
+    min_aggregate_confidence: float
+    min_page_coverage: float
+    auto_review: bool
+    created_at: str | None
+    updated_at: str | None
+    is_default: bool

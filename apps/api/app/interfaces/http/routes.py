@@ -20,6 +20,7 @@ from app.interfaces.http.dependencies import (
     ConfidenceServiceDependency,
     DecompositionConfigServiceDependency,
     IndexProfileServiceDependency,
+    IngestionConfigServiceDependency,
     IngestionServiceDependency,
     KnowledgeBaseServiceDependency,
     McpRuntimeServiceDependency,
@@ -43,6 +44,7 @@ from app.interfaces.http.schemas import (
     CreateMemoryConfigRequest,
     CreateModelProfileRequest,
     CreatePlannerConfigRequest,
+    IngestionConfigWriteRequest,
     InvokeToolRequest,
     LoginRequest,
     ParsedTextResponse,
@@ -1403,6 +1405,62 @@ async def get_planner_defaults(
     tenant: TenantContextDependency,
 ) -> dict[str, object]:
     return success("Planner defaults loaded", svc.get_defaults())
+
+
+# --- Ingestion config routes -------------------------------------------------
+
+
+@kb_router.get("/{knowledge_base_id}/ingestion-config")
+async def get_ingestion_config(
+    knowledge_base_id: str,
+    svc: IngestionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Get ingestion quality gate config for a knowledge base (returns defaults if not set)."""
+    result = await svc.get_config(tenant=tenant, knowledge_base_id=knowledge_base_id)
+    return success("Ingestion config loaded", {
+        "id": result.id,
+        "knowledgeBaseId": result.knowledge_base_id,
+        "minTextCoverage": result.min_text_coverage,
+        "maxInvalidCharRatio": result.max_invalid_char_ratio,
+        "minAggregateConfidence": result.min_aggregate_confidence,
+        "minPageCoverage": result.min_page_coverage,
+        "autoReview": result.auto_review,
+        "createdAt": result.created_at,
+        "updatedAt": result.updated_at,
+        "isDefault": result.is_default,
+    })
+
+
+@kb_router.put("/{knowledge_base_id}/ingestion-config", status_code=status.HTTP_200_OK)
+async def upsert_ingestion_config(
+    knowledge_base_id: str,
+    payload: IngestionConfigWriteRequest,
+    svc: IngestionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    """Create or update ingestion quality gate config for a knowledge base."""
+    result = await svc.upsert_config(
+        tenant=tenant,
+        knowledge_base_id=knowledge_base_id,
+        min_text_coverage=payload.min_text_coverage,
+        max_invalid_char_ratio=payload.max_invalid_char_ratio,
+        min_aggregate_confidence=payload.min_aggregate_confidence,
+        min_page_coverage=payload.min_page_coverage,
+        auto_review=payload.auto_review,
+    )
+    return success("Ingestion config saved", {
+        "id": result.id,
+        "knowledgeBaseId": result.knowledge_base_id,
+        "minTextCoverage": result.min_text_coverage,
+        "maxInvalidCharRatio": result.max_invalid_char_ratio,
+        "minAggregateConfidence": result.min_aggregate_confidence,
+        "minPageCoverage": result.min_page_coverage,
+        "autoReview": result.auto_review,
+        "createdAt": result.created_at,
+        "updatedAt": result.updated_at,
+        "isDefault": result.is_default,
+    })
 
 
 def _decomposition_config_dto(config: object) -> dict[str, object]:

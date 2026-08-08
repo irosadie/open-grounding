@@ -30,7 +30,7 @@ const getErrorMessage = (error: unknown) => {
     return error.message
   }
 
-  return "Pendaftaran gagal. Silakan coba lagi."
+  return "Registration failed. Please try again."
 }
 
 export default function RegisterContent() {
@@ -110,7 +110,7 @@ export default function RegisterContent() {
       <PanelCard
         className="w-full rounded-3xl"
         title="Create Account"
-        description="Daftar akun untuk mulai menggunakan RAG Console"
+        description="Register an account to start using the RAG Console"
       >
         <form className="space-y-4" onSubmit={handleSubmit}>
           <Input

@@ -42,17 +42,17 @@ const isSupportedFile = (file: File) => {
 
 const lifecycleLabel: Record<string, string> = {
   PENDING: "Pending",
-  RECEIVED: "Diterima",
-  STORED: "Tersimpan",
-  QUEUED: "Antri",
+  RECEIVED: "Received",
+  STORED: "Stored",
+  QUEUED: "Queued",
   PARSING: "Parsing",
-  NORMALIZING: "Normalisasi",
+  NORMALIZING: "Normalizing",
   CHUNKING: "Chunking",
   EMBEDDING: "Embedding",
   INDEXING: "Indexing",
-  READY: "Siap",
-  FAILED: "Gagal",
-  DELETING: "Dihapus",
+  READY: "Ready",
+  FAILED: "Failed",
+  DELETING: "Deleting",
 }
 
 const lifecycleBadgeClass: Record<string, string> = {
@@ -83,7 +83,7 @@ export function IngestionContent() {
     const file = event.target.files?.[0] ?? null
     setFormError("")
     if (file && !isSupportedFile(file)) {
-      setFormError("Hanya file PDF, Markdown, dan plain-text yang didukung.")
+      setFormError("Only PDF, Markdown, and plain-text files are supported.")
       setSelectedFile(null)
       return
     }
@@ -97,7 +97,7 @@ export function IngestionContent() {
     setFormError("")
     if (!file) return
     if (!isSupportedFile(file)) {
-      setFormError("Hanya file PDF, Markdown, dan plain-text yang didukung.")
+      setFormError("Only PDF, Markdown, and plain-text files are supported.")
       return
     }
     setSelectedFile(file)
@@ -115,11 +115,11 @@ export function IngestionContent() {
   const handleUpload = async () => {
     setFormError("")
     if (!selectedKb) {
-      setFormError("Pilih knowledge base terlebih dahulu.")
+      setFormError("Please select a knowledge base first.")
       return
     }
     if (!selectedFile) {
-      setFormError("Pilih file yang akan di-upload.")
+      setFormError("Please select a file to upload.")
       return
     }
 
@@ -140,7 +140,7 @@ export function IngestionContent() {
         { method: "PUT", body: formData },
       )
       if (!uploadRes.ok) {
-        throw new Error("Upload file ke server gagal.")
+        throw new Error("File upload to server failed.")
       }
 
       const checksum = await computeChecksum(selectedFile)
@@ -162,7 +162,7 @@ export function IngestionContent() {
       refetchDocs()
     } catch (error) {
       const message =
-        (error as { message?: string })?.message ?? "Upload gagal."
+        (error as { message?: string })?.message ?? "Upload failed."
       setFormError(message)
     }
   }
@@ -183,21 +183,21 @@ export function IngestionContent() {
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Ingestion</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Upload dokumen ke knowledge base untuk diproses dan diindeks oleh
-          pipeline RAG.
+          Upload documents to a knowledge base to be processed and indexed by
+          the RAG pipeline.
         </p>
       </div>
 
       <PanelCard
-        title="Upload Dokumen"
-        description="Dukung format PDF, Markdown (.md), dan plain-text (.txt)."
+        title="Upload Document"
+        description="Supports PDF, Markdown (.md), and plain-text (.txt) formats."
       >
         <div className="flex flex-col gap-4">
           <KnowledgeBaseSelect
             value={selectedKb}
             onChange={setSelectedKb}
             label="Knowledge Base"
-            hint="Pilih knowledge base tujuan dokumen ini."
+            hint="Select the destination knowledge base for this document."
             required
             disabled={isBusy}
           />
@@ -212,7 +212,7 @@ export function IngestionContent() {
             </label>
             <button
               type="button"
-              aria-label="Area upload file"
+              aria-label="File upload area"
               onClick={() => fileInputRef.current?.click()}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -226,10 +226,10 @@ export function IngestionContent() {
               <Upload className="h-8 w-8 text-gray-400" />
               <div>
                 <p className="text-sm font-medium text-gray-700">
-                  Klik untuk pilih file, atau drag &amp; drop ke sini
+                  Click to select a file, or drag &amp; drop here
                 </p>
                 <p className="mt-0.5 text-xs text-gray-400">
-                  PDF, Markdown, TXT — maks. ukuran sesuai konfigurasi server
+                  PDF, Markdown, TXT — max size per server configuration
                 </p>
               </div>
             </button>
@@ -260,7 +260,7 @@ export function IngestionContent() {
                   if (fileInputRef.current) fileInputRef.current.value = ""
                 }}
                 className="shrink-0 rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                aria-label="Hapus file"
+                aria-label="Remove file"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -278,22 +278,22 @@ export function IngestionContent() {
             disabled={isBusy || !selectedFile || !selectedKb}
             leftIcon={<Upload className="h-4 w-4" />}
           >
-            {isBusy ? "Mengupload..." : "Upload & Ingest"}
+            {isBusy ? "Uploading..." : "Upload & Ingest"}
           </Button>
         </div>
       </PanelCard>
 
-      {/* Dokumen dalam KB yang dipilih */}
+      {/* Documents in selected KB */}
       {selectedKb ? (
         <PanelCard
-          title={`Dokumen di "${selectedKb.name}"`}
-          description="Daftar dokumen yang sudah diupload ke knowledge base ini."
+          title={`Documents in "${selectedKb.name}"`}
+          description="Documents uploaded to this knowledge base."
         >
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-gray-400">
               {isLoadingDocs
-                ? "Memuat..."
-                : `${kbDocuments?.length ?? 0} dokumen`}
+                ? "Loading..."
+                : `${kbDocuments?.length ?? 0} document${(kbDocuments?.length ?? 0) === 1 ? "" : "s"}`}
             </span>
             <button
               type="button"
@@ -305,12 +305,12 @@ export function IngestionContent() {
             </button>
           </div>
           {isLoadingDocs ? (
-            <p className="text-sm text-gray-400">Memuat dokumen...</p>
+            <p className="text-sm text-gray-400">Loading documents...</p>
           ) : !kbDocuments || kbDocuments.length === 0 ? (
             <EmptyState
               icon={FileUp}
-              title="Belum ada dokumen"
-              description="Upload dokumen di atas untuk memulai pipeline ingestion."
+              title="No documents yet"
+              description="Upload a document above to start the ingestion pipeline."
             />
           ) : (
             <div className="flex flex-col divide-y divide-gray-100">
@@ -334,7 +334,7 @@ export function IngestionContent() {
                       className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200"
                     >
                       <ClipboardCheck className="h-3 w-3" />
-                      Perlu Ditinjau
+                      Needs Review
                     </Link>
                   ) : (
                     <span
@@ -351,14 +351,14 @@ export function IngestionContent() {
       ) : null}
 
       <PanelCard
-        title="Status Ingestion"
-        description="Pantau dokumen yang sedang diproses melalui pipeline."
+        title="Ingestion Status"
+        description="Monitor documents being processed through the pipeline."
       >
         {versions.length === 0 ? (
           <EmptyState
             icon={FileUp}
-            title="Belum ada dokumen"
-            description="Upload dokumen di atas untuk memulai pipeline ingestion."
+            title="No documents yet"
+            description="Upload a document above to start the ingestion pipeline."
           />
         ) : (
           <div className="flex flex-col gap-4">

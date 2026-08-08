@@ -21,6 +21,7 @@ from app.application.query_planner import QueryPlanner
 from app.application.task_executor import TaskExecutor
 from app.application.task_resumer import TaskResumer
 from app.application.mcp_runtime_service import McpRuntimeService
+from app.core.dev_trace import get_tracer
 from app.core.settings import Settings
 from app.domain.rag.answer import GroundedAnswer
 from app.domain.rag.answer_trace_repositories import AnswerRunRepository, AnswerTraceDetailRepository
@@ -149,6 +150,13 @@ class RagQueryService:
             conversation_id = str(uuid4())
 
         plan = plan_query(message, max_chars=self._settings.rag_query_max_message_chars, knowledge_base_ids=knowledge_base_ids)
+
+        tracer = get_tracer()
+        tracer.emit(
+            "query.plan",
+            route=plan.route.value if hasattr(plan.route, "value") else str(plan.route),
+            standalone=getattr(plan, "standalone_query", "") or "",
+        )
 
         # Persist user message before pipeline
         await self._save_turn(tenant=tenant, conversation_id=conversation_id, speaker="user", content=message)
@@ -376,6 +384,15 @@ class RagQueryService:
             independent_source_count=_independent_sources(merged),
             top_score=_top_score(merged),
             retry_attempted=False,
+        )
+
+        tracer = get_tracer()
+        tracer.emit(
+            "query.evidence",
+            chunks=len(evidence_chunks),
+            tokens=len(context.prompt_data or "") // 4,
+            budget=self._settings.rag_context_token_budget,
+            verbose_meta={"gated": decision.route is QueryRoute.GROUNDED},
         )
         if decision.route is not QueryRoute.GROUNDED and not supplementary:
             return await self._finish_abstain(

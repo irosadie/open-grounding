@@ -6,13 +6,14 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dev_trace import get_tracer
 from app.core.settings import Settings
+from app.infrastructure.providers.registry import ProviderRegistry
 from app.infrastructure.rag_catalog import (
     SqlAlchemyDocumentVersionRepository,
     SqlAlchemyIndexProfileRepository,
     SqlAlchemyModelProfileRepository,
 )
-from app.infrastructure.providers.registry import ProviderRegistry
 from app.workers.stages.parse import _chunks_cache, _vectors_cache
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,16 @@ async def embed_chunks(
         session=session,
     )
 
-    _vectors_cache[document_version_id] = vectors
-    logger.info("[embed] %d vectors (dim=%d) for %s", len(vectors), len(vectors[0]) if vectors else 0, document_version_id)
+    dim = len(vectors[0]) if vectors else 0
+    tracer = get_tracer()
+    async with tracer.op(
+        "ingestion.embed",
+        version_id=document_version_id,
+        vectors=len(vectors),
+        dim=dim,
+        verbose_meta={"provider": emb_profile.provider, "model": emb_profile.model},
+    ):
+        _vectors_cache[document_version_id] = vectors
+
+    logger.info("[embed] %d vectors (dim=%d) for %s", len(vectors), dim, document_version_id)
     return vectors

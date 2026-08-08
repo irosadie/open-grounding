@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.auth_service import AuthService
 from app.application.confidence_service import ConfidenceService
 from app.application.decomposition_config_service import DecompositionConfigService
+from app.application.ingestion_config_service import IngestionConfigService
 from app.application.ingestion_intake_service import IngestionIntakeService
 from app.application.knowledge_base_service import KnowledgeBaseService
 from app.application.mcp_runtime_service import McpRuntimeService
@@ -35,6 +36,7 @@ from app.infrastructure.rag_catalog import (
     SqlAlchemyDecompositionConfigRepository,
     SqlAlchemyIndexGenerationRepository,
     SqlAlchemyIndexProfileRepository,
+    SqlAlchemyIngestionConfigRepository,
     SqlAlchemyKnowledgeBaseRepository,
     SqlAlchemyMcpInvocationRepository,
     SqlAlchemyMcpServerRepository,
@@ -183,6 +185,15 @@ def get_knowledge_base_service(
 
 
 KnowledgeBaseServiceDependency = Annotated[KnowledgeBaseService, Depends(get_knowledge_base_service)]
+
+
+def get_ingestion_config_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> IngestionConfigService:
+    return IngestionConfigService(session)
+
+
+IngestionConfigServiceDependency = Annotated[IngestionConfigService, Depends(get_ingestion_config_service)]
 
 
 def get_model_profile_service(

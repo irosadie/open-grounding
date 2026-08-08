@@ -45,11 +45,11 @@ export function RetrievalContent() {
     const knowledgeBaseIds = selectedKbs.map((kb) => kb.id)
 
     if (!trimmedMessage) {
-      setFormError("Pertanyaan wajib diisi.")
+      setFormError("Question is required.")
       return
     }
     if (knowledgeBaseIds.length === 0) {
-      setFormError("Pilih minimal satu Knowledge Base.")
+      setFormError("Select at least one Knowledge Base.")
       return
     }
 
@@ -84,14 +84,14 @@ export function RetrievalContent() {
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Retrieval</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Ajukan pertanyaan ke knowledge base dan dapatkan jawaban berbasis
-          dokumen dengan kutipan sumber.
+          Ask questions against your knowledge bases and get document-grounded
+          answers with source citations.
         </p>
       </div>
 
       <PanelCard
-        title="Ajukan Pertanyaan"
-        description="Jawaban akan dikutip langsung dari dokumen yang sudah diingestion."
+        title="Ask a Question"
+        description="Answers are cited directly from ingested documents."
       >
         <div className="flex flex-col gap-4">
           <KnowledgeBaseMultiSelect
@@ -100,7 +100,7 @@ export function RetrievalContent() {
             label="Knowledge Bases"
             required
             disabled={isStreaming}
-            hint="Pilih satu atau lebih knowledge base sebagai sumber jawaban."
+            hint="Select one or more knowledge bases as the answer source."
           />
 
           <div className="flex flex-col gap-1.5">
@@ -108,13 +108,13 @@ export function RetrievalContent() {
               htmlFor={questionInputId}
               className="text-sm font-medium text-main-700"
             >
-              Pertanyaan <span className="text-danger-500">*</span>
+              Question <span className="text-danger-500">*</span>
             </label>
             <textarea
               id={questionInputId}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               rows={3}
-              placeholder="Contoh: Apa kebijakan retensi data yang berlaku?"
+              placeholder="e.g. What is the current data retention policy?"
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               disabled={isStreaming}
@@ -136,11 +136,11 @@ export function RetrievalContent() {
               disabled={isStreaming}
               leftIcon={<Send className="h-4 w-4" />}
             >
-              {isStreaming ? "Sedang berpikir..." : "Tanya"}
+              {isStreaming ? "Thinking..." : "Ask"}
             </Button>
             {isStreaming ? (
               <Button intent="secondary" bordered onClick={stream.abort}>
-                Hentikan
+                Stop
               </Button>
             ) : null}
           </div>
@@ -148,20 +148,20 @@ export function RetrievalContent() {
       </PanelCard>
 
       {stream.state === "idle" && !stream.answer ? (
-        <PanelCard title="Jawaban">
+        <PanelCard title="Answer">
           <EmptyState
             icon={MessageSquareText}
-            title="Belum ada jawaban"
-            description="Ajukan pertanyaan di atas untuk mendapatkan jawaban berbasis dokumen dengan kutipan sumber."
+            title="No answer yet"
+            description="Ask a question above to get a document-grounded answer with source citations."
           />
         </PanelCard>
       ) : (
         <PanelCard
-          title="Jawaban"
+          title="Answer"
           action={
             stream.route ? (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">Rute</span>
+                <span className="text-xs text-gray-500">Route</span>
                 <span className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">
                   {getRagQueryRouteLabel(
                     stream.route as "grounded" | "clarify" | "abstain",
@@ -177,8 +177,8 @@ export function RetrievalContent() {
               <div>
                 <p className="text-sm font-medium text-warning-800">
                   {stream.route === "clarify"
-                    ? "Pertanyaan perlu diperjelas"
-                    : "Tidak dapat menjawab dari dokumen yang tersedia"}
+                    ? "Question needs clarification"
+                    : "Cannot answer from available documents"}
                 </p>
                 {stream.limitations.length > 0 ? (
                   <ul className="mt-1 list-inside list-disc text-sm text-warning-700">
@@ -199,7 +199,7 @@ export function RetrievalContent() {
 
           {stream.evidenceLevel ? (
             <div className="mt-4 flex items-center gap-2">
-              <span className="text-xs text-gray-500">Tingkat bukti</span>
+              <span className="text-xs text-gray-500">Evidence level</span>
               <span
                 className={cn(
                   "rounded-full px-2.5 py-0.5 text-xs font-medium",
@@ -255,7 +255,7 @@ export function RetrievalContent() {
           {stream.citations.length > 0 ? (
             <div className="mt-4">
               <h4 className="text-sm font-semibold text-gray-900">
-                Kutipan Sumber
+                Source Citations
               </h4>
               <ul className="mt-2 flex flex-col gap-2">
                 {stream.citations.map((citation) => (
@@ -286,10 +286,10 @@ export function RetrievalContent() {
           {stream.state === "completed" && stream.traceId ? (
             <div className="mt-4 rounded-lg border border-gray-200 p-4">
               <h4 className="text-sm font-semibold text-gray-900">
-                Beri Penilaian Jawaban
+                Rate this Answer
               </h4>
               <p className="mt-0.5 text-xs text-gray-500">
-                Seberapa membantu jawaban ini?
+                How helpful was this answer?
               </p>
               <div className="mt-3 flex flex-col gap-3">
                 {/* Star rating */}
@@ -302,7 +302,7 @@ export function RetrievalContent() {
                       onMouseEnter={() => setFeedbackHover(star)}
                       onMouseLeave={() => setFeedbackHover(null)}
                       className="rounded p-0.5 transition-transform hover:scale-110"
-                      aria-label={`Nilai ${star} bintang`}
+                      aria-label={`Rate ${star} star${star === 1 ? "" : "s"}`}
                     >
                       <Star
                         className={cn(
@@ -317,14 +317,14 @@ export function RetrievalContent() {
                   {feedbackRating ? (
                     <span className="ml-2 text-xs text-gray-500">
                       {feedbackRating === 5
-                        ? "Sangat membantu"
+                        ? "Very helpful"
                         : feedbackRating === 4
-                          ? "Membantu"
+                          ? "Helpful"
                           : feedbackRating === 3
-                            ? "Cukup"
+                            ? "Neutral"
                             : feedbackRating === 2
-                              ? "Kurang membantu"
-                              : "Tidak membantu"}
+                              ? "Not very helpful"
+                              : "Not helpful"}
                     </span>
                   ) : null}
                 </div>
@@ -332,7 +332,7 @@ export function RetrievalContent() {
                 <div className="flex items-center gap-2">
                   <Input
                     className="flex-1"
-                    placeholder="Komentar (opsional)"
+                    placeholder="Comment (optional)"
                     value={feedbackComment}
                     onChange={(event: ChangeEvent<HTMLInputElement>) =>
                       setFeedbackComment(event.target.value)
@@ -345,13 +345,13 @@ export function RetrievalContent() {
                     disabled={feedbackRating === null || feedback.isPending}
                     loading={feedback.isPending}
                   >
-                    Kirim
+                    Submit
                   </Button>
                 </div>
               </div>
               {feedback.isSuccess ? (
                 <p className="mt-2 text-xs text-success-600">
-                  Penilaian berhasil disimpan.
+                  Feedback submitted successfully.
                 </p>
               ) : null}
             </div>

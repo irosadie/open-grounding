@@ -34,6 +34,7 @@ from app.domain.rag.catalog import (
     Chunk,
     ChunkType,
     DecompositionConfig,
+    IngestionConfig,
     PlannerConfig,
     Document,
     DocumentVersion,
@@ -2437,3 +2438,87 @@ class SqlAlchemyRagQueryJobRepository:
             row.error = error
             row.completed_at = utc_now()
             await self._session.commit()
+
+
+class IngestionConfigRecord(Base):
+    __tablename__ = "rag_kb_ingestion_configs"
+
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    knowledge_base_id: Mapped[str] = mapped_column(
+        "knowledge_base_id", Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+    )
+    min_text_coverage: Mapped[float] = mapped_column(nullable=False, default=0.3)
+    max_invalid_char_ratio: Mapped[float] = mapped_column(nullable=False, default=0.1)
+    min_aggregate_confidence: Mapped[float] = mapped_column(nullable=False, default=0.5)
+    min_page_coverage: Mapped[float] = mapped_column(nullable=False, default=0.5)
+    auto_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_ingestion_config_tenant_kb"),)
+
+
+def _to_ingestion_config(row: IngestionConfigRecord) -> IngestionConfig:
+    return IngestionConfig(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        knowledge_base_id=row.knowledge_base_id,
+        min_text_coverage=row.min_text_coverage,
+        max_invalid_char_ratio=row.max_invalid_char_ratio,
+        min_aggregate_confidence=row.min_aggregate_confidence,
+        min_page_coverage=row.min_page_coverage,
+        auto_review=row.auto_review,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+class SqlAlchemyIngestionConfigRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_kb(self, *, tenant_id: str, knowledge_base_id: str) -> IngestionConfig | None:
+        result = await self._session.execute(
+            select(IngestionConfigRecord).where(
+                IngestionConfigRecord.tenant_id == tenant_id,
+                IngestionConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_ingestion_config(row) if row else None
+
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        min_text_coverage: float,
+        max_invalid_char_ratio: float,
+        min_aggregate_confidence: float,
+        min_page_coverage: float,
+        auto_review: bool,
+    ) -> IngestionConfig:
+        result = await self._session.execute(
+            select(IngestionConfigRecord).where(
+                IngestionConfigRecord.tenant_id == tenant_id,
+                IngestionConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = IngestionConfigRecord(
+                id=str(uuid4()),
+                tenant_id=tenant_id,
+                knowledge_base_id=knowledge_base_id,
+            )
+            self._session.add(row)
+        row.min_text_coverage = min_text_coverage
+        row.max_invalid_char_ratio = max_invalid_char_ratio
+        row.min_aggregate_confidence = min_aggregate_confidence
+        row.min_page_coverage = min_page_coverage
+        row.auto_review = auto_review
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_ingestion_config(row)

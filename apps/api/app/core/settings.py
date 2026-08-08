@@ -98,6 +98,12 @@ class Settings(BaseSettings):
     rag_query_max_retrieval_retries: int = 1
     rag_query_max_validation_repairs: int = 1
 
+    # --- Dev trace configuration ----------------------------------------------
+    # Structured dev observability for ingestion and query pipelines.
+    # "off" (default) = no overhead. "summary" = human-readable one-liners.
+    # "verbose" = NDJSON per event with full meta including prompt tails.
+    rag_dev_trace: str = "off"
+
     # --- Ingestion pipeline configuration -------------------------------------
     # Supported MIME types for v1 source intake. Unsupported types are rejected.
     rag_ingestion_supported_mime_types: str = "application/pdf,text/markdown,text/plain,text/x-markdown,application/markdown"
@@ -145,6 +151,13 @@ class Settings(BaseSettings):
     def validate_rag_runtime_mode(cls, value: str) -> str:
         if value not in (RAG_RUNTIME_DEVELOPMENT, RAG_RUNTIME_PRODUCTION):
             raise ValueError(f"Unsupported RAG runtime mode '{value}'. Only '{RAG_RUNTIME_DEVELOPMENT}' or '{RAG_RUNTIME_PRODUCTION}' is supported.")
+        return value
+
+    @field_validator("rag_dev_trace")
+    @classmethod
+    def validate_rag_dev_trace(cls, value: str) -> str:
+        if value not in ("off", "summary", "verbose"):
+            raise ValueError(f"Unsupported RAG_DEV_TRACE value '{value}'. Only 'off', 'summary', or 'verbose' is supported.")
         return value
 
     @field_validator("rag_ingestion_malware_scan_mode")

@@ -9,8 +9,8 @@ export default function ConsolePage() {
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Overview</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Kelola dokumen, tanya jawab berbasis dokumen, dan pantau status
-          platform dari sini.
+          Manage documents, ask grounded questions, and monitor platform status
+          from here.
         </p>
       </div>
 
@@ -35,14 +35,14 @@ export default function ConsolePage() {
                 </p>
               </div>
               <span className="mt-auto text-xs font-medium text-primary-600 group-hover:underline">
-                Buka →
+                Open →
               </span>
             </a>
           )
         })}
       </section>
 
-      <PanelCard title="Cara Pakai" noPadding>
+      <PanelCard title="How to Use" noPadding>
         <ol className="flex flex-col divide-y divide-gray-100">
           <li className="flex gap-4 px-6 py-4">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700">
@@ -50,12 +50,12 @@ export default function ConsolePage() {
             </span>
             <div>
               <p className="text-sm font-medium text-gray-900">
-                Upload dokumen ke Ingestion
+                Upload documents in Ingestion
               </p>
               <p className="mt-0.5 text-xs text-gray-500">
-                Masuk ke menu <strong>Ingestion</strong>, isi Knowledge Base ID,
-                pilih file PDF/Markdown/TXT, lalu klik{" "}
-                <em>Upload &amp; Ingest</em>. Tunggu hingga status berubah ke{" "}
+                Go to <strong>Ingestion</strong>, select a Knowledge Base,
+                choose a PDF/Markdown/TXT file, then click{" "}
+                <em>Upload &amp; Ingest</em>. Wait until the status changes to{" "}
                 <em>Ready</em>.
               </p>
             </div>
@@ -66,12 +66,12 @@ export default function ConsolePage() {
             </span>
             <div>
               <p className="text-sm font-medium text-gray-900">
-                Tanya jawab di Retrieval
+                Ask questions in Retrieval
               </p>
               <p className="mt-0.5 text-xs text-gray-500">
-                Masuk ke menu <strong>Retrieval</strong>, masukkan Knowledge
-                Base ID yang sama, tulis pertanyaan, lalu klik <em>Ask</em>.
-                Jawaban akan muncul dengan kutipan sumber.
+                Go to <strong>Retrieval</strong>, select the same Knowledge
+                Base, type your question, then click <em>Ask</em>. The answer
+                will appear with source citations.
               </p>
             </div>
           </li>
@@ -81,12 +81,12 @@ export default function ConsolePage() {
             </span>
             <div>
               <p className="text-sm font-medium text-gray-900">
-                Cek status platform di Settings
+                Check platform status in Settings
               </p>
               <p className="mt-0.5 text-xs text-gray-500">
-                Buka <strong>Settings</strong> untuk memastikan semua komponen
-                (PostgreSQL, Redis, Qdrant, object storage) berstatus{" "}
-                <em>available</em> sebelum mulai ingestion.
+                Open <strong>Settings</strong> to verify all components
+                (PostgreSQL, Redis, Qdrant, object storage) are{" "}
+                <em>available</em> before starting ingestion.
               </p>
             </div>
           </li>

@@ -7,6 +7,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from app.application.query_decomposer import _call_ollama, _call_openai, _render, validate_template
+from app.core.dev_trace import get_tracer
 from app.domain.rag.task_plan import TaskPlan, TaskType, fallback_task_plan, parse_task_plan
 
 if TYPE_CHECKING:
@@ -52,15 +53,29 @@ class QueryPlanner:
         try:
             validate_template(config.system_prompt)
             validate_template(config.user_prompt_template)
+            system_prompt = _render(config.system_prompt, context)
+            user_prompt = _render(config.user_prompt_template, context)
             raw = await self._call_llm(
-                system_prompt=_render(config.system_prompt, context),
-                user_prompt=_render(config.user_prompt_template, context),
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
                 model_profile=model_profile,
                 tenant_id=config.tenant_id,
                 session=session,
                 timeout=float(getattr(config, "task_timeout_seconds", 10)),
             )
-            return parse_task_plan(raw, context["max_tasks"], allowed_types)
+            task_plan = parse_task_plan(raw, context["max_tasks"], allowed_types)
+            tracer = get_tracer()
+            async with tracer.op(
+                "query.plan_tasks",
+                count=len(task_plan.tasks),
+                types=list({t.type.value if hasattr(t.type, "value") else str(t.type) for t in task_plan.tasks}),
+                fallback=task_plan.fallback,
+                system_tail=tracer._tail(system_prompt) if tracer.enabled else "",
+                user_tail=tracer._tail(user_prompt) if tracer.enabled else "",
+                verbose_meta={"tasks": [{"type": t.type.value if hasattr(t.type, "value") else str(t.type), "query": t.query, "tool_ref": t.tool_ref} for t in task_plan.tasks]},
+            ):
+                pass
+            return task_plan
         except asyncio.TimeoutError:
             return fallback_task_plan(query, "timeout", allowed_types)
         except Exception as exc:

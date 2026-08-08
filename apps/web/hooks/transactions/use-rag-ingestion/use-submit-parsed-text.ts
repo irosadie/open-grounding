@@ -11,9 +11,15 @@ import type { ParsedTextResponse } from "@open-grounding/types"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import type { AxiosError } from "axios"
 
-const submitParsedText = async (versionId: string, payload: SubmitParsedTextProps) => {
+const submitParsedText = async (
+  versionId: string,
+  payload: SubmitParsedTextProps,
+) => {
   const validated = submitParsedTextSchema.parse(payload)
-  const url = apiRouters.rag.ingestion.parsedText.replace(":versionId", versionId)
+  const url = apiRouters.rag.ingestion.parsedText.replace(
+    ":versionId",
+    versionId,
+  )
   const result = await axios<ParsedTextResponse>({
     method: "PATCH",
     url,

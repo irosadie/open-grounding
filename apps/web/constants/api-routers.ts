@@ -24,6 +24,7 @@ export const apiRouters = {
       plannerDefaults: "/rag/knowledge-bases/:id/planner/defaults",
       memoryConfig: "/rag/knowledge-bases/:id/memory-config",
       memoryConfigDefaults: "/rag/knowledge-bases/:id/memory-config/defaults",
+      ingestionConfig: "/rag/knowledge-bases/:id/ingestion-config",
     },
     memory: {
       list: "/rag/memory",
@@ -68,8 +69,8 @@ export const apiRouters = {
       documents: "/rag/ingestion/documents",
       parsedText: "/rag/ingestion/:versionId/parsed-text",
       approve: "/rag/ingestion/:versionId/approve",
-        reject: "/rag/ingestion/:versionId/reject",
-        pendingReviewCount: "/rag/ingestion/pending-review/count",
+      reject: "/rag/ingestion/:versionId/reject",
+      pendingReviewCount: "/rag/ingestion/pending-review/count",
     },
     query: {
       ask: "/rag/query",

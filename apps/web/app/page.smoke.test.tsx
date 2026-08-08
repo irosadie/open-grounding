@@ -7,11 +7,11 @@ describe("HomePage smoke", () => {
     render(<HomePage />)
 
     expect(
-      screen.getByText("Starter kosong untuk mulai vibe coding dari nol"),
+      screen.getByText("Blank starter for vibe coding from scratch"),
     ).toBeTruthy()
-    expect(screen.getByText("Homepage starter sudah siap dipakai")).toBeTruthy()
+    expect(screen.getByText("Homepage starter ready to use")).toBeTruthy()
     expect(
-      screen.getByText("Tidak ada route demo yang dikunci di starter ini."),
+      screen.getByText("No demo routes locked in this starter."),
     ).toBeTruthy()
   })
 })

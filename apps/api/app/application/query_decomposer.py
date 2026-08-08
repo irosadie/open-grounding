@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.core.dev_trace import get_tracer
 from jinja2 import BaseLoader, Environment, TemplateSyntaxError
 from jinja2.sandbox import SandboxedEnvironment
 
@@ -169,7 +170,18 @@ class QueryDecomposer:
                     fallback=True,
                     fallback_reason="empty_sub_queries",
                 )
-            return DecompositionResult(sub_queries=sub_queries, fallback=False)
+            result = DecompositionResult(sub_queries=sub_queries, fallback=False)
+            tracer = get_tracer()
+            async with tracer.op(
+                "query.decompose",
+                count=len(sub_queries),
+                fallback=False,
+                system_tail=tracer._tail(system_prompt) if tracer.enabled else "",
+                user_tail=tracer._tail(user_prompt) if tracer.enabled else "",
+                verbose_meta={"sub_queries": sub_queries},
+            ):
+                pass
+            return result
         except asyncio.TimeoutError:
             logger.warning("LLM decomposition timed out for query: %.80s", query)
             return DecompositionResult(

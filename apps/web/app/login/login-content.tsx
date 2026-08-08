@@ -93,7 +93,7 @@ export default function LoginContent() {
         if (result?.error) {
           setFormError(
             result.error === "CredentialsSignin"
-              ? "Email atau password salah"
+              ? "Incorrect email or password"
               : result.error,
           )
           return
@@ -139,7 +139,9 @@ export default function LoginContent() {
           {formError ? (
             <p className="text-sm text-danger-500">{formError}</p>
           ) : urlError && urlError !== "undefined" ? (
-            <p className="text-sm text-danger-500">Email atau password salah</p>
+            <p className="text-sm text-danger-500">
+              Incorrect email or password
+            </p>
           ) : null}
 
           {sessionExpired && !formError && !urlError ? (

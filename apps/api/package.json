@@ -3,18 +3,22 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev:worker": "uv run python -m app.workers.main",
-    "start:worker": "uv run python -m app.workers.main",
-    "build": "uv run python -m compileall -q app",
-    "start": "uv run uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT:-3011}",
-    "lint": "uv run ruff check app tests",
-    "format": "uv run ruff format app tests",
-    "typecheck": "uv run mypy app",
-    "test": "uv run python -m pytest",
-    "test:integration": "RUN_DATABASE_TESTS=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/open_grounding_test uv run python -m pytest tests/test_repository_integration.py",
-    "test:smoke": "uv run python -m pytest tests/test_system_routes.py",
-    "db:upgrade": "uv run alembic upgrade head",
-    "db:stamp-baseline": "uv run alembic stamp 20260729_01",
-    "openapi:generate": "uv run python -m app.export_openapi"
+    "dev": "concurrently --names \"api,worker\" --prefix-colors \"blue,green\" \".venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT:-3011} --reload\" \".venv/bin/python -m app.workers.main\"",
+    "dev:worker": ".venv/bin/python -m app.workers.main",
+    "start:worker": ".venv/bin/python -m app.workers.main",
+    "build": ".venv/bin/python -m compileall -q app",
+    "start": ".venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT:-3011}",
+    "lint": "/opt/homebrew/bin/uv run ruff check app tests",
+    "format": "/opt/homebrew/bin/uv run ruff format app tests",
+    "typecheck": "/opt/homebrew/bin/uv run mypy app",
+    "test": "/opt/homebrew/bin/uv run python -m pytest",
+    "test:integration": "RUN_DATABASE_TESTS=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/open_grounding_test /opt/homebrew/bin/uv run python -m pytest tests/test_repository_integration.py",
+    "test:smoke": "/opt/homebrew/bin/uv run python -m pytest tests/test_system_routes.py",
+    "db:upgrade": "/opt/homebrew/bin/uv run alembic upgrade head",
+    "db:stamp-baseline": "/opt/homebrew/bin/uv run alembic stamp 20260729_01",
+    "openapi:generate": "/opt/homebrew/bin/uv run python -m app.export_openapi"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.4"
   }
 }

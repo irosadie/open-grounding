@@ -12,7 +12,7 @@ import {
 import { cn } from "$/utils/cn"
 import { knowledgeBaseCreateSchema } from "@open-grounding/schemas"
 import type { KnowledgeBaseResponseProps } from "@open-grounding/types"
-import { Brain, Database, History, Plus, Trash2 } from "lucide-react"
+import { Database, ExternalLink, Plus, Trash2 } from "lucide-react"
 import Link from "next/link"
 import { type ChangeEvent, useState } from "react"
 
@@ -55,7 +55,7 @@ export default function KnowledgeBasesContent() {
     } catch (error) {
       setFormError(
         (error as { message?: string })?.message ??
-          "Gagal membuat knowledge base.",
+          "Failed to create knowledge base.",
       )
     }
   }
@@ -74,7 +74,7 @@ export default function KnowledgeBasesContent() {
             Knowledge Bases
           </h1>
           <p className="mt-1 text-sm text-gray-500">
-            Kelola knowledge base untuk ingestion dan retrieval dokumen.
+            Manage knowledge bases for document ingestion and retrieval.
           </p>
         </div>
         <Button
@@ -82,17 +82,17 @@ export default function KnowledgeBasesContent() {
           leftIcon={<Plus className="h-4 w-4" />}
           onClick={() => setShowForm((v) => !v)}
         >
-          Buat Knowledge Base
+          New Knowledge Base
         </Button>
       </div>
 
       {showForm ? (
-        <PanelCard title="Buat Knowledge Base Baru">
+        <PanelCard title="Create New Knowledge Base">
           <div className="flex flex-col gap-4">
             <Input
               label="Nama"
               name="name"
-              placeholder="contoh: Dokumen Produk 2024"
+              placeholder="e.g. Product Documentation 2024"
               value={name}
               onChange={(e: ChangeEvent<HTMLInputElement>) =>
                 handleNameChange(e.target.value)
@@ -102,13 +102,13 @@ export default function KnowledgeBasesContent() {
             <Input
               label="Slug"
               name="slug"
-              placeholder="contoh: dokumen-produk-2024"
+              placeholder="e.g. product-documentation-2024"
               value={slug}
               onChange={(e: ChangeEvent<HTMLInputElement>) => {
                 setSlug(e.target.value)
                 setFormError("")
               }}
-              hint="Huruf kecil, angka, dan tanda hubung saja. Auto-generate dari nama."
+              hint="Lowercase letters, numbers, and hyphens only. Auto-generated from name."
               required
             />
             {formError ? (
@@ -123,7 +123,7 @@ export default function KnowledgeBasesContent() {
                   createMutation.isPending || !name.trim() || !slug.trim()
                 }
               >
-                Simpan
+                Save
               </Button>
               <Button
                 intent="secondary"
@@ -135,7 +135,7 @@ export default function KnowledgeBasesContent() {
                   setFormError("")
                 }}
               >
-                Batal
+                Cancel
               </Button>
             </div>
           </div>
@@ -143,18 +143,18 @@ export default function KnowledgeBasesContent() {
       ) : null}
 
       <PanelCard
-        title="Daftar Knowledge Base"
-        description="Knowledge base aktif yang dapat digunakan untuk ingestion dan retrieval."
+        title="Knowledge Base List"
+        description="Active knowledge bases available for ingestion and retrieval."
       >
         {isLoading ? (
           <div className="py-8 text-center text-sm text-gray-400">
-            Memuat...
+            Loading...
           </div>
         ) : !kbs || kbs.length === 0 ? (
           <EmptyState
             icon={Database}
-            title="Belum ada knowledge base"
-            description="Buat knowledge base pertama untuk mulai mengupload dokumen."
+            title="No knowledge bases yet"
+            description="Create your first knowledge base to start uploading documents."
           />
         ) : (
           <ul className="flex flex-col divide-y divide-gray-100">
@@ -164,9 +164,14 @@ export default function KnowledgeBasesContent() {
                 className="flex items-center justify-between py-4"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-gray-900">
-                    {kb.name}
-                  </p>
+                  <Link
+                    href={`/console/knowledge-bases/${kb.id}/planner`}
+                    className="hover:underline"
+                  >
+                    <p className="truncate text-sm font-semibold text-gray-900">
+                      {kb.name}
+                    </p>
+                  </Link>
                   <p className="mt-0.5 text-xs text-gray-500">
                     <span className="font-mono">{kb.slug}</span>
                     {" · "}
@@ -182,26 +187,16 @@ export default function KnowledgeBasesContent() {
                         : "bg-gray-100 text-gray-500",
                     )}
                   >
-                    {kb.status === "ACTIVE" ? "Aktif" : kb.status}
+                    {kb.status === "ACTIVE" ? "Active" : kb.status}
                   </span>
                   <Link href={`/console/knowledge-bases/${kb.id}/planner`}>
                     <Button
                       intent="secondary"
                       size="small"
                       bordered
-                      leftIcon={<Brain className="h-3.5 w-3.5" />}
+                      leftIcon={<ExternalLink className="h-3.5 w-3.5" />}
                     >
-                      Planner
-                    </Button>
-                  </Link>
-                  <Link href={`/console/knowledge-bases/${kb.id}/memory`}>
-                    <Button
-                      intent="secondary"
-                      size="small"
-                      bordered
-                      leftIcon={<History className="h-3.5 w-3.5" />}
-                    >
-                      Memory
+                      Open
                     </Button>
                   </Link>
                   {confirmDeleteId === kb.id ? (
@@ -212,14 +207,14 @@ export default function KnowledgeBasesContent() {
                         onClick={() => handleDelete(kb.id)}
                         loading={deleteMutation.isPending}
                       >
-                        Hapus
+                        Delete
                       </Button>
                       <Button
                         intent="secondary"
                         size="small"
                         onClick={() => setConfirmDeleteId(null)}
                       >
-                        Batal
+                        Cancel
                       </Button>
                     </div>
                   ) : (
@@ -230,7 +225,7 @@ export default function KnowledgeBasesContent() {
                       leftIcon={<Trash2 className="h-3.5 w-3.5" />}
                       onClick={() => setConfirmDeleteId(kb.id)}
                     >
-                      Hapus
+                      Delete
                     </Button>
                   )}
                 </div>

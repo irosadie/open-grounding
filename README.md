@@ -1,15 +1,15 @@
 # open-grounding
 
-**Open Grounding** is an open-source RAG platform that handles prompts from MCP clients — deciding whether a question should be answered from a knowledge base (RAG grounded) or passed directly to a general LLM.
+**Open Grounding** is an open-source RAG platform — a standalone backend that ingests documents, indexes them as vectors, and answers questions with responses grounded in and cited from those documents, not from model hallucination.
 
-The platform ingests documents through a versioned pipeline (parse → chunk → embed → index), then answers questions with responses grounded in and cited from those documents — not from model hallucination.
+It is designed to be called by any external client or business orchestrator via REST API or MCP, making it suitable as the knowledge and retrieval layer for conversational agents, order flows, support bots, and similar applications.
 
 ---
 
 ## How It Works
 
 ```
-Prompt from MCP client
+External client (REST API or MCP)
         │
         ▼
   Query Router
@@ -22,10 +22,13 @@ Prompt from MCP client
   │                                 │
   │  General route?                 │
   │  → pass directly to LLM         │
+  │                                 │
+  │  Tool route?                    │
+  │  → MCP tool execution           │
   └─────────────────────────────────┘
         │
         ▼
-  Streaming answer to client
+  Answer to client
 ```
 
 Routing is decided by a query analyzer based on intent, evidence availability, and confidence threshold. If evidence is insufficient, the platform abstains — it does not fabricate answers.
@@ -38,19 +41,19 @@ Routing is decided by a query analyzer based on intent, evidence availability, a
 open-grounding/
 ├── apps/
 │   ├── web/      → Next.js 16 App Router (Open Grounding Console)
-│   ├── api/      → FastAPI (Clean Architecture, Python)
-│   └── worker/   → BullMQ (ingestion pipeline background jobs)
+│   └── api/      → FastAPI (Clean Architecture, Python)
+│                   └── app/workers/  → BullMQ Python workers (ingestion + query)
 └── packages/
-    ├── schemas/  → Zod validation schemas (shared FE + Worker)
+    ├── schemas/  → Zod validation schemas (shared FE)
     ├── types/    → API response TypeScript types (shared FE)
-    └── utils/    → Pure utility functions (shared FE + Worker)
+    └── utils/    → Pure utility functions (shared FE)
 ```
 
 | Layer | Technology |
 |---|---|
 | Frontend | Next.js 16 + Tailwind + Vitest |
 | Backend API | FastAPI + SQLAlchemy async + Alembic + Pytest |
-| Background worker | BullMQ + Redis |
+| Background workers | BullMQ + Redis (Python, co-located in `apps/api`) |
 | Vector store | Qdrant (hybrid dense + sparse) |
 | Object store | MinIO (S3-compatible) |
 | Metadata store | PostgreSQL |
@@ -68,14 +71,16 @@ open-grounding/
 ```
 Upload document (PDF / Markdown / TXT)
   → Intake & validation
-  → Object store (raw file + parser artifacts)
-  → BullMQ pipeline: Parse → Normalize → Chunk → Embed → Index
+  → Object store (raw file)
+  → BullMQ pipeline: Parse → [Human Review gate] → Chunk → Embed → Index
   → Qdrant (dense + sparse vectors + payload index)
   → PostgreSQL (manifest, lifecycle, version, trace)
 ```
 
-The pipeline is idempotent and versioned. Each document version has a state machine:
-`RECEIVED → STORED → QUEUED → PARSING → ... → READY` (or `FAILED`).
+The pipeline is versioned and has a human review gate. Each document version has a state machine:
+`RECEIVED → STORED → QUEUED → PARSING → NEEDS_REVIEW → CHUNKING → EMBEDDING → INDEXING → READY`
+
+When human review is enabled on a knowledge base, the pipeline halts at `NEEDS_REVIEW` and waits for operator approval before indexing continues.
 
 ### Online answer plane (Retrieval)
 
@@ -83,31 +88,34 @@ The pipeline is idempotent and versioned. Each document version has a state mach
 Query + knowledge base IDs
   → Auth + tenant + ACL filter
   → Standalone query + intent analysis
-  → Route: RAG | General | Clarify | Abstain
+  → Route: RAG | General | Tool | Abstain
   → Hybrid retrieval (dense + sparse + RRF)
   → Cross-encoder reranking
   → Confidence gate
   → Context builder + citation IDs
-  → Grounded generation (streaming SSE)
-  → Citation + groundedness validation
-  → Streamed answer + citations + limitations
+  → Grounded generation
+  → Answer + citations + limitations
 ```
 
-Answers are only generated when evidence is sufficient. Otherwise the platform responds with `clarify` or `abstain` — never fabricates.
+Answers are only generated when evidence is sufficient. Otherwise the platform responds with `abstain` — never fabricates.
 
 ---
 
 ## Open Grounding Console
 
-Web console for operators:
+Web console for operators at `http://localhost:3010`:
 
 | Route | Function |
 |---|---|
 | `/login` | Login via NextAuth credentials |
-| `/console` | Overview + quick-start guide |
-| `/console/ingestion` | Upload documents + track pipeline status |
-| `/console/retrieval` | Grounded Q&A + citations + feedback |
-| `/console/settings` | Platform health + tenant info |
+| `/console` | Overview dashboard |
+| `/console/knowledge-bases` | Create and manage knowledge bases |
+| `/console/knowledge-bases/[id]/ingestion` | Configure ingestion settings and human review |
+| `/console/document` | Document list + pipeline status tracking |
+| `/console/document/review/[versionId]` | Human review — approve or reject parsed content |
+| `/console/query` | Grounded Q&A + citations + feedback |
+| `/console/memory` | Conversation memory management |
+| `/console/settings` | Providers, models, index profiles, MCP servers, confidence |
 
 ---
 
@@ -116,6 +124,7 @@ Web console for operators:
 Prerequisites:
 - Bun `>= 1.3`
 - Docker
+- Python `>= 3.11` with `uv`
 
 ```bash
 bun install
@@ -204,13 +213,44 @@ Do not edit `docs/openapi.json` directly — update FastAPI/Pydantic models and 
 
 ---
 
+## Integrating with an External Orchestrator
+
+Open Grounding is designed to be called by an external business orchestrator — a Node.js service, a LangGraph agent, an n8n workflow, or any HTTP client.
+
+The orchestrator is responsible for domain-specific logic (order state, required field collection, business rules). Open Grounding handles:
+
+- Answering questions from the knowledge base (grounded, cited)
+- Executing tools via registered MCP servers
+- Maintaining conversation history per `conversation_id`
+
+**Typical integration flow:**
+
+```
+Business Orchestrator (Node.js / Python / etc.)
+  │
+  ├── Manage session state (Redis or DB)
+  ├── Inject context via system prompt per request
+  │
+  └── POST /rag/query
+        {
+          "message": "user message",
+          "knowledge_base_ids": ["kb-id"],
+          "conversation_id": "session-123"
+        }
+        → grounded answer + citations + tool results
+```
+
+The `conversation_id` is shared between the orchestrator and the platform, so conversation history accumulates naturally across turns.
+
+---
+
 ## Vibe Coding Flow
 
-Feature development uses AI agents (Claude Code / Codex). Planning is handled by [OpenSpec](https://github.com/Fission-AI/OpenSpec), implementation is guided by **skills**.
+Feature development uses AI agents (Claude / Codex). Planning is handled by [OpenSpec](https://github.com/Fission-AI/OpenSpec), implementation is guided by **skills**.
 
 ### Start a Session
 
-Type **"Start"** or **"Mulai"** in Claude Code / Codex. The agent will:
+Type **"Start"** or **"Mulai"** in Claude / Codex. The agent will:
 1. Check MCP status
 2. Check active branch and in-progress tasks
 3. Direct you to the next step
@@ -265,8 +305,8 @@ If you just cloned:
 |---|---|---|
 | A — Platform foundation | ✅ Done | FastAPI + PostgreSQL + tenant schema |
 | B — Reliable ingestion | ✅ Done | Upload PDF/MD/TXT → pipeline → Qdrant |
-| C — Grounded query | ✅ Done | Auth filter + hybrid retrieval + streaming answer + citations |
-| D — Production quality | 🔄 In progress | Evaluation, observability, connectors, tool gateway |
+| C — Grounded query | ✅ Done | Auth filter + hybrid retrieval + answer + citations |
+| D — Production quality | 🔄 In progress | Evaluation, observability, human review, tool gateway |
 | E — Advanced retrieval | ⏳ Planned | Graph retrieval, ColBERT, multimodal |
 
 ---

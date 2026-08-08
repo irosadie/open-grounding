@@ -1,5 +1,6 @@
 export * from "./confidence"
 export * from "./decomposition-config"
+export * from "./ingestion-config"
 export * from "./knowledge-base"
 export * from "./login"
 export * from "./memory-config"
