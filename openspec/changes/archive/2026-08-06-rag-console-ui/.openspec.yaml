@@ -1,0 +1,5 @@
+schema: spec-driven
+created: 2026-08-04
+goal: Build a clean, elegant console UI covering login, ingestion (worker pipeline to
+  completion), grounded retrieval with streaming and citations, and settings/config, reusing
+  the existing NextAuth BFF proxy and backend endpoints without changing backend contracts.

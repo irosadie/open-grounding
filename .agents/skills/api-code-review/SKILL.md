@@ -16,34 +16,32 @@ Use this skill when the user asks for review of backend changes, an API PR, or a
 ### 1. Define the Review Surface
 
 Read the diff or target files, then map the relevant surface:
-- `apps/api/src/interfaces/http`
-- `apps/api/src/application`
-- `apps/api/src/domain`
-- `apps/api/src/infrastructure`
-- `packages/schemas`
-- `packages/types`
-- `docs/openapi`
+- `apps/api/app/interfaces/http`
+- `apps/api/app/application`
+- `apps/api/app/domain`
+- `apps/api/app/infrastructure`
+- `docs/openapi.json`
 
-If the change touches an endpoint, validator, DTO, or response shape, audit contract artifacts too.
+If the change touches an endpoint, Pydantic schema, DTO, or response shape, audit contract artifacts too.
 
 ### 2. Prioritize Real Risk
 
 Find issues in this priority order:
 1. functional bugs and endpoint regressions
 2. clean architecture violations / boundary leakage
-3. validator, DTO, schema, type, and OpenAPI drift
+3. Pydantic schema, DTO, and OpenAPI drift
 4. error handling and status code mismatch
-5. wrong persistence / queue side effects
+5. wrong persistence / side effects
 6. test gaps for important behavior
 
 ### 3. Audit Against Repo Standards
 
 Check strictly:
-- flow stays `route -> controller -> service -> use case`
+- flow stays `route handler → service → use case → repository`
 - request validation does not leak into the wrong layer
-- repository interface and implementation stay aligned
-- errors bubble to `errorHandler`, not handled ad hoc
-- request/response contract stays in sync with `packages/schemas`, `packages/types`, and `docs/openapi`
+- repository Protocol and SQLAlchemy implementation stay aligned
+- errors bubble to `@app.exception_handler(DomainError)`, not handled ad hoc
+- request/response contract stays in sync with `docs/openapi.json`
 - important behavior changes have relevant tests
 
 ### 4. Format the Review Output
@@ -72,14 +70,14 @@ This skill defaults to review, not implementation. Do not change code unless the
 
 - **NEVER** open a review with praise or summary before findings.
 - **NEVER** focus on style nits with no real impact on correctness or maintainability.
-- **NEVER** skip drift between endpoint behavior and OpenAPI / shared types.
+- **NEVER** skip drift between endpoint behavior and OpenAPI.
 - **NEVER** treat the layering as clean just because tests pass; verify boundaries explicitly.
 - **NEVER** fix code silently when the user only asked for a review.
 
 ## Pre-Completion Checklist
 
 - [ ] Review scope mapped from diff or target files
-- [ ] Backend layering checked
+- [ ] Backend layering checked (route handler → service → use case → repository)
 - [ ] Contract artifacts checked when endpoint changes
 - [ ] Findings ordered by severity
 - [ ] No summary ahead of findings

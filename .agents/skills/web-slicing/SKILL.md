@@ -42,7 +42,7 @@ Implement UI from designs with precision. Focus on visuals and layout — no API
 
 ## Prohibitions
 
-- **FORBIDDEN** to call `axios`/`fetch` directly inside JSX/TSX components.
+- **FORBIDDEN** for UI files in `app/**` (except `app/api/**`) or `components/**` to import `axios` or call `fetch`; use dummy props or an existing transaction hook instead.
 - **RECOMMENDED** to create `_components/` for components private to the route. Keep `*-page-content.tsx` beside `page.tsx` as the route orchestrator.
 - **FORBIDDEN** to use `any` as a type.
 - **FORBIDDEN** to hardcode colors or spacing — use Tailwind tokens.

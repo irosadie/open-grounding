@@ -1,6 +1,6 @@
 ---
 name: "api-bugfix"
-description: "Fix backend bugs with minimal touch, keep other layers stable, then sync validator, DTO, OpenAPI, shared schema/types, tests, and related docs when behavior is affected."
+description: "Fix backend bugs with minimal touch, keep other layers stable, then sync Pydantic schemas, DTO, OpenAPI, and tests when behavior is affected."
 ---
 
 Source of truth lives at `.agents/skills/api-bugfix/SKILL.md`.

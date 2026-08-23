@@ -4,7 +4,10 @@ import { getToken } from "next-auth/jwt"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-const PROTECTED_PATHS = [authConfig.defaultRedirectPath]
+const CONSOLE_PREFIX = "/console"
+
+const isProtectedRoute = (pathname: string) =>
+  pathname === CONSOLE_PREFIX || pathname.startsWith(`${CONSOLE_PREFIX}/`)
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -14,16 +17,14 @@ export async function proxy(request: NextRequest) {
     secureCookie: serverAuthConfig.secureCookies,
   })
 
-  const isProtectedRoute = PROTECTED_PATHS.some((path) =>
-    pathname.startsWith(path),
-  )
+  const isConsoleRoute = isProtectedRoute(pathname)
   const isLoginPage = pathname === authConfig.loginPath
   const callbackUrl =
     pathname.startsWith("/") && pathname !== authConfig.loginPath
       ? pathname
-      : authConfig.defaultRedirectPath
+      : CONSOLE_PREFIX
 
-  if (isProtectedRoute && !token) {
+  if (isConsoleRoute && !token) {
     const loginUrl = new URL(authConfig.loginPath, request.url)
 
     loginUrl.searchParams.set("callbackUrl", callbackUrl)
@@ -32,14 +33,12 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isLoginPage && token) {
-    return NextResponse.redirect(
-      new URL(authConfig.defaultRedirectPath, request.url),
-    )
+    return NextResponse.redirect(new URL(CONSOLE_PREFIX, request.url))
   }
 
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ["/login"],
+  matcher: ["/console/:path*", "/login"],
 }

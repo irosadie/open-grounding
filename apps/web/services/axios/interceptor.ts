@@ -57,9 +57,19 @@ instance.interceptors.response.use(
     return res.data
   },
   (error) => {
-    // Session expired — redirect to login
-    if (error.response?.status === 401 && typeof window !== "undefined") {
-      window.location.href = authConfig.loginPath
+    // Session expired — redirect to login with a callback URL and an
+    // expired flag so the login page can surface a non-blocking notice.
+    // BUG-WEB-10: guard against redirect loop when already on the login page.
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      window.location.pathname !== authConfig.loginPath
+    ) {
+      const callbackUrl = window.location.pathname + window.location.search
+      const loginUrl = `${authConfig.loginPath}?callbackUrl=${encodeURIComponent(
+        callbackUrl,
+      )}&sessionExpired=1`
+      window.location.href = loginUrl
 
       return new Promise(() => {})
     }

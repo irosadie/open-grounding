@@ -7,11 +7,12 @@ Source of truth remains in `.agents/skills/`.
 
 ## Additional Principles for Claude
 
-- **Always apply current best practices** — use recommended patterns and APIs for every technology (Next.js App Router, Hono, BullMQ, Prisma, React Query, Zod). Don't use old patterns when better ones exist.
+- **Always apply current best practices** — use recommended patterns and APIs for every technology (Next.js App Router, FastAPI, SQLAlchemy async, Alembic, BullMQ, React Query, Zod). Don't use old patterns when better ones exist.
 - **Search the web if unsure** — if you don't know the latest approach, correct API, or best practice, **use WebSearch or WebFetch before writing code**. Better slow and correct than fast and wrong.
 - **Follow the established flow** — planning via OpenSpec (`/opsx:propose`), then implementation per task with the matching skill. Implementation order per feature: Slicing → Backend+OpenAPI → FE↔API Integration.
 - **Read skill before executing** — every task has its skill. Read `SKILL.md` + `references/context.md` + `templates/checklist.md` before starting.
 - **Follow Biome rules** — before writing code, read `biome.json` at root. Forbidden: `any`, `console.*`, unused variables/imports. Required: `const`, double quote, no semicolons. Your code must pass all rules.
+- **Follow Ruff + Mypy rules (Python)** — before writing Python code, read `apps/api/pyproject.toml`. Ruff: line-length 220, rules E/F/I/UP. Mypy: strict. Run `uv run ruff check app tests` and `uv run mypy app` — both must pass.
 
 ## Start Session
 
@@ -37,8 +38,8 @@ If the user only types `Start`, `Mulai`, `Mulai Vibe Coding`, or similar:
 | `api-bugfix` | Backend | Fix backend bug with minimal touch and sync impacted contracts |
 | `api-code-review` | Backend | Review backend code strictly before merge or during quality audit |
 | `api-feature` | Backend | Implement new backend feature following Clean Architecture |
-| `db-prisma-schema` | Backend | Changes to schema.prisma and PostgreSQL migration validation |
-| `docs-openapi` | Docs | Write or update split OpenAPI documentation per feature |
+| `db-alembic-schema` | Backend | Update SQLAlchemy ORM models and Alembic migrations |
+| `docs-openapi` | Docs | Manage OpenAPI quality via FastAPI annotations and export spec |
 | `ops-docker` | Ops | Write or modify backend Dockerfile for Linux deployment |
 | `ops-mcp-setup` | Ops | Setup GitHub MCP for this repo's workflow |
 | `flow-session-start` | Flow | Handle Start/Mulai command for repo onboarding |

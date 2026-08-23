@@ -1,154 +1,90 @@
 ---
 name: docs-openapi
-description: Write or update OpenAPI documentation in split-per-feature format under `docs/openapi`. Use when endpoints, request/response schemas, or API contracts change.
+description: Manage OpenAPI quality via FastAPI annotations (tags, summaries, response_model, descriptions, examples) and export the spec to docs/openapi.json. Use when endpoints, request/response schemas, or API contracts change.
 ---
 
 # Skill: Docs OpenAPI
 
 ## Context (Required)
-- Output folder: `docs/openapi/`
-- Entry file: `docs/openapi/openapi.yaml`
-- Per-feature split: `docs/openapi/paths/{feature-slug}.yaml`
+- Output file: `docs/openapi.json`
+- Export script: `apps/api/app/export_openapi.py`
+- Source of truth: the FastAPI application itself
 
-Use this skill to translate API contracts into consistent, reusable, tool-parseable OpenAPI specs.
+Use this skill to manage OpenAPI documentation quality. The OpenAPI spec is **auto-generated** from the FastAPI application — there are no hand-written split YAML files. The source of truth is the FastAPI app (routes, Pydantic models, tags, descriptions).
 
 ## Workflow
 
 1. Read the API contract or finalized endpoints to document.
-2. Determine whether the required shared schemas and responses already exist in `components/`.
-3. Write or update `paths/{feature}.yaml` for the feature's endpoints.
-4. Add the required `$ref` entries in `openapi.yaml`.
-5. Validate that every `$ref` points to an existing file and key.
+2. Ensure each route has proper FastAPI annotations:
+   - `tags` on the `APIRouter` (feature name)
+   - `summary` on each route handler
+   - `description` on each route handler (if needed)
+   - `response_model` for explicit response typing
+   - `responses` dict for error responses
+3. Ensure Pydantic schemas have `Field(description=...)` and `model_config` with `json_schema_extra` for examples.
+4. Run `uv run python -m app.export_openapi` to regenerate `docs/openapi.json`.
+5. Verify the spec is valid and consumable by Scalar/Swagger.
 
-## File Structure
+## Route Annotation Pattern
 
-```
-docs/openapi/
-├── openapi.yaml              ← entry, $ref to paths + components
-├── paths/
-│   ├── payment-methods.yaml
-│   └── users.yaml
-└── components/
-    ├── schemas/
-    │   ├── PaymentMethod.yaml
-    │   └── PaginationMeta.yaml
-    └── responses/
-        ├── NotFound.yaml
-        └── Validation.yaml
-```
+```python
+from fastapi import APIRouter, status
 
-## openapi.yaml Format (Entry)
+auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-```yaml
-openapi: "3.0.3"
-info:
-  title: API
-  version: "1.0.0"
-paths:
-  /payment-methods:
-    $ref: "./paths/payment-methods.yaml#/PaymentMethodsList"
-  /payment-methods/{id}:
-    $ref: "./paths/payment-methods.yaml#/PaymentMethodsById"
-components:
-  schemas:
-    PaymentMethod:
-      $ref: "./components/schemas/PaymentMethod.yaml"
-    PaginationMeta:
-      $ref: "./components/schemas/PaginationMeta.yaml"
-  responses:
-    NotFound:
-      $ref: "./components/responses/NotFound.yaml"
+@auth_router.post(
+    "/register",
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new user",
+    description="Creates a new user account with the provided credentials.",
+    responses={
+        409: {"description": "Email already registered"},
+    },
+)
+async def register(payload: RegisterRequest, service: AuthServiceDependency) -> dict[str, object]:
+    ...
 ```
 
-## paths/{feature}.yaml Format
+## Schema Annotation Pattern
 
-```yaml
-PaymentMethodsList:
-  get:
-    summary: List payment methods
-    tags: [PaymentMethods]
-    parameters:
-      - name: page
-        in: query
-        schema:
-          type: integer
-          default: 1
-      - name: perPage
-        in: query
-        schema:
-          type: integer
-          default: 10
-    responses:
-      "200":
-        description: OK
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                list:
-                  type: array
-                  items:
-                    $ref: "../components/schemas/PaymentMethod.yaml"
-                meta:
-                  $ref: "../components/schemas/PaginationMeta.yaml"
-      "401":
-        $ref: "../components/responses/Unauthorized.yaml"
+```python
+from pydantic import BaseModel, Field
 
-  post:
-    summary: Create payment method
-    tags: [PaymentMethods]
-    requestBody:
-      required: true
-      content:
-        application/json:
-          schema:
-            type: object
-            required: [name, code]
-            properties:
-              name:
-                type: string
-              code:
-                type: string
-              isActive:
-                type: boolean
-                default: true
-    responses:
-      "200":
-        description: OK
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                data:
-                  $ref: "../components/schemas/PaymentMethod.yaml"
-      "409":
-        $ref: "../components/responses/Conflict.yaml"
-      "422":
-        $ref: "../components/responses/Validation.yaml"
+class RegisterRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120, description="User display name")
+    email: EmailStr = Field(max_length=255, description="User email address")
+    password: str = Field(min_length=8, max_length=128, description="User password")
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {"name": "John Doe", "email": "john@example.com", "password": "securepassword"}
+            ]
+        }
+    }
 ```
 
-## Rules
+## Export Command
 
-- Use OpenAPI 3.0.3
-- Split per feature — never dump all endpoints into one file
-- `$ref` for any schema or response used more than once
-- Tag = feature name (PascalCase)
-- Every error response uses the shared `components/responses/`
+```bash
+uv run python -m app.export_openapi
+```
+
+This runs `apps/api/app/export_openapi.py` which calls `create_app().openapi()` and writes the result to `docs/openapi.json`.
 
 ## Prohibitions
 
-- **NEVER** duplicate schemas that can be referenced from `components/`.
-- **NEVER** place all repo endpoints in a single path file.
-- **NEVER** leave a response body without an explicit schema.
-- **NEVER** leave broken `$ref` entries or invalid placeholders.
+- **NEVER** hand-write OpenAPI YAML files — the spec is auto-generated from FastAPI.
+- **NEVER** edit `docs/openapi.json` directly — it is a generated artifact. Edit the FastAPI app and re-export.
+- **NEVER** leave a route without a `tags` or `summary` — these drive the OpenAPI documentation.
+- **NEVER** leave a response body without an explicit schema or `response_model`.
 
 ## Pre-Completion Checklist
 
-- [ ] `paths/{feature}.yaml` covers every endpoint of the feature
-- [ ] `openapi.yaml` references the new path
-- [ ] Shared schemas and responses are reused via `$ref`
-- [ ] No placeholders or broken `$ref` entries
-- [ ] Spec parses with standard OpenAPI tooling
+- [ ] Every new route has `tags`, `summary`, and `description`
+- [ ] Every new Pydantic schema has `Field(description=...)`
+- [ ] `response_model` or explicit return type on routes that need it
+- [ ] Error responses documented via `responses` dict
+- [ ] `uv run python -m app.export_openapi` run
+- [ ] `docs/openapi.json` regenerated and valid
 - [ ] Every file ends with a newline (EOF)

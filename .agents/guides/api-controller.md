@@ -1,78 +1,87 @@
-# Guide: API Controller (`apps/api/src/interfaces/http/controllers/`)
+# Guide: API Controller Contract (`apps/api/app/interfaces/http/routes.py`)
+
+> **Note:** In this hybrid 4-hop architecture, the controller is **inline** — the FastAPI route handler IS the controller. There is no separate controller class or folder. This guide defines the **contract** that every route handler must follow.
 
 ## Folder Contract
 
-✅ Allowed:
-- Parse `c.req` (body, params, query)
+✅ Allowed (route handler):
+- Parse request via Pydantic model (auto-validated by FastAPI)
 - Call service method
-- Format and return HTTP response via `c.json(...)`
+- Format and return response via `success()` envelope helper
+- Use `Annotated[..., Depends()]` for dependency injection
 
-❌ Forbidden:
+❌ Forbidden (route handler):
 - Business logic — that goes in service and use case
 - Call use case or repository directly — must go through service
-- `try/catch` for domain errors — let them bubble to errorHandler
+- `try/except` for domain errors — let them bubble to `@app.exception_handler(DomainError)`
+- Import SQLAlchemy or domain infrastructure
 
 ---
 
 ## Conventions
 
-### Controller Pattern
+### Route Handler = Controller
 
-```typescript
-// interfaces/http/controllers/UserController.ts
-import type { Context } from 'hono'
-import type { UserService } from '@/application/services/UserService'
+```python
+# interfaces/http/routes.py
+from typing import Annotated
 
-export class UserController {
-  constructor(private readonly userService: UserService) {}
+from fastapi import APIRouter, Depends, Header, status
 
-  list = async (c: Context) => {
-    const query = c.req.query()
-    const result = await this.userService.list({
-      page: Number(query.page ?? 1),
-      limit: Number(query.limit ?? 10),
-      search: query.search,
-    })
-    return c.json(result)
-  }
+from app.interfaces.http.dependencies import AuthServiceDependency
+from app.interfaces.http.schemas import LoginRequest, RegisterRequest
 
-  getById = async (c: Context) => {
-    const { id } = c.req.param()
-    const result = await this.userService.getById(id)
-    return c.json(result)
-  }
+auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-  create = async (c: Context) => {
-    const body = await c.req.json()
-    const result = await this.userService.create(body)
-    return c.json(result, 201)
-  }
 
-  update = async (c: Context) => {
-    const { id } = c.req.param()
-    const body = await c.req.json()
-    const result = await this.userService.update(id, body)
-    return c.json(result)
-  }
+def success(message: str, data: object | None = None, meta: object | None = None) -> dict[str, object]:
+    response: dict[str, object] = {"success": True, "message": message}
+    if data is not None:
+        response["data"] = data
+    if meta is not None:
+        response["meta"] = meta
+    return response
 
-  delete = async (c: Context) => {
-    const { id } = c.req.param()
-    await this.userService.delete(id)
-    return c.json({ message: 'Deleted successfully' })
-  }
-}
+
+@auth_router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(payload: RegisterRequest, service: AuthServiceDependency) -> dict[str, object]:
+    return success(
+        "Register success",
+        await service.register(name=payload.name, email=str(payload.email), password=payload.password),
+    )
+
+
+@auth_router.post("/login")
+async def login(payload: LoginRequest, service: AuthServiceDependency) -> dict[str, object]:
+    return success(
+        "Login success",
+        await service.login(email=str(payload.email), password=payload.password),
+    )
 ```
+
+### Controller Contract Summary
+
+| Responsibility | Where it happens |
+|---|---|
+| Parse request body/query/params | Pydantic model (auto-validated by FastAPI before handler) |
+| Authentication/authorization | `Depends()` dependency (e.g., `AuthContextDependency`) |
+| Call business logic | Service method |
+| Format response | `success()` envelope helper |
+| Error handling | `@app.exception_handler(DomainError)` (bubbles up) |
 
 ### Naming
 
-- File name: `{Domain}Controller.ts` — PascalCase with `Controller` suffix
-- Example: `UserController.ts`, `OrderController.ts`
-- Method = action name: `list`, `getById`, `create`, `update`, `delete`
+- File name: `routes.py` (single file) or `routes/{domain}.py` when it grows
+- Router variable: `{domain}_router` — `APIRouter(prefix="/{domain}", tags=["{Domain}"])`
+- Handler function: verb name — `register`, `login`, `logout`, `current_user`
+- Example: `auth_router`, `system_router`
 
 ---
 
 ## Additional Rules
 
-- Arrow function as method for safe `this` binding
+- The route handler is thin — parse, call service, return envelope
 - All data transformation is in service, all business logic is in use case
+- Dependency injection via `Annotated[..., Depends()]` type aliases (defined in `dependencies.py`)
+- Use `status.HTTP_201_CREATED` etc. from `fastapi import status` for status codes
 - File must end with newline

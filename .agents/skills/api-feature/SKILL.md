@@ -9,65 +9,70 @@ description: Implement new backend features following Clean Architecture. Use fo
 - Folder scope + code examples: `references/context.md`
 - Execution checklist: `templates/checklist.md`
 
-Implement backend features professionally, following Clean Architecture.
+Implement backend features professionally, following Clean Architecture (hybrid 4-hop: route handler → service → use_case → repository).
 
 ## Workflow
 
 1. Read the API contract or requirement provided.
 
-2. Read the guide for **each folder** before creating files there:
-   - `.agents/guides/api-dto.md`
-   - `.agents/guides/api-validator.md`
+2. Read the guide for **each layer** before creating files there:
    - `.agents/guides/api-entity.md`
    - `.agents/guides/api-repository.md`
    - `.agents/guides/api-usecase.md`
    - `.agents/guides/api-service.md`
+   - `.agents/guides/api-dto.md`
    - `.agents/guides/api-db-repository.md`
+   - `.agents/guides/api-validator.md`
    - `.agents/guides/api-controller.md`
    - `.agents/guides/api-route.md`
    - `.agents/guides/api-error.md`
 
 3. Create files **in order** by layer dependency:
    ```
-   1. application/dtos/{Domain}Dto.ts
-   2. application/validators/{domain}.schemas.ts
-   3. domain/entities/{Domain}.ts
-   4. domain/repositories/I{Domain}Repository.ts
-   5. domain/use-cases/{verb}-{domain}.ts    (one per operation)
-   6. application/services/{Domain}Service.ts
-   7. infrastructure/database/Prisma{Domain}Repository.ts
-   8. interfaces/http/controllers/{Domain}Controller.ts
-   9. interfaces/http/routes/{domain}Routes.ts
-   10. Register in interfaces/http/create-app.ts
+   1. app/domain/models.py              — entity (@dataclass) + StrEnum (if new)
+   2. app/domain/repositories.py        — Protocol interface
+   3. app/domain/errors.py              — DomainError classmethod (if new error)
+   4. app/domain/use_cases/{verb}_{domain}.py — use case (business rule)
+   5. app/application/{domain}_service.py — service (orchestration + Entity→DTO)
+   6. app/application/dtos.py           — Pydantic response model (if needed)
+   7. app/infrastructure/database.py    — ORM record + SqlAlchemy{Domain}Repository + _to_* mapper
+   8. alembic/versions/{date}_{nn}_{slug}.py — migration (if schema change)
+   9. app/interfaces/http/schemas.py    — Pydantic request model
+   10. app/interfaces/http/dependencies.py — Depends provider + Annotated alias
+   11. app/interfaces/http/routes.py    — APIRouter handler
+   12. app/main.py                      — app.include_router (if new router)
    ```
 
-4. Error handling — do not catch in Service or Controller:
+4. Error handling — do not catch in Service or route handler:
    ```
-   UseCase throws DomainError → errorHandler middleware
+   Use case raises DomainError → @app.exception_handler(DomainError) → JSON response
    ```
 
 ## Prohibitions
 
-- **NEVER** use `any`.
-- **NEVER** put business logic in the Controller.
-- **NEVER** access Prisma in a Use Case.
-- **NEVER** throw `HTTPException` from a Use Case — use `DomainError`.
+- **NEVER** use untyped `Any` for domain fields.
+- **NEVER** put business logic in the route handler.
+- **NEVER** access SQLAlchemy in a use case.
+- **NEVER** raise `HTTPException` from a use case — use `DomainError`.
 - **NEVER** change files unrelated to the task.
-- **NEVER** use plain `string` for fields with a fixed value set — import the shared enum from `@vibecoding-starter/schemas`.
+- **NEVER** use plain `str` for fields with a fixed value set — declare a `StrEnum` in `domain/models.py`.
 
 ## Pre-Completion Checklist
 
-- [ ] DTO created
-- [ ] Validator schema created
-- [ ] Entity created
-- [ ] Repository interface created
-- [ ] Use case(s) created (one per operation)
-- [ ] Service created
-- [ ] Prisma repository created
-- [ ] Controller created
-- [ ] Route created and registered in create-app.ts
-- [ ] No `any`
-- [ ] No business logic in Controller
-- [ ] No Prisma in Use Case
-- [ ] `bun run build` passes
+- [ ] Entity + StrEnum created in `domain/models.py`
+- [ ] Repository Protocol created in `domain/repositories.py`
+- [ ] Use case created in `domain/use_cases/{verb}_{domain}.py`
+- [ ] Service created in `application/{domain}_service.py`
+- [ ] SQLAlchemy ORM record + repository created in `infrastructure/database.py`
+- [ ] Pydantic request schema created in `interfaces/http/schemas.py`
+- [ ] Dependencies provider + Annotated alias created in `interfaces/http/dependencies.py`
+- [ ] Route handler created in `interfaces/http/routes.py`
+- [ ] Router registered in `main.py`
+- [ ] Alembic migration created (if schema changed)
+- [ ] No untyped `Any`
+- [ ] No business logic in route handler
+- [ ] No SQLAlchemy in use case
+- [ ] `uv run ruff check app tests` passes
+- [ ] `uv run mypy app` passes
+- [ ] `uv run pytest` passes
 - [ ] All files end with a newline (EOF)

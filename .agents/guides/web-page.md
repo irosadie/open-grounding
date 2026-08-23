@@ -12,7 +12,7 @@
 - Route group `(group)/` for layout without URL segment
 
 ❌ Forbidden:
-- Call `axios` or `fetch` directly
+- Import `axios` or call `fetch` directly — consume a transaction hook from `hooks/transactions/` instead
 - Import from `services/` directly
 - Business logic or state management in `page.tsx`
 - Share `_components/` between routes — if reusable, move to `$/components/`
@@ -37,6 +37,12 @@ app/
 ```
 
 > Components that are **only** used in this route go in `_components/`. If used in more than one route, move to `$/components/`.
+
+## API Boundary
+
+Every route UI file under `app/**`, including `*-page-content.tsx` and route-private `_components/`, receives remote data through a custom transaction hook. Do not import `axios` or call `fetch` in the UI layer.
+
+The only exception inside `app/` is a BFF route handler in `app/api/**`. Server-side auth and transaction hooks are also allowed to make their own HTTP calls because they are outside the UI layer.
 
 ### `page.tsx` — Thin Wrapper dengan Suspense
 
@@ -171,7 +177,7 @@ const handleOnSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
 import { Table, type ColumnDef } from '$/components/table'
 import { ActionsDropdown } from '$/components/actions-dropdown'
 import { StatusBadge } from '$/components/status-badge'
-import type { UserResponseProps } from '@vibecoding-starter/types/user-response'
+import type { UserResponseProps } from '@open-grounding/types/user-response'
 
 const columns: ColumnDef<UserResponseProps>[] = [
   {

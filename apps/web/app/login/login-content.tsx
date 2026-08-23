@@ -4,7 +4,7 @@ import { Button } from "$/components/button"
 import { Input } from "$/components/input"
 import { PanelCard } from "$/components/panel-card"
 import { authConfig } from "$/configs/auth"
-import { type LoginProps, loginSchema } from "@vibecoding-starter/schemas"
+import { type LoginProps, loginSchema } from "@open-grounding/schemas"
 import { signIn, useSession } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
@@ -32,6 +32,8 @@ export default function LoginContent() {
   const [isPending, startTransition] = useTransition()
   const [formError, setFormError] = useState("")
   const [fieldErrors, setFieldErrors] = useState<LoginErrors>({})
+  const sessionExpired = searchParams.get("sessionExpired") === "1"
+  const urlError = searchParams.get("error")
   const [form, setForm] = useState<LoginProps>({
     email: "",
     password: "",
@@ -43,8 +45,13 @@ export default function LoginContent() {
   )
 
   useEffect(() => {
-    if (status === "authenticated") {
+    // BUG-WEB-04: use a cancelled flag to prevent state update after unmount
+    let cancelled = false
+    if (status === "authenticated" && !cancelled) {
       router.replace(callbackUrl)
+    }
+    return () => {
+      cancelled = true
     }
   }, [callbackUrl, router, status])
 
@@ -89,7 +96,11 @@ export default function LoginContent() {
         })
 
         if (result?.error) {
-          setFormError(result.error)
+          setFormError(
+            result.error === "CredentialsSignin"
+              ? "Incorrect email or password"
+              : result.error,
+          )
           return
         }
 
@@ -132,6 +143,16 @@ export default function LoginContent() {
 
           {formError ? (
             <p className="text-sm text-danger-500">{formError}</p>
+          ) : urlError && urlError !== "undefined" ? (
+            <p className="text-sm text-danger-500">
+              Incorrect email or password
+            </p>
+          ) : null}
+
+          {sessionExpired && !formError && !urlError ? (
+            <p className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-700">
+              Your session has expired. Please sign in again.
+            </p>
           ) : null}
 
           <Button
@@ -141,6 +162,16 @@ export default function LoginContent() {
           >
             Sign In
           </Button>
+
+          <p className="text-center text-sm text-slate-600">
+            Belum punya akun?{" "}
+            <a
+              href="/register"
+              className="font-semibold text-primary-600 underline-offset-4 hover:underline"
+            >
+              Daftar di sini
+            </a>
+          </p>
         </form>
       </PanelCard>
     </main>

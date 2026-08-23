@@ -1,35 +1,24 @@
 {
-  "name": "@vibecoding-starter/api",
+  "name": "@open-grounding/api",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "bun build ./src/index.ts --outdir ./dist --target node",
-    "start": "node dist/index.js",
-    "lint": "biome check .",
-    "format": "biome format --write .",
-    "prisma:generate": "prisma generate --schema ./prisma/schema.prisma",
-    "prisma:migrate:dev": "prisma migrate dev --schema ./prisma/schema.prisma",
-    "prisma:seed": "tsx prisma/seed.ts",
-    "prisma:studio": "prisma studio --schema ./prisma/schema.prisma --port 5555",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:smoke": "vitest run src/interfaces/http/routes/app-smoke.test.ts"
-  },
-  "dependencies": {
-    "@hono/node-server": "^1.14.0",
-    "@prisma/client": "^7.4.2",
-    "hono": "^4.7.5",
-    "jsonwebtoken": "^9.0.3",
-    "zod": "^3.24.2"
+    "dev": "concurrently --names \"api,worker\" --prefix-colors \"blue,green\" \".venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT:-3011} --reload\" \".venv/bin/python -m app.workers.main\"",
+    "dev:worker": ".venv/bin/python -m app.workers.main",
+    "start:worker": ".venv/bin/python -m app.workers.main",
+    "build": ".venv/bin/python -m compileall -q app",
+    "start": ".venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port ${API_PORT:-3011}",
+    "lint": "/opt/homebrew/bin/uv run ruff check app tests",
+    "format": "/opt/homebrew/bin/uv run ruff format app tests",
+    "typecheck": "/opt/homebrew/bin/uv run mypy app",
+    "test": "/opt/homebrew/bin/uv run python -m pytest",
+    "test:integration": "RUN_DATABASE_TESTS=1 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5433/open_grounding_test /opt/homebrew/bin/uv run python -m pytest tests/test_repository_integration.py",
+    "test:smoke": "/opt/homebrew/bin/uv run python -m pytest tests/test_system_routes.py",
+    "db:upgrade": "/opt/homebrew/bin/uv run alembic upgrade head",
+    "db:stamp-baseline": "/opt/homebrew/bin/uv run alembic stamp 20260729_01",
+    "openapi:generate": "/opt/homebrew/bin/uv run python -m app.export_openapi"
   },
   "devDependencies": {
-    "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^22.14.1",
-    "prisma": "^7.4.2",
-    "tsx": "^4.19.3",
-    "typescript": "^5.8.3",
-    "vitest": "^3.1.1"
+    "concurrently": "^10.0.4"
   }
 }

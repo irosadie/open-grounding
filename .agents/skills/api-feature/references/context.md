@@ -3,90 +3,70 @@
 ## Target Folders
 
 ```
-apps/api/src/
-├── application/
-│   ├── dtos/             → {Domain}Dto.ts
-│   ├── validators/       → {domain}.schemas.ts
-│   └── services/         → {Domain}Service.ts
+apps/api/app/
 ├── domain/
-│   ├── entities/         → {Domain}.ts
-│   ├── repositories/     → I{Domain}Repository.ts
-│   └── use-cases/        → {verb}-{domain}.ts
+│   ├── models.py              → entity (@dataclass) + StrEnum
+│   ├── repositories.py        → Protocol interface
+│   ├── errors.py              → DomainError + classmethod factories
+│   └── use_cases/             → {verb}_{domain}.py (one per operation)
+├── application/
+│   ├── {domain}_service.py    → {Domain}Service class
+│   └── dtos.py                → Pydantic response models
 ├── infrastructure/
-│   └── database/         → Prisma{Domain}Repository.ts
-└── interfaces/http/
-    ├── controllers/      → {Domain}Controller.ts
-    └── routes/           → {domain}Routes.ts
+│   └── database.py            → ORM records + SqlAlchemy repos + _to_* mappers
+├── interfaces/http/
+│   ├── routes.py              → APIRouter handlers (controller = inline)
+│   ├── schemas.py             → Pydantic request models
+│   └── dependencies.py       → Depends providers + Annotated aliases
+└── main.py                    → create_app() + router registration
 ```
 
 ## Pattern per Layer
 
 ### Entity
-```typescript
-export type User = {
-  id: string
-  name: string
-  email: string
-  isActive: boolean
-  createdAt: Date
-  updatedAt: Date
-}
+```python
+@dataclass(frozen=True)
+class User:
+    id: str
+    email: str
+    name: str
+    role: UserRole
+    status: UserStatus
+    created_at: datetime
+    updated_at: datetime
 ```
 
-### Repository Interface
-```typescript
-export interface IUserRepository {
-  findById(id: string): Promise<User | null>
-  findAll(filter: UserListFilter): Promise<{ data: User[]; total: number }>
-  create(input: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User>
-  update(id: string, input: Partial<User>): Promise<User>
-  delete(id: string): Promise<void>
-}
+### Repository Protocol
+```python
+class UserRepository(Protocol):
+    async def find_by_id(self, user_id: str) -> User | None: ...
+    async def create(self, *, email: str, name: str) -> User: ...
 ```
 
 ### Use Case
-```typescript
-export async function createUser(repo: IUserRepository, input: CreateInput) {
-  const exists = await repo.findByEmail(input.email)
-  if (exists) throw new DomainError('CONFLICT', 'Email already exists')
-  return repo.create(input)
-}
+```python
+async def register_user(repo: UserRepository, *, email: str, name: str) -> User:
+    existing = await repo.find_by_email(email)
+    if existing:
+        raise DomainError.duplicate_email()
+    return await repo.create(email=email, name=name)
 ```
 
 ### Service
-```typescript
-export class UserService {
-  constructor(private readonly repo: IUserRepository) {}
-  async create(payload: CreateUserPayload): Promise<UserDto> {
-    const user = await createUser(this.repo, payload)
-    return toUserDto(user)
-  }
-}
+```python
+class AuthService:
+    def __init__(self, repository: AuthRepository, settings: Settings) -> None:
+        self._repository = repository
+        self._settings = settings
+
+    async def register(self, *, name: str, email: str, password: str) -> dict[str, object]:
+        user = await register_user(self._repository, email=email, password_hash=hash_password(password), name=name)
+        return {"user": _user_dto(user)}
 ```
 
-### Controller
-```typescript
-export class UserController {
-  constructor(private readonly service: UserService) {}
-  create = async (c: Context) => {
-    const body = await c.req.json()
-    const result = await this.service.create(body)
-    return c.json(result, 201)
-  }
-}
-```
-
-### Route
-```typescript
-const repo = new PrismaUserRepository()
-const service = new UserService(repo)
-const controller = new UserController(service)
-
-export const userRoutes = new Hono()
-  .use(authMiddleware)
-  .post('/', zValidator('json', createUserSchema), controller.create)
-  .get('/', controller.list)
-  .get('/:id', controller.getById)
-  .put('/:id', zValidator('json', updateUserSchema), controller.update)
-  .delete('/:id', controller.delete)
+### Route Handler (Controller)
+```python
+@auth_router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(payload: RegisterRequest, service: AuthServiceDependency) -> dict[str, object]:
+    return success("Register success", await service.register(name=payload.name, email=str(payload.email), password=payload.password))
 ```

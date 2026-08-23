@@ -1,6 +1,6 @@
 ---
 name: api-bugfix
-description: Fix backend bugs with minimal touch, keep other layers stable, then sync validator, DTO, OpenAPI, shared schema/types, tests, and related docs when behavior is affected.
+description: Fix backend bugs with minimal touch, keep other layers stable, then sync Pydantic schemas, DTO, OpenAPI, and tests when behavior is affected.
 ---
 
 # Skill: API Bugfix
@@ -9,7 +9,7 @@ description: Fix backend bugs with minimal touch, keep other layers stable, then
 - Folder scope + impact map: `references/context.md`
 - Execution checklist: `templates/checklist.md`
 
-Use this skill when the user asks to fix a backend bug. Core principle: **minimal touch**. Find the root cause, change as little as possible, keep layering clean, then sync validator, DTO, OpenAPI, shared schema/types, and tests when endpoint behavior is actually affected.
+Use this skill when the user asks to fix a backend bug. Core principle: **minimal touch**. Find the root cause, change as little as possible, keep layering clean, then sync Pydantic schemas, DTO, OpenAPI, and tests when endpoint behavior is actually affected.
 
 ## Workflow
 
@@ -17,7 +17,7 @@ Use this skill when the user asks to fix a backend bug. Core principle: **minima
 
 Before changing code:
 - understand the symptom
-- identify the failing behavior in route, service, use case, queue, or persistence
+- identify the failing behavior in route handler, service, use case, or repository
 - locate the boundary: request validation, business rule, response mapping, repository, or side effect
 
 When possible, add or modify a test that represents the bug.
@@ -25,10 +25,10 @@ When possible, add or modify a test that represents the bug.
 ### 2. Localize the Root Cause
 
 Find the smallest possible root cause. Prioritize by location:
-- route / validator if the bug is in request parsing
-- controller / service if the bug is in orchestration or response shaping
+- route handler / Pydantic schema if the bug is in request parsing
+- service if the bug is in orchestration or response shaping
 - use case if the bug is business logic
-- repository / infra if the bug is in persistence or external side effect
+- repository / infrastructure if the bug is in persistence or external side effect
 
 Do not rewrite multiple layers when one layer is enough to fix the bug.
 
@@ -36,35 +36,34 @@ Do not rewrite multiple layers when one layer is enough to fix the bug.
 
 Minimal touch rules:
 - touch as few files as possible
-- preserve the `route -> controller -> service -> use case` boundary
+- preserve the `route handler → service → use case → repository` boundary
 - do not refactor unrelated layers
 - do not rename or restructure just because the file is open
 
 ### 4. Sync Contract and Docs That Are Affected
 
 If the fix changes endpoint behavior, request shape, response shape, or error semantics, update what is actually needed:
-- validator and DTO
-- `packages/schemas`
-- `packages/types`
-- split OpenAPI in `docs/openapi/`
-- merged spec via `bun run openapi:generate`
+- Pydantic request schema (`interfaces/http/schemas.py`)
+- DTO / Pydantic response model (`application/dtos.py`)
+- OpenAPI spec via `uv run python -m app.export_openapi`
 - relevant tests
 
-Do not let endpoint behavior change while OpenAPI and shared types stay stale.
+Do not let endpoint behavior change while OpenAPI stays stale.
 
 ### 5. Verify Narrowly but Thoroughly
 
 Minimum verification:
 - test that reproduces or guards the bug
-- lint/typecheck on the touched surface
-- generate OpenAPI if the contract changed
-- confirm no new drift between code, shared contract, and docs
+- `uv run ruff check app tests` on the touched surface
+- `uv run mypy app` on the touched surface
+- `uv run python -m app.export_openapi` if the contract changed
+- confirm no new drift between code and OpenAPI
 
 ## Prohibitions
 
 - **NEVER** refactor across layers when the user's goal is only a bugfix.
 - **NEVER** change unrelated files "while you're at it".
-- **NEVER** let validator/DTO/OpenAPI/shared types drift when the fix changes endpoint behavior.
+- **NEVER** let Pydantic schema/DTO/OpenAPI drift when the fix changes endpoint behavior.
 - **NEVER** move business logic into the HTTP layer for a quick fix.
 - **NEVER** finish without targeted verification.
 
@@ -73,8 +72,10 @@ Minimum verification:
 - [ ] Bug reproduced or faulty behavior defined clearly
 - [ ] Root cause localized to the smallest reasonable layer
 - [ ] Changes remain minimal touch
-- [ ] Validator/DTO/schema/type/docs/OpenAPI updated when affected
+- [ ] Pydantic schema/DTO/OpenAPI updated when affected
 - [ ] Relevant tests added or updated
-- [ ] `bun run openapi:generate` run if contract changed
+- [ ] `uv run python -m app.export_openapi` run if contract changed
+- [ ] `uv run ruff check app tests` passes
+- [ ] `uv run mypy app` passes
 - [ ] No new drift in backend contract
 - [ ] All files end with a newline (EOF)

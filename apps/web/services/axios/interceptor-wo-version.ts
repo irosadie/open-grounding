@@ -53,7 +53,7 @@ instance.interceptors.response.use(
       return new Promise(() => {})
     }
 
-    throw error.response.data as ErrorResponse
+    throw (error.response?.data ?? error) as ErrorResponse
   },
 )
 /**

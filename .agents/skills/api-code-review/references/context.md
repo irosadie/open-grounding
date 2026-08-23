@@ -3,25 +3,23 @@
 ## Target Folders
 
 ```
-apps/api/src/interfaces/http/          → routes, controllers, middleware
-apps/api/src/application/              → services, use-cases, DTOs, validators
-apps/api/src/domain/                   → entities and repository interfaces
-apps/api/src/infrastructure/           → database / external implementations
-packages/schemas/                      → shared request schema when used across apps
-packages/types/                        → shared response types
-docs/openapi/                          → split OpenAPI source of truth
+apps/api/app/interfaces/http/          → routes.py, schemas.py, dependencies.py, errors.py
+apps/api/app/application/              → {domain}_service.py, dtos.py
+apps/api/app/domain/                   → models.py, repositories.py, errors.py, use_cases/
+apps/api/app/infrastructure/            → database.py
+docs/openapi.json                      → generated OpenAPI spec
 ```
 
 ## Key Patterns
 
 - routes must not jump straight to a repository
-- controllers must not hold large business logic
+- route handlers must not hold business logic (they are the controller — thin)
 - use cases must not know about HTTP concerns
-- validator/DTO/response shape changes trigger a contract drift audit
-- OpenAPI and shared types are part of the review when endpoint behavior changes
+- Pydantic schema/DTO/response shape changes trigger a contract drift audit
+- OpenAPI is auto-generated — drift means the FastAPI annotations don't match the actual behavior
 
 ## Active Surface Examples
 
-- Baseline routes: `apps/api/src/interfaces/http/routes/root-route.ts`, `apps/api/src/interfaces/http/routes/health-route.ts`
-- App assembly: `apps/api/src/interfaces/http/create-app.ts`
-- Active OpenAPI: `docs/openapi/base.json`
+- Baseline routes: `apps/api/app/interfaces/http/routes.py`
+- App assembly: `apps/api/app/main.py`
+- Active OpenAPI: `docs/openapi.json`

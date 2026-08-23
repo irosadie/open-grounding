@@ -1,0 +1,18 @@
+[
+  {
+    "id": "tenant-handbook-v1",
+    "query": "What is the document retention period?",
+    "knowledge_base_ids": ["handbook"],
+    "expected_chunk_ids": ["retention-policy-1"],
+    "expected_citation_ids": ["S1"],
+    "expected_outcome": "grounded"
+  },
+  {
+    "id": "tenant-unknown-v1",
+    "query": "What is the CEO's private phone number?",
+    "knowledge_base_ids": ["handbook"],
+    "expected_chunk_ids": [],
+    "expected_citation_ids": [],
+    "expected_outcome": "abstain"
+  }
+]

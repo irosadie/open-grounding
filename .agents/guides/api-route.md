@@ -1,65 +1,97 @@
-# Guide: API Route (`apps/api/src/interfaces/http/routes/`)
+# Guide: API Route (`apps/api/app/interfaces/http/routes.py`)
 
 ## Folder Contract
 
 ✅ Allowed:
-- Define HTTP method + path
-- Validate request with Zod schema from `validators/`
-- Attach middleware per route (auth, rate-limit)
-- Delegate to controller handler
+- Define `APIRouter` with prefix and tags
+- Validate request with Pydantic model (auto-validated by FastAPI)
+- Attach dependencies per route (auth, tenant context) via `Depends()`
+- Delegate to service method — handler is the controller (see `api-controller.md`)
 
 ❌ Forbidden:
 - Business logic
-- Call use case or repository directly
-- Format response directly
+- Call use case or repository directly — must go through service
+- Format response manually (use `success()` envelope helper)
 
 ---
 
 ## Conventions
 
-### Route Pattern
+### Router Pattern
 
-```typescript
-// interfaces/http/routes/userRoutes.ts
-import { Hono } from 'hono'
-import { zValidator } from '@hono/zod-validator'
-import { UserController } from '@/interfaces/http/controllers/UserController'
-import { UserService } from '@/application/services/UserService'
-import { PrismaUserRepository } from '@/infrastructure/database/PrismaUserRepository'
-import { createUserSchema, updateUserSchema } from '@/application/validators/user.schemas'
-import { authMiddleware } from '@/interfaces/http/middlewares/auth'
+```python
+# interfaces/http/routes.py
+from fastapi import APIRouter, status
 
-const userRepository = new PrismaUserRepository()
-const userService = new UserService(userRepository)
-const userController = new UserController(userService)
+from app.interfaces.http.dependencies import AuthContextDependency, AuthServiceDependency
+from app.interfaces.http.schemas import LoginRequest, RegisterRequest
 
-export const userRoutes = new Hono()
-  .use(authMiddleware)
-  .get('/', userController.list)
-  .get('/:id', userController.getById)
-  .post('/', zValidator('json', createUserSchema), userController.create)
-  .put('/:id', zValidator('json', updateUserSchema), userController.update)
-  .delete('/:id', userController.delete)
+system_router = APIRouter(tags=["System"])
+auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+def success(message: str, data: object | None = None, meta: object | None = None) -> dict[str, object]:
+    response: dict[str, object] = {"success": True, "message": message}
+    if data is not None:
+        response["data"] = data
+    if meta is not None:
+        response["meta"] = meta
+    return response
+
+
+@auth_router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(payload: RegisterRequest, service: AuthServiceDependency) -> dict[str, object]:
+    return success("Register success", await service.register(name=payload.name, email=str(payload.email), password=payload.password))
+
+
+@auth_router.post("/login")
+async def login(payload: LoginRequest, service: AuthServiceDependency) -> dict[str, object]:
+    return success("Login success", await service.login(email=str(payload.email), password=payload.password))
 ```
 
-### Registration in `create-app.ts`
+### Registration in `main.py`
 
-```typescript
-// interfaces/http/create-app.ts
-import { userRoutes } from './routes/userRoutes'
+```python
+# main.py
+from fastapi import FastAPI
+from app.interfaces.http.errors import register_exception_handlers
+from app.interfaces.http.routes import auth_router, system_router
 
-app.route('/users', userRoutes)
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="...", version="0.1.0")
+    register_exception_handlers(app)
+    app.include_router(system_router)
+    app.include_router(auth_router)
+    return app
+
+
+app = create_app()
+```
+
+### Protected Route with Dependencies
+
+```python
+@auth_router.get("/me")
+async def current_user(
+    context: AuthContextDependency,
+    service: AuthServiceDependency,
+) -> dict[str, object]:
+    return success("Current user loaded", await service.current_user(user_id=context["id"], session_id=context["sessionId"]))
 ```
 
 ### Naming
 
-- File name: `{domain}Routes.ts` — camelCase with `Routes` suffix
-- Example: `userRoutes.ts`, `orderRoutes.ts`, `authRoutes.ts`
+- File name: `routes.py` (single file) or `routes/{domain}.py` when it grows
+- Router variable: `{domain}_router` — `APIRouter(prefix="/{domain}", tags=["{Domain}"])`
+- Handler function: verb name — `register`, `login`, `logout`, `current_user`
+- Example: `auth_router`, `system_router`
 
 ---
 
 ## Additional Rules
 
-- Instantiate dependencies (repository, service, controller) inside the route file
-- Use `zValidator` from `@hono/zod-validator` for automatic validation
+- Instantiate dependencies via `Depends()` providers defined in `dependencies.py` — not manually in route file
+- Use `Annotated[..., Depends()]` type aliases for clean handler signatures
+- Pydantic request models are auto-validated — no need for manual validation calls
 - File must end with newline

@@ -9,9 +9,13 @@ import { useEffect, useRef, useState } from "react"
 
 interface UserMenuProps {
   collapsed?: boolean
+  dropdownPosition?: "top" | "bottom"
 }
 
-export function UserMenu({ collapsed = false }: UserMenuProps) {
+export function UserMenu({
+  collapsed = false,
+  dropdownPosition = "top",
+}: UserMenuProps) {
   const { data: session } = useSession()
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
@@ -53,7 +57,14 @@ export function UserMenu({ collapsed = false }: UserMenuProps) {
         </button>
 
         {isOpen && (
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+          <div
+            className={cn(
+              "absolute w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50",
+              dropdownPosition === "bottom"
+                ? "top-full right-0 mt-2"
+                : "bottom-full left-1/2 -translate-x-1/2 mb-2",
+            )}
+          >
             <div className="px-3 py-2 border-b border-gray-100">
               <p className="text-xs font-medium text-gray-900 truncate">
                 {userName}

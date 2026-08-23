@@ -1,6 +1,6 @@
 import { authConfig } from "$/configs/auth"
 import { serverAuthConfig } from "$/configs/auth-server"
-import type { AuthTokensResponse } from "@vibecoding-starter/types"
+import type { AuthTokensResponse } from "@open-grounding/types"
 import axios, { type AxiosError } from "axios"
 import { encode, getToken } from "next-auth/jwt"
 import { NextResponse } from "next/server"
@@ -116,7 +116,13 @@ const readRequestBody = async (request: NextRequest) => {
       return undefined
     }
 
-    return JSON.parse(textBody) as unknown
+    // BUG-WEB-06: JSON.parse throws SyntaxError on malformed body — catch it
+    // and return the raw string so the upstream gets a proper 400, not a 500.
+    try {
+      return JSON.parse(textBody) as unknown
+    } catch {
+      return textBody
+    }
   }
 
   const textBody = await request.text()
@@ -127,6 +133,7 @@ const readRequestBody = async (request: NextRequest) => {
 const buildRequestHeaders = (
   request: NextRequest,
   accessToken?: string,
+  forwardAuthorization = false,
 ): Record<string, string> => {
   const headers: Record<string, string> = {}
   const contentType = request.headers.get("content-type")
@@ -137,6 +144,12 @@ const buildRequestHeaders = (
 
   if (accessToken) {
     headers.Authorization = `Bearer ${accessToken}`
+  } else if (forwardAuthorization) {
+    const authorization = request.headers.get("authorization")
+
+    if (authorization) {
+      headers.Authorization = authorization
+    }
   }
 
   return headers
@@ -190,7 +203,11 @@ const proxyRequest = async (request: NextRequest, pathSegments: string[]) => {
       method: request.method,
       url: targetUrl,
       data: body,
-      headers: buildRequestHeaders(request, nextAccessToken),
+      headers: buildRequestHeaders(
+        request,
+        nextAccessToken,
+        normalizedPath === authConfig.backendRefreshPath.replace(/^\//, ""),
+      ),
     })
     const response = NextResponse.json(data, { status })
 

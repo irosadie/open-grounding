@@ -1,7 +1,7 @@
 import { authConfig } from "$/configs/auth"
 import { serverAuthConfig } from "$/configs/auth-server"
-import { loginSchema } from "@vibecoding-starter/schemas"
-import type { AuthLoginResponse } from "@vibecoding-starter/types"
+import { loginSchema } from "@open-grounding/schemas"
+import type { AuthLoginResponse } from "@open-grounding/types"
 import axios from "axios"
 import type { NextAuthOptions, User } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
@@ -66,7 +66,7 @@ export const authOptions: NextAuthOptions = {
             email: result.user.email,
             name: result.user.name,
             photo: result.user.photo ?? undefined,
-            companyId: result.user.companyId ?? 0,
+            // BUG-WEB-05: companyId removed — field is not returned by backend
             accessToken: result.tokens.accessToken,
             refreshToken: result.tokens.refreshToken,
             accessTokenExpires,
@@ -133,7 +133,7 @@ export const authOptions: NextAuthOptions = {
         email: token.email ?? undefined,
         name: token.name ?? undefined,
         photo: token.photo ?? undefined,
-        companyId: (token.companyId as number | undefined) ?? 0,
+        // BUG-WEB-05: companyId removed — not returned by backend
       }
 
       return session

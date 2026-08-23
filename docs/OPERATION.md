@@ -5,13 +5,13 @@ This document explains how to run, verify, and maintain this starter in conditio
 ## Scope
 
 This repo currently supports the following baseline:
-- `apps/web`: Next.js App Router on port `3000`
+- `apps/web`: Next.js App Router on port `3010`
 - web auth foundation: NextAuth credentials + internal BFF proxy route
-- `apps/api`: Hono API on port `3001`
+- `apps/api`: FastAPI API on port `3011`
 - `apps/worker`: worker scaffold connected to Redis with no active default queue
-- `docker-compose.yml`: provides local PostgreSQL and Redis
+- `/Users/binarydev/Program/General/service/docker-compose.yml`: provides shared PostgreSQL and Redis
 - `scripts/`: repo-level helper executables for local bootstrap and supporting workflows
-- `Prisma`: CLI and local database infra ready, though default schema is still generic scaffold
+- `Alembic`: schema migration tooling for the FastAPI API
 
 Structure conventions:
 - `docs/` only for documentation and templates
@@ -21,14 +21,13 @@ Structure conventions:
 
 | Component | URL / Port | Purpose |
 | --- | --- | --- |
-| Web | `http://localhost:3000` | UI starter with login, panel, and BFF proxy |
-| Web Auth | `http://localhost:3000/api/auth/*` | NextAuth route handler for session and credentials flow |
-| Web Proxy | `http://localhost:3000/api/proxy/*` | Internal proxy for all browser requests to backend |
-| API | `http://localhost:3001` | HTTP API for root and health check |
+| Web | `http://localhost:3010` | UI starter with login, panel, and BFF proxy |
+| Web Auth | `http://localhost:3010/api/auth/*` | NextAuth route handler for session and credentials flow |
+| Web Proxy | `http://localhost:3010/api/proxy/*` | Internal proxy for all browser requests to backend |
+| API | `http://localhost:3011` | HTTP API for root and health check |
 | Worker | n/a | Idle worker scaffold for background runtime |
-| PostgreSQL | `postgresql://postgres:postgres@127.0.0.1:5432/vibecoding_starter?schema=public` | Local database for next Prisma features |
-| Redis | `redis://127.0.0.1:6379` | Ready-to-use broker for next queue features |
-| Prisma Studio | `http://localhost:5555` | Browser UI for local database when schema is in use |
+| PostgreSQL | `postgresql://postgres:postgres@127.0.0.1:5433/open_grounding` | Local database for FastAPI |
+| Redis | `redis://127.0.0.1:6380` | Ready-to-use broker for next queue features |
 
 ## Supported Baseline
 
@@ -37,7 +36,7 @@ Local baseline considered healthy for this repo:
 2. Local PostgreSQL and Redis are active.
 3. `bun run dev` runs web, api, and worker.
 4. `bun run check` passes.
-5. Starter login page can be opened at `http://localhost:3000/login`.
+5. Starter login page can be opened at `http://localhost:3010/login`.
 6. Default protected route `/panel` redirects to `/login` when no session exists.
 
 ## Environment Matrix
@@ -50,12 +49,12 @@ Repo does not use root `.env` as source of truth. Env is managed per app.
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `NEXT_PUBLIC_APP_URL` | no | `http://localhost:3000` | Web app base URL |
-| `NEXT_PUBLIC_API_URL` | no | `http://localhost:3001` | Fallback backend base URL for server-side auth config |
+| `NEXT_PUBLIC_APP_URL` | no | `http://localhost:3010` | Web app base URL |
+| `NEXT_PUBLIC_API_URL` | no | `http://localhost:3011` | Fallback backend base URL for server-side auth config |
 | `NEXT_PUBLIC_API_PROXY_BASE_URL` | no | `/api/proxy` | Internal proxy base path used by axios in browser |
-| `NEXTAUTH_URL` | no | `http://localhost:3000` | Canonical web URL for NextAuth |
+| `NEXTAUTH_URL` | no | `http://localhost:3010` | Canonical web URL for NextAuth |
 | `NEXTAUTH_SECRET` | yes for production | none | Secret for sign/encrypt session cookie |
-| `API_URL` | no | `http://localhost:3001` | Backend base URL used by proxy route server-side |
+| `API_URL` | no | `http://localhost:3011` | Backend base URL used by proxy route server-side |
 | `AUTH_LOGIN_PATH` | no | `/auth/login` | Backend path for credentials login |
 | `AUTH_REFRESH_PATH` | no | `/auth/refresh` | Backend path for token refresh |
 | `AUTH_LOGOUT_PATH` | no | `/auth/logout` | Backend path for logout token/session |
@@ -64,14 +63,16 @@ Repo does not use root `.env` as source of truth. Env is managed per app.
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `API_PORT` | no | `3001` | HTTP API port |
-| `DATABASE_URL` | no | `postgresql://postgres:postgres@127.0.0.1:5432/vibecoding_starter?schema=public` | Default local PostgreSQL for Prisma |
+| `API_PORT` | no | `3011` | HTTP API port |
+| `DATABASE_URL` | no | `postgresql://postgres:postgres@127.0.0.1:5433/open_grounding` | Default local PostgreSQL for SQLAlchemy |
+| `DEPLOYMENT_TENANT_ID` | **yes** | none | Stable UUID identifier for the deployment tenant. Set before first startup. See `docs/TENANT-DEPLOYMENT.md`. |
+| `TENANT_MODE` | no | `single-deployment` | Only `single-deployment` is supported in v1. |
 
 ### `apps/worker/.env.example`
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `REDIS_URL` | no | `redis://127.0.0.1:6379` | Redis for BullMQ worker |
+| `REDIS_URL` | no | `redis://127.0.0.1:6380` | Redis for BullMQ worker |
 
 ## Fast Start
 
@@ -86,7 +87,7 @@ bun run bootstrap
 1. create `.env` files from `.env.example` if not yet exists
 2. start PostgreSQL and Redis via Docker Compose
 3. wait for both services to be ready
-4. generate Prisma client
+4. apply Alembic migrations
 5. generate merged OpenAPI spec
 
 ### Manual setup
@@ -96,7 +97,7 @@ cp apps/web/.env.example apps/web/.env
 cp apps/api/.env.example apps/api/.env
 cp apps/worker/.env.example apps/worker/.env
 bun run stack:up
-bun run prisma:generate
+bun run db:upgrade
 bun run openapi:generate
 ```
 
@@ -160,9 +161,7 @@ bun run build
 ## OpenAPI Workflow
 
 Current OpenAPI source of truth:
-- `docs/openapi/base.json`
-- `docs/openapi/paths/*.json`
-- `docs/openapi/schemas/*.json`
+- FastAPI routers and Pydantic request/response models under `apps/api/app/`
 
 Operational command:
 
@@ -171,32 +170,31 @@ bun run openapi:generate
 ```
 
 Operational rules:
-1. Modify split files per feature, not `docs/openapi.json` directly.
+1. Modify FastAPI routers or Pydantic models per feature, not `docs/openapi.json` directly.
 2. Run `bun run openapi:generate` after changes.
-3. Commit both split files and merged `docs/openapi.json` so tooling that reads merged file stays in sync.
+3. Commit the generated `docs/openapi.json` so documentation tooling remains in sync.
 
-## Prisma Workflow
+## Alembic Workflow
 
-Local Prisma infra is now available, though default schema is still generic scaffold.
-
-Operational commands:
+Apply migrations to a new local database:
 
 ```bash
-bun run prisma:generate
-bun run prisma:migrate:dev
-bun run prisma:seed
-bun run prisma:studio
+bun run db:upgrade
 ```
 
-Current correct status:
-- `apps/api/prisma/schema.prisma` is still generic scaffold
-- `apps/api/prisma/seed.ts` is only placeholder
-- Local PostgreSQL is already available in Docker Compose
-- Prisma client can be generated as part of bootstrap
+For an existing database created by the retired Prisma API, inspect that it matches
+the baseline schema, then stamp it without destructive DDL:
 
-Meaning:
-- local database infra is ready
-- but first business schema must be defined before migrate/seed becomes meaningful
+```bash
+bun run db:stamp-baseline
+```
+
+Run repository integration tests only against the disposable `_test` database:
+
+```bash
+cd apps/api
+bun run test:integration
+```
 
 ## Queue and Worker Workflow
 
@@ -209,10 +207,6 @@ Meaning:
 - background worker stack is available
 - first queue needs to be added when feature actually requires it
 
-## Seed Status
-
-Current seed behavior is intentional: file `apps/api/prisma/seed.ts` only writes placeholder message. No default seed data should be assumed to exist.
-
 ## CI and Branch Hygiene
 
 Active workflows:
@@ -221,8 +215,16 @@ Active workflows:
 
 Expectations before merge:
 1. `bun run check` passes locally.
-2. OpenAPI is regenerated if split files changed.
+2. OpenAPI is regenerated if FastAPI routes or Pydantic models changed.
 3. Feature docs and registry are synced if new feature exists.
+
+## Deferred Deployment Follow-up
+
+This migration intentionally does not add a FastAPI container image or migrate the
+Node BullMQ worker. Local development and CI run the API through `uv`; PostgreSQL
+and Redis remain in the shared Compose service. A deployable Python image and a
+Turbo build output policy for it should be added in a dedicated containerization
+change.
 
 ## Troubleshooting
 
@@ -233,13 +235,13 @@ Expectations before merge:
 ### PostgreSQL not ready
 - check `bun run stack:ps`
 - check logs `bun run stack:logs`
-- check if port `5432` is used by another service
+- check if port `5433` is used by another service
 
 ### Worker fails to start
 - ensure Redis is active: `bun run stack:ps`
 - check `REDIS_URL` in `apps/worker/.env`
 - rerun `bun run dev:worker`
 
-### OpenAPI merge fails
-- ensure all `$ref` point to existing schema in `docs/openapi/schemas/`
+### OpenAPI generation fails
+- ensure FastAPI routers and Pydantic models import successfully
 - rerun `bun run openapi:generate` to see specific validation errors

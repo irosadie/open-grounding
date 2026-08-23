@@ -1,127 +1,196 @@
-# vibecoding-starter
+# open-grounding
 
-Starter monorepo for building products with **vibe coding** — a workflow where AI agents (Claude Code / Codex) handle implementation tasks end-to-end, from feature planning to merge-ready PRs.
+**Open Grounding** is an open-source RAG platform — a standalone backend that ingests documents, indexes them as vectors, and answers questions with responses grounded in and cited from those documents, not from model hallucination.
 
-This repo provides two things:
-1. **Production-ready starter monorepo** (Next.js + Hono + BullMQ + local PostgreSQL + local Redis)
-2. **Agent system** (`.agents/`) containing skills, guides, and code examples used by AI agents during coding
+It is designed to be called by any external client or business orchestrator via REST API or MCP, making it suitable as the knowledge and retrieval layer for conversational agents, order flows, support bots, and similar applications.
 
-Status:
-- Open source under [MIT](./LICENSE) license
-- Clone, fork, use as a baseline for new projects, or contribute back via pull requests
-- Agent workflow source of truth lives in `.agents/`
+---
 
-## Table of Contents
+## How It Works
 
-- [Open Source](#open-source)
-- [What's Included](#whats-included)
-- [Quick Start](#quick-start)
-- [Key Endpoints](#key-endpoints)
-- [OpenAPI & Scalar](#openapi--scalar)
-- [Quality Checks](#quality-checks)
-- [Start a Session](#start-a-session)
-  - [Invoking Skills Explicitly](#invoking-skills-explicitly)
-- [Vibe Coding Flow](#vibe-coding-flow)
-- [Developing the Agent System](#developing-the-agent-system)
-- [MCP Setup](#mcp-setup-for-ai-agents)
-- [Contributing](#contributing)
-- [License](#license)
+A query goes through two stages before an answer is returned: **decomposition + routing**, then **grounding**.
 
-Stack:
-- `apps/web`: Next.js + Tailwind + Vitest
-- `apps/api`: Hono (clean architecture) + Prisma scaffold + Vitest
-- `apps/worker`: Worker scaffold + Redis + Vitest
-- `docker-compose.yml`: PostgreSQL + Redis for local development
-- `scripts/`: repo-level helper executables for bootstrap and operations
-- `Turbo` for task orchestration
-- `Bun` as package manager and script runner
-- `Biome` for lint/format
+### Stage 1 — Decomposition & Routing (async)
 
-## Open Source
+When a query arrives, the platform first analyzes intent and decomposes it into one or more sub-tasks. Each sub-task is routed independently and executed as an async job:
 
-This repo is intended for public use:
-- Clone and use directly as a baseline for new projects
-- Fork for internal or custom workflow versions
-- Open issues or pull requests for fixes, cleanup, or new features
-- Licensed under **MIT** — commercial and non-commercial use allowed as long as the license notice is preserved
+```
+External client (REST API or MCP)
+        │
+        ▼
+  POST /rag/query  →  job enqueued (returns jobId immediately)
+        │
+        ▼
+  ┌─────────────────────────────────────────────┐
+  │  Query Analysis & Decomposition             │
+  │  → standalone query rewrite                 │
+  │  → intent analysis                          │
+  │  → decompose into sub-tasks (if needed)     │
+  └──────────────────┬──────────────────────────┘
+                     │
+         ┌───────────┼───────────┐
+         ▼           ▼           ▼
+    RAG task    General task  Tool task
+    → hybrid    → pass to     → MCP tool
+      retrieval   LLM           execution
+    → reranking
+    → confidence
+      gate
+```
 
-## What's Included
+Each sub-task type:
 
-### Monorepo Runtime
-- `apps/web` — Next.js App Router frontend
-- `apps/api` — Hono backend with clean architecture layering
-- `apps/worker` — Redis-based background worker
-- `docker-compose.yml` — local PostgreSQL + Redis
-- `scripts/bootstrap-local.sh`, `scripts/compose.sh`, and other repo-level helpers
+| Route | When | What happens |
+|---|---|---|
+| `RAG` | Query answerable from knowledge base | Hybrid retrieval → rerank → confidence gate → grounded generation |
+| `General` | No relevant KB evidence | Passed directly to LLM without retrieval |
+| `Tool` | Registered MCP tool matches intent | MCP tool executed, result injected into context |
+| `Abstain` | Insufficient evidence + low confidence | Platform declines to answer — never fabricates |
 
-### Frontend Starter
-- App Router baseline pages
-- `NextAuth` credentials-based auth foundation in `apps/web/auth.ts`
-- Auth route handler at `apps/web/app/api/(auth)/auth/[...nextauth]/route.ts`
-- Internal BFF proxy at `apps/web/app/api/proxy/[...path]/route.ts`
-- Starter login page `/login` and register page `/register`
-- Route protection and basic redirects via `apps/web/proxy.ts`
-- `SessionProvider` and `QueryProvider`
-- Query client service and axios interceptors defaulting to internal proxy `/api/proxy`
-- Baseline constants for API routes and query keys
-- Utility hooks: `useQueryParam`, `useNetworkInfo`, `useUserAgent`
-- Utility helpers: `cn`, `objectToForm`, `rbacFilterMenu`
-- General frontend types for App Router, data tables, and NextAuth augmentation
-- Comprehensive reusable UI kit including:
-  - action dropdown, autocomplete, avatar, breadcrumb
-  - button, input, textarea, select, radio, radio-group, datepicker, file upload
-  - currency input, currency select, currency display, content title
-  - dialog, drawer, dropdown, menubar, tabs
-  - table, pagination, status badge, stat card, panel card, panel context, search toolbar
-  - text editor, map, route card, stepper, loading spinner, loading overlay, content loading, display with skeleton, empty state, user menu
+### Stage 2 — Grounding & Answer Assembly
 
-### Backend Starter
-- API entrypoint with `/` and `/health` endpoints
-- Service + use case baseline for system info and health check
-- Controller, route, and test baseline for system endpoints
-- `DomainError` foundation for domain error handling
-- Separate env config in `infrastructure/config`
-- Middleware foundation for JWT, advanced auth, validation, and centralized error handling
-- HTTP response/query parser utilities and OpenAPI merge helper
-- Domain service skeleton for token and storage
-- JWT / token blacklist foundation for future auth features
-- Example use case test scaffold for backend patterns
-- Prisma scaffold and database config ready for development
+After all sub-tasks complete, results are merged into a single grounded response:
 
-### Worker Starter
-- Worker entrypoint connected to Redis
-- Summary use case for idle/active worker mode
-- Separate env config in `infrastructure/config`
-- Minimal queue bootstrap to start the first worker without business features
+```
+  Sub-task results (RAG chunks + tool output + general LLM)
+        │
+        ▼
+  Context builder + citation IDs
+        │
+        ▼
+  Grounded generation (LLM with evidence-only prompt)
+        │
+        ▼
+  Answer + citations + limitations  →  client (polled via GET /rag/query/{jobId})
+```
 
-### Shared Packages
-- `packages/schemas` — shared Zod schemas including auth/login starter
-- `packages/types` — shared response types baseline (`success`, `error`, auth response starter)
-- `packages/utils` — pure utility functions shared across apps
+The client polls `GET /rag/query/{jobId}` for the result, or receives it via webhook if configured. Answers only reference cited evidence — if evidence is insufficient, the platform responds with `abstain` rather than fabricating.
 
-Utilities in `packages/utils`:
-- currency format, date range, debounce, enum to object, string generator
-- masking, number helpers, path variable, point converter, time helpers, to-camel-case
+---
 
-### Docs & DevEx
-- OpenAPI split source in `docs/openapi/`
-- Merged OpenAPI spec at `docs/openapi.json`
-- [Scalar](https://scalar.com/) config at `apps/api/scalar.config.json` pointing to the merged spec
-- GitHub Actions for app CI and skill hygiene
+## How It Works (summary diagram)
 
-### Agent Workflow
-- Onboarding session via `bun run session:status`
-- Planning & specs via [OpenSpec](https://github.com/Fission-AI/OpenSpec) (`/opsx:propose`)
-- Skill registry and agent entrypoint in `.agents/AGENTS.md`
-- Source of truth skills in `.agents/skills/`
-- Reusable examples in `.agents/examples/`
-- Claude wrappers auto-generated from source of truth skills
+```
+Client
+  │
+  ├── POST /rag/query ─────────────────────────────┐
+  │         returns: { jobId }                      │
+  │                                                 ▼
+  │                                    Decompose → route tasks async
+  │                                    ┌──────────────────────────┐
+  │                                    │  RAG   General   Tool    │
+  │                                    └──────────┬───────────────┘
+  │                                               ▼
+  │                                    Ground + assemble answer
+  │
+  └── GET /rag/query/{jobId} ◄── poll for result
+            returns: { answer, citations, limitations }
+```
+
+---
+
+## Stack
+
+```
+open-grounding/
+├── apps/
+│   ├── web/      → Next.js 16 App Router (Open Grounding Console)
+│   └── api/      → FastAPI (Clean Architecture, Python)
+│                   └── app/workers/  → BullMQ Python workers (ingestion + query)
+└── packages/
+    ├── schemas/  → Zod validation schemas (shared FE)
+    ├── types/    → API response TypeScript types (shared FE)
+    └── utils/    → Pure utility functions (shared FE)
+```
+
+| Layer | Technology |
+|---|---|
+| Frontend | Next.js 16 + Tailwind + Vitest |
+| Backend API | FastAPI + SQLAlchemy async + Alembic + Pytest |
+| Background workers | BullMQ + Redis (Python, co-located in `apps/api`) |
+| Vector store | Qdrant (hybrid dense + sparse) |
+| Object store | MinIO (S3-compatible) |
+| Metadata store | PostgreSQL |
+| Cache & queue | Redis |
+| Package manager | Bun |
+| Task runner | Turbo |
+| Lint/format | Biome |
+
+---
+
+## Architecture Overview
+
+### Offline knowledge plane (Ingestion)
+
+```
+Upload document (PDF / Markdown / TXT)
+  → Intake & validation
+  → Object store (raw file)
+  → BullMQ pipeline: Parse → [Human Review gate] → Chunk → Embed → Index
+  → Qdrant (dense + sparse vectors + payload index)
+  → PostgreSQL (manifest, lifecycle, version, trace)
+```
+
+The pipeline is versioned and has a human review gate. Each document version has a state machine:
+`RECEIVED → STORED → QUEUED → PARSING → NEEDS_REVIEW → CHUNKING → EMBEDDING → INDEXING → READY`
+
+When human review is enabled on a knowledge base, the pipeline halts at `NEEDS_REVIEW` and waits for operator approval before indexing continues.
+
+### Online answer plane (Retrieval)
+
+```
+POST /rag/query  →  job enqueued  →  returns jobId
+  │
+  ▼
+Query Analysis & Decomposition
+  → standalone query rewrite
+  → intent analysis
+  → decompose into sub-tasks (RAG / General / Tool / Abstain)
+  │
+  ├── RAG task    → hybrid retrieval (dense + sparse + RRF)
+  │                → cross-encoder reranking
+  │                → confidence gate
+  │                → grounded generation
+  │
+  ├── General task → LLM direct (no retrieval)
+  │
+  └── Tool task   → MCP tool execution
+  │
+  ▼
+Ground + assemble: context builder + citation IDs + grounded LLM call
+  │
+  ▼
+GET /rag/query/{jobId}  →  answer + citations + limitations
+```
+
+Answers are only generated when evidence is sufficient. Otherwise the platform responds with `abstain` — never fabricates.
+
+---
+
+## Open Grounding Console
+
+Web console for operators at `http://localhost:3010`:
+
+| Route | Function |
+|---|---|
+| `/login` | Login via NextAuth credentials |
+| `/console` | Overview dashboard |
+| `/console/knowledge-bases` | Create and manage knowledge bases |
+| `/console/knowledge-bases/[id]/ingestion` | Configure ingestion settings and human review |
+| `/console/document` | Document list + pipeline status tracking |
+| `/console/document/review/[versionId]` | Human review — approve or reject parsed content |
+| `/console/query` | Grounded Q&A + citations + feedback |
+| `/console/memory` | Conversation memory management |
+| `/console/settings` | Providers, models, index profiles, MCP servers, confidence |
+
+---
 
 ## Quick Start
 
 Prerequisites:
 - Bun `>= 1.3`
 - Docker
+- Python `>= 3.11` with `uv`
 
 ```bash
 bun install
@@ -130,11 +199,11 @@ bun run dev
 ```
 
 `bun run bootstrap` will:
-- Copy `.env.example` to `.env` if it doesn't exist
-- Start PostgreSQL and Redis
-- Wait for services to be ready
-- Generate Prisma client
-- Generate merged OpenAPI spec
+- Copy `.env.example` to `.env` if it does not exist
+- Start PostgreSQL, Redis, Qdrant, and MinIO via Docker
+- Wait for all services to be ready
+- Apply the Alembic baseline migration
+- Generate the merged OpenAPI spec
 
 After bootstrapping, initialize OpenSpec for the planning layer:
 
@@ -142,48 +211,52 @@ After bootstrapping, initialize OpenSpec for the planning layer:
 bunx openspec init
 ```
 
-This sets up the `openspec/` directory and generates slash commands for your AI tool of choice:
-- **Claude Code** — commands are added to `.claude/commands/`
-- **Codex** — invoke skills with `$openspec-propose`, `$openspec-apply-change`, etc.
-- **OpenCode** — instructions are loaded via `opencode.md` and `.opencode.json`
+---
 
-Daily commands:
+## Endpoints
+
+| Service | URL |
+|---|---|
+| Web (Console) | `http://localhost:3010` |
+| Web login | `http://localhost:3010/login` |
+| API root | `http://localhost:3011/` |
+| API health | `http://localhost:3011/health` |
+| OpenAPI spec | `docs/openapi.json` |
+
+---
+
+## Docker Infrastructure
+
+| Service | Host port | Purpose |
+|---|---|---|
+| PostgreSQL | `5433` | Metadata, lifecycle, trace |
+| Redis | `6380` | Queue (BullMQ) + cache |
+| Qdrant | `6334` | Vector store (dense + sparse) |
+| MinIO API | `9100` | Object store (files + artifacts) |
+| MinIO Console | `9101` | MinIO admin UI |
+
 ```bash
-bun run stack:up
-bun run stack:down
-bun run stack:logs
-bun run session:status
-bun run prisma:generate
-bun run prisma:migrate:dev
-bun run prisma:studio
-bun run openapi:generate
+bun run stack:up       # start all services
+bun run stack:down     # stop all services
+bun run stack:logs     # tail postgres + redis logs
+bun run stack:reset    # stop + remove all volumes (data loss)
 ```
 
-## Key Endpoints
-- Web: `http://localhost:3000`
-- Web login: `http://localhost:3000/login`
-- Web register: `http://localhost:3000/register`
-- Web auth route: `http://localhost:3000/api/auth/*`
-- Web internal proxy: `http://localhost:3000/api/proxy/*`
-- API root: `http://localhost:3001/`
-- API health: `http://localhost:3001/health`
-- Prisma Studio: `http://localhost:5555`
-- Merged OpenAPI spec: `docs/openapi.json`
-- Scalar config source: `apps/api/scalar.config.json`
+---
 
-## OpenAPI & Scalar
+## Daily Commands
 
-The OpenAPI workflow is ready for docs tooling:
-- Split JSON source of truth in `docs/openapi/base.json`, `docs/openapi/paths/*.json`, and `docs/openapi/schemas/*.json`
-- Merged artifact at `docs/openapi.json`
-- Merge generator runs via `bun run openapi:generate`
-- Scalar config at `apps/api/scalar.config.json`
+```bash
+bun run session:status     # check repo status, MCP, and active tasks
+bun run db:upgrade         # apply latest Alembic migrations
+bun run openapi:generate   # regenerate docs/openapi.json
+bun run lint               # Biome lint across all workspaces
+bun run typecheck          # TypeScript typecheck
+bun run test               # run all tests
+bun run build              # build all workspaces
+```
 
-This means:
-- Don't edit `docs/openapi.json` directly
-- Update specs in the split `docs/openapi/` folder
-- Regenerate the merged spec afterward
-- The merged file is ready for Scalar since the repo config points to `./docs/openapi.json`
+---
 
 ## Quality Checks
 
@@ -191,234 +264,136 @@ This means:
 bun run check
 ```
 
-Partial commands:
-```bash
-bun run lint
-bun run typecheck
-bun run test
-bun run build
-```
-
-Generate merged OpenAPI spec:
-```bash
-bun run openapi:generate
-```
-
-## Start a Session
-
-Type **"Start"** or **"Mulai Vibe Coding"** in Claude Code or Codex.
-
-The agent will run a quick check:
-- Check repo-level MCP (`.mcp.json`) and missing services
-- Check active branch and whether there's work in progress
-
-Then it will direct the session to one of:
-- Set up MCP first
-- Resume last task
-- Start a new feature via OpenSpec (`/opsx:propose`)
-
-To run the same quick check manually:
-
-```bash
-bun run session:status
-```
-
-### Invoking Skills Explicitly
-
-Skills can be invoked directly — use these if you want full control:
-
-**Claude Code** — use `/` prefix:
-```
-/web-slicing
-/api-feature
-/web-api-integrated
-```
-
-**Codex** — use `$` prefix:
-```
-$web-slicing
-$api-feature
-$web-api-integrated
-```
-
-Full skill list available in `.agents/AGENTS.md` under `Skill Registry`.
+Runs: skill validation + network boundary check + lint + typecheck + test + smoke test + build.
 
 ---
 
-## Developing the Agent System
+## OpenAPI & Scalar
 
-### Creating a New Skill
+- Source of truth: FastAPI routers + Pydantic models
+- Generated artifact: `docs/openapi.json`
+- Scalar config: `apps/api/scalar.config.json`
+- Generate: `bun run openapi:generate`
 
-Use the `skill-creator` skill to add new capabilities to the agent system.
+Do not edit `docs/openapi.json` directly — update FastAPI/Pydantic models and regenerate.
 
-**Claude:** `/skill-creator` &nbsp;|&nbsp; **Codex:** `$skill-creator`
+---
 
-Or run the generator directly:
+## Integrating with an External Orchestrator
 
-```bash
-bun run skills:create -- \
-  --name {scope}-{capability} \
-  --scope {scope} \
-  --description "{One-line description}" \
-  --when "{When to use}"
-```
+Open Grounding is designed to be called by an external business orchestrator — a Node.js service, a LangGraph agent, an n8n workflow, or any HTTP client.
 
-The generator creates the full structure:
+The orchestrator is responsible for domain-specific logic (order state, required field collection, business rules). Open Grounding handles:
 
-```
-.agents/skills/{name}/
-├── SKILL.md                → Definition + workflow + constraints + checklist
-├── references/context.md   → Target folders + code examples + patterns
-├── templates/checklist.md  → Step-by-step execution checklist
-└── agents/openai.yaml      → Codex/OpenAI metadata
-.claude/skills/{name}/
-└── SKILL.md                → Claude wrapper (auto-generated)
-```
+- Decomposing and routing queries to RAG, General LLM, or MCP tools
+- Executing tasks asynchronously and grounding the final answer against cited evidence
+- Maintaining conversation history per `conversation_id`
 
-After creating or modifying skills:
-
-```bash
-bun run skills:sync      # sync Claude wrappers from source of truth
-bun run skills:validate  # validate all skill assets
-```
-
-### Adding Training Data / Code Examples
-
-Use the `skill-add-example` skill to add real code examples as agent references.
-
-**Claude:** `/skill-add-example` &nbsp;|&nbsp; **Codex:** `$skill-add-example`
-
-Examples are stored in `.agents/examples/`:
+**Typical integration flow:**
 
 ```
-.agents/examples/
-└── {skill-name}/
-    └── {framework-or-context}/
-        └── {example-name}/
-            ├── page.tsx
-            └── hooks/
+Business Orchestrator (Node.js / Python / etc.)
+  │
+  ├── Manage session state (Redis or DB)
+  ├── Inject context via system prompt per request
+  │
+  ├── POST /rag/query
+  │       {
+  │         "message": "user message",
+  │         "knowledge_base_ids": ["kb-id"],
+  │         "conversation_id": "session-123"
+  │       }
+  │       ← { jobId: "job-xyz" }
+  │
+  ├── poll GET /rag/query/job-xyz
+  │       until status === "completed"
+  │
+  └── receive { answer, citations, limitations }
+        → grounded answer, never fabricated
 ```
 
-Each example must be referenced in the related skill's `references/context.md` so the agent can find it during execution.
+The `conversation_id` is shared between the orchestrator and the platform, so conversation history accumulates naturally across turns. Alternatively, configure a `webhook_url` in the request body to receive the result via HTTP POST when the job completes — no polling needed.
 
 ---
 
 ## Vibe Coding Flow
 
-Feature development in this repo uses AI agents. Planning is handled by [OpenSpec](https://github.com/Fission-AI/OpenSpec), implementation is guided by **skills** — structured instructions the agent reads before executing tasks.
+Feature development uses AI agents (Claude / Codex). Planning is handled by [OpenSpec](https://github.com/Fission-AI/OpenSpec), implementation is guided by **skills**.
 
-**All feature work must follow the OpenSpec workflow.**
+### Start a Session
 
-Why:
-- **Structured thinking** — forces upfront design before implementation, reducing rework and scope creep
-- **Traceability** — every feature has documented proposal, specs, design, and tasks in `openspec/changes/`
-- **Quality assurance** — changes are reviewed against specs before archiving
-- **Context preservation** — future developers and AI agents can understand why decisions were made
-- **Collaboration** — clear handoff between propose → implement → verify phases
+Type **"Start"** or **"Mulai"** in Claude / Codex. The agent will:
+1. Check MCP status
+2. Check active branch and in-progress tasks
+3. Direct you to the next step
 
-Exceptions (direct implementation allowed):
-- Trivial fixes (typos, formatting, dead code removal)
-- Maintenance tasks (dependency updates, config adjustments)
-- Documentation-only changes
-- Emergency hotfixes (must be documented retroactively)
-
-### Phase 1 — Propose (OpenSpec)
-
-Turn a feature idea into a proposal, specs, design, and task list.
+### Phase 1 — Propose
 
 ```
-Trigger: /opsx:propose "feature name"
-Output:  openspec/changes/{slug}/
-           proposal.md
-           specs/
-           design.md
-           tasks.md
+/opsx:propose "feature name"
+
+Output: openspec/changes/{slug}/
+          proposal.md
+          specs/
+          design.md
+          tasks.md
 ```
+
+### Phase 2 — Implement
+
+| Sub-phase | Skill | Target |
+|---|---|---|
+| FE Slicing | `web-slicing` | `apps/web/app/` |
+| Backend + OpenAPI | `api-feature` + `docs-openapi` | `apps/api/app/` |
+| FE ↔ API Integration | `web-api-integrated` | `packages/` + `apps/web/hooks/` |
+
+### Phase 3 — Verify & Archive
+
+```
+/opsx:verify    → validate implementation against specs
+/opsx:archive   → archive the completed change
+```
+
+Full skill registry is in `.agents/AGENTS.md`.
 
 ---
 
-### Phase 2 — Implementation (per task)
+## MCP Setup
 
-Execution order per feature:
+Required MCP: `github`
 
-#### 2a. FE Slicing
-> Skill: `web-slicing`
+Config is read from `.mcp.json` at the repo root (gitignored — contains real tokens).
 
-Implement UI from design/description — no real data yet, use dummy.
-
-```
-Target: apps/web/app/(group)/[feature]/
-Output: page.tsx + [feature]-content.tsx
-```
-
-#### 2b. Backend + OpenAPI
-> Skill: `api-feature` + `docs-openapi`
-
-Implement Clean Architecture in Hono: entity → use case → repository → controller → route.
-Write split OpenAPI documentation alongside.
-
-```
-Target: apps/api/src/
-         docs/openapi/
-```
-
-#### 2c. FE ↔ API Integration
-> Skill: `web-api-integrated`
-
-Create Zod schemas, response types, constants, and react-query hooks. Wire the sliced UI to the running API.
-
-```
-Target: packages/schemas/
-         packages/types/
-         apps/web/hooks/transactions/use-{domain}/
-         apps/web/constants/
-```
-
----
-
-### Phase 3 — Verify & Archive (OpenSpec)
-
-```
-Trigger: /opsx:verify     → validate implementation
-         /opsx:archive    → archive specs after completion
-```
-
-## MCP Setup for AI Agents
-
-Required MCP for this repo:
-- `github`
-
-Configuration is read from `.mcp.json` at the repo root. This file is gitignored since it contains real tokens/credentials.
-
-If you just cloned this repo:
+If you just cloned:
 1. Create `.mcp.json` with your GitHub token
 2. Fill in `.agents/settings.json` for `repo.owner` and `repo.name`
 3. Run `bun run session:status`
-4. Start with OpenSpec or resume an active task
+
+---
+
+## Delivery Phases
+
+| Phase | Status | Scope |
+|---|---|---|
+| A — Platform foundation | ✅ Done | FastAPI + PostgreSQL + tenant schema |
+| B — Reliable ingestion | ✅ Done | Upload PDF/MD/TXT → pipeline → Qdrant |
+| C — Grounded query | ✅ Done | Auth filter + hybrid retrieval + answer + citations |
+| D — Production quality | 🔄 In progress | Evaluation, observability, human review, tool gateway |
+| E — Advanced retrieval | ⏳ Planned | Graph retrieval, ColBERT, multimodal |
+
+---
 
 ## Contributing
 
-Contributions welcome.
+1. Fork or create a branch from `main`
+2. `bun install && bun run bootstrap`
+3. Make your changes
+4. Ensure `bun run check` passes
+5. If touching `.agents/skills/`, run `bun run skills:sync && bun run skills:validate`
+6. Open a pull request
 
-Recommended workflow:
-1. Fork or create a new branch from `main`
-2. Run `bun install`
-3. Run `bun run bootstrap`
-4. Make your changes
-5. Ensure `bun run check` passes
-6. If touching skills / `.agents`, also run `bun run skills:sync` and `bun run skills:validate`
-7. Open a pull request
-
-For OpenAPI documentation changes:
-1. Edit split files in `docs/openapi/`
-2. Run `bun run openapi:generate`
-3. Commit both split files and `docs/openapi.json`
-
-For skill changes:
-1. Edit source of truth in `.agents/skills/*`
-2. Run `bun run skills:sync`
-3. Validate with `bun run skills:validate`
+---
 
 ## License
 
-This repo is licensed under [MIT](./LICENSE).
+[MIT](./LICENSE)

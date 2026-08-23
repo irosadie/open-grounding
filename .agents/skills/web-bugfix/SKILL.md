@@ -68,6 +68,7 @@ If the bug lives in an active starter surface, prioritize keeping the homepage, 
 - **NEVER** change other files just because they look messy.
 - **NEVER** leave schema/type/hooks/docs drift when the fix changes data shape.
 - **NEVER** cover up a backend bug with a frontend workaround that adds state lies or contract mismatch.
+- **NEVER** introduce direct `axios`/`fetch` access in route UI or reusable components; add or repair a transaction hook instead.
 - **NEVER** finish without targeted verification.
 
 ## Pre-Completion Checklist

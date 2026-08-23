@@ -3,19 +3,23 @@
 - [ ] Read `.agents/settings.json`
 - [ ] Read `.agents/guides/ARCHITECTURE.md` (apps/api section)
 - [ ] Read `references/context.md`
-- [ ] Read the guide for each folder before writing code
-- [ ] DTO created in `application/dtos/`
-- [ ] Validator schema created in `application/validators/`
-- [ ] Entity created in `domain/entities/`
-- [ ] Repository interface created in `domain/repositories/`
-- [ ] Use case(s) created in `domain/use-cases/` (one file per operation)
-- [ ] Service created in `application/services/`
-- [ ] Prisma repository created in `infrastructure/database/`
-- [ ] Controller created in `interfaces/http/controllers/`
-- [ ] Route created in `interfaces/http/routes/`
-- [ ] Route registered in `interfaces/http/create-app.ts`
-- [ ] No `any`
-- [ ] No business logic in Controller
-- [ ] No Prisma/HTTP in Use Case
-- [ ] `bun run build` passes
+- [ ] Read the guide for each layer before writing code
+- [ ] Entity + StrEnum created in `domain/models.py`
+- [ ] Repository Protocol created in `domain/repositories.py`
+- [ ] DomainError classmethod added (if new error type)
+- [ ] Use case created in `domain/use_cases/{verb}_{domain}.py`
+- [ ] Service created in `application/{domain}_service.py`
+- [ ] DTO created in `application/dtos.py` (if needed)
+- [ ] SQLAlchemy ORM record + repository created in `infrastructure/database.py`
+- [ ] Alembic migration created (if schema changed)
+- [ ] Pydantic request schema created in `interfaces/http/schemas.py`
+- [ ] Dependencies provider + Annotated alias created in `interfaces/http/dependencies.py`
+- [ ] Route handler created in `interfaces/http/routes.py`
+- [ ] Router registered in `main.py`
+- [ ] No untyped `Any`
+- [ ] No business logic in route handler
+- [ ] No SQLAlchemy/HTTP in use case
+- [ ] `uv run ruff check app tests` passes
+- [ ] `uv run mypy app` passes
+- [ ] `uv run pytest` passes
 - [ ] All files end with a newline (EOF)

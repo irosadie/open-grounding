@@ -1,5 +1,5 @@
 {
-  "name": "@vibecoding-starter/schemas",
+  "name": "@open-grounding/schemas",
   "private": true,
   "version": "0.1.0",
   "type": "module",

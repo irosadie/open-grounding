@@ -9,10 +9,10 @@ import {
   type RegisterProps,
   registerPayloadSchema,
   registerSchema,
-} from "@vibecoding-starter/schemas"
+} from "@open-grounding/schemas"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useState, useTransition } from "react"
 
 type RegisterErrors = Partial<Record<keyof RegisterProps, string>>
 
@@ -30,13 +30,14 @@ const getErrorMessage = (error: unknown) => {
     return error.message
   }
 
-  return "Pendaftaran gagal. Silakan coba lagi."
+  return "Registration failed. Please try again."
 }
 
 export default function RegisterContent() {
   const router = useRouter()
   const registerMutation = useAuthRegister()
   const loginMutation = useAuthLogin()
+  const [isPendingTransition, startTransition] = useTransition()
   const [formError, setFormError] = useState("")
   const [fieldErrors, setFieldErrors] = useState<RegisterErrors>({})
   const [form, setForm] = useState<RegisterProps>({
@@ -46,7 +47,8 @@ export default function RegisterContent() {
     confirmPassword: "",
   })
 
-  const isPending = registerMutation.isPending || loginMutation.isPending
+  // BUG-WEB-08: include transition pending state so React tracks navigation
+  const isPending = registerMutation.isPending || loginMutation.isPending || isPendingTransition
 
   const handleChange = (field: keyof RegisterProps, value: string) => {
     setForm((current) => ({
@@ -85,7 +87,7 @@ export default function RegisterContent() {
       return
     }
 
-    void (async () => {
+    void startTransition(async () => {
       try {
         const payload = registerPayloadSchema.parse(parsedForm.data)
 
@@ -102,7 +104,7 @@ export default function RegisterContent() {
       } catch (error) {
         setFormError(getErrorMessage(error))
       }
-    })()
+    })
   }
 
   return (
@@ -110,7 +112,7 @@ export default function RegisterContent() {
       <PanelCard
         className="w-full rounded-3xl"
         title="Create Account"
-        description="Daftar akun user untuk mulai membeli dan mengikuti ujian"
+        description="Register an account to start using the RAG Console"
       >
         <form className="space-y-4" onSubmit={handleSubmit}>
           <Input

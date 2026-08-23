@@ -1,5 +1,7 @@
 # Guide: Shared Schema (`packages/schemas/`)
 
+> **Important:** After the backend migration to Python/FastAPI, `packages/schemas/` is **frontend-only** (used by `apps/web` and `apps/worker`). The backend uses Python `StrEnum` in `apps/api/app/domain/models.py` as its enum source of truth. Enum values must be kept in sync manually between Python `StrEnum` and the frontend Zod schemas.
+
 ## Folder Contract
 
 ✅ Allowed:
@@ -10,7 +12,7 @@
 - Export from `index.ts`
 
 ❌ Forbidden:
-- Import FE-specific libraries (React) or BE-specific libraries (Hono, Prisma)
+- Import FE-specific libraries (React) or BE-specific libraries (the BE is Python — it does not import this package)
 - Business logic, side effects, API calls
 - Response types — those belong in `packages/types/`
 - Use `any`
@@ -23,24 +25,24 @@
 
 ```typescript
 // packages/schemas/payment-method.ts
-import { z } from 'zod'
+import { z } from "zod"
 
-// 1. Type constants (array of valid values)
+// 1. Type constants (array of valid values — must match Python StrEnum)
 export const paymentMethodTypes = [
-  'BANK_TRANSFER',
-  'E_WALLET',
-  'CREDIT_CARD',
-  'QRIS',
-  'COD',
+  "BANK_TRANSFER",
+  "E_WALLET",
+  "CREDIT_CARD",
+  "QRIS",
+  "COD",
 ] as const
 
 // 2. Labels array (for dropdown/select)
 export const paymentMethodLabels = [
-  { label: 'Bank Transfer', value: 'BANK_TRANSFER' },
-  { label: 'E-Wallet', value: 'E_WALLET' },
-  { label: 'Credit Card', value: 'CREDIT_CARD' },
-  { label: 'QRIS', value: 'QRIS' },
-  { label: 'Cash on Delivery', value: 'COD' },
+  { label: "Bank Transfer", value: "BANK_TRANSFER" },
+  { label: "E-Wallet", value: "E_WALLET" },
+  { label: "Credit Card", value: "CREDIT_CARD" },
+  { label: "QRIS", value: "QRIS" },
+  { label: "Cash on Delivery", value: "COD" },
 ]
 
 // 3. Helper function for display label
@@ -51,11 +53,9 @@ export const getPaymentMethodLabel = (value: typeof paymentMethodTypes[number]) 
 
 // 4. Zod schema
 export const paymentMethodSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  code: z.string().min(1, 'Code is required'),
+  name: z.string().min(1, "Name is required"),
+  code: z.string().min(1, "Code is required"),
   type: z.enum(paymentMethodTypes),
-  merchantId: z.string().optional(),
-  bankName: z.string().optional(),
   isActive: z.boolean().optional(),
 })
 
@@ -63,62 +63,34 @@ export const paymentMethodSchema = z.object({
 export type PaymentMethodSchemaProps = z.infer<typeof paymentMethodSchema>
 ```
 
-### Simple Schema (without labels)
-
-```typescript
-// packages/schemas/user.ts
-import { z } from 'zod'
-
-export const createUserSchema = z.object({
-  name: z.string().min(1, 'Name is required').max(100),
-  email: z.string().email('Invalid email'),
-  role: z.enum(['ADMIN', 'USER']),
-})
-
-export const updateUserSchema = z.object({
-  name: z.string().min(1).max(100).optional(),
-  isActive: z.boolean().optional(),
-})
-
-export type CreateUserPayload = z.infer<typeof createUserSchema>
-export type UpdateUserPayload = z.infer<typeof updateUserSchema>
-```
-
-### Shared Enum Schema
-
-```typescript
-// packages/schemas/notification-channel.ts
-import { z } from 'zod'
-
-export const NOTIFICATION_CHANNELS = ['EMAIL', 'SMS', 'PUSH'] as const
-
-export const notificationChannelSchema = z.enum(NOTIFICATION_CHANNELS)
-
-export const notificationPreferenceSchema = z.object({
-  channel: notificationChannelSchema,
-  isEnabled: z.boolean(),
-})
-
-export type NotificationPreference = z.infer<
-  typeof notificationPreferenceSchema
->
-```
-
-### Re-export dari Index
+### Re-export from Index
 
 ```typescript
 // packages/schemas/index.ts
-export * from './payment-method'
-export * from './user'
-export * from './notification-channel'
+export * from "./payment-method"
+export * from "./user"
+export * from "./notification-channel"
 ```
+
+---
+
+## Cross-Stack Enum Sync
+
+Since the backend is Python and the frontend is TypeScript, enums must be synced manually:
+
+1. **Python (source of truth for BE):** `StrEnum` in `apps/api/app/domain/models.py`
+2. **TypeScript (FE mirror):** `as const` array in `packages/schemas/{domain}.ts`
+
+Both must have the same values in `SCREAMING_SNAKE_CASE`. When adding a new enum value:
+1. Add to the Python `StrEnum` in `domain/models.py`
+2. Add to the TypeScript `as const` array in `packages/schemas/{domain}.ts`
+3. Add to the labels array (if applicable)
 
 ---
 
 ## Additional Rules
 
-- **If a field has a fixed set of values, it MUST be declared here as an `as const` array + type alias + `z.enum()`.** This is the single source of truth for enums — Prisma, BE, and FE all import from `packages/schemas/`. Values are always `SCREAMING_SNAKE_CASE`.
-- Each schema file must have a test file (`*.test.ts`)
-- Export constant helpers only if they are needed alongside the related schema
+- **If a field has a fixed set of values, it MUST be declared here as an `as const` array + `z.enum()`.** This is the source of truth for the frontend. Values are always `SCREAMING_SNAKE_CASE` and must match the Python `StrEnum`.
+- Each schema file should have a test file (`*.test.ts`)
 - Type alias suffix: `SchemaProps` for form/payload (e.g., `PaymentMethodSchemaProps`)
 - File must end with newline
