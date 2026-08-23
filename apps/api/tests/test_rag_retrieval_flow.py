@@ -79,9 +79,9 @@ async def test_hybrid_overlap_diversity_and_reranker_failure_preserve_safe_candi
     assert degraded is True
 
 
-def test_low_evidence_abstains_or_clarifies_without_numeric_confidence() -> None:
+def test_low_evidence_is_answered_without_numeric_confidence() -> None:
     low = gate_evidence(candidate_count=1, independent_source_count=1, top_score=0.2, retry_attempted=False)
     none = gate_evidence(candidate_count=0, independent_source_count=0, top_score=None, retry_attempted=False)
 
-    assert (low.level, low.route, low.should_retry) == (EvidenceLevel.LOW, QueryRoute.CLARIFY, False)
-    assert (none.level, none.route, none.should_retry) == (EvidenceLevel.NONE, QueryRoute.ABSTAIN, False)
+    assert (low.level, low.route, low.should_retry) == (EvidenceLevel.LOW, QueryRoute.ANSWERED, False)
+    assert (none.level, none.route, none.should_retry) == (EvidenceLevel.NONE, QueryRoute.ANSWERED, False)

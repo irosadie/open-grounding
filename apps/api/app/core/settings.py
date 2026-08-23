@@ -104,6 +104,16 @@ class Settings(BaseSettings):
     # "verbose" = NDJSON per event with full meta including prompt tails.
     rag_dev_trace: str = "off"
 
+    # --- Docling serve configuration ------------------------------------------
+    # When set, the parse stage delegates document conversion to a remote
+    # docling-serve instance instead of running docling in-process.
+    # Must be a valid HTTP/HTTPS URL. Leave unset to use in-process adapter.
+    docling_serve_url: str | None = None
+    # Maximum seconds to wait for a docling-serve conversion task to complete.
+    docling_serve_timeout_seconds: float = 120.0
+    # Seconds between status poll requests to docling-serve.
+    docling_serve_poll_interval_seconds: float = 3.0
+
     # --- Ingestion pipeline configuration -------------------------------------
     # Supported MIME types for v1 source intake. Unsupported types are rejected.
     rag_ingestion_supported_mime_types: str = "application/pdf,text/markdown,text/plain,text/x-markdown,application/markdown"
@@ -158,6 +168,32 @@ class Settings(BaseSettings):
     def validate_rag_dev_trace(cls, value: str) -> str:
         if value not in ("off", "summary", "verbose"):
             raise ValueError(f"Unsupported RAG_DEV_TRACE value '{value}'. Only 'off', 'summary', or 'verbose' is supported.")
+        return value
+
+    @field_validator("docling_serve_url")
+    @classmethod
+    def validate_docling_serve_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        import httpx
+        try:
+            parsed = httpx.URL(stripped)
+        except Exception as error:
+            raise ValueError(f"DOCLING_SERVE_URL must be a valid URL, got: {stripped!r}") from error
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"DOCLING_SERVE_URL must use http or https scheme, got: {parsed.scheme!r}")
+        if not parsed.host:
+            raise ValueError(f"DOCLING_SERVE_URL must include a host, got: {stripped!r}")
+        return stripped
+
+    @field_validator("docling_serve_timeout_seconds", "docling_serve_poll_interval_seconds")
+    @classmethod
+    def validate_positive_docling_float(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("docling_serve_timeout_seconds and docling_serve_poll_interval_seconds must be greater than zero")
         return value
 
     @field_validator("rag_ingestion_malware_scan_mode")
@@ -221,6 +257,15 @@ class Settings(BaseSettings):
 
     @property
     def refresh_secret(self) -> str:
+        # BUG-API-03: falling back to jwt_secret means both token types share
+        # the same secret — a leak of one compromises both. Log a warning in
+        # non-development environments so operators notice the misconfiguration.
+        import logging as _logging
+        if not self.jwt_refresh_secret and self.environment != "development":
+            _logging.getLogger(__name__).warning(
+                "JWT_REFRESH_SECRET is not set; falling back to JWT_SECRET. "
+                "Set JWT_REFRESH_SECRET to a separate secret in production."
+            )
         return self.jwt_refresh_secret or self.jwt_secret
 
 

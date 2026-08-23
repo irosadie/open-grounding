@@ -116,7 +116,13 @@ const readRequestBody = async (request: NextRequest) => {
       return undefined
     }
 
-    return JSON.parse(textBody) as unknown
+    // BUG-WEB-06: JSON.parse throws SyntaxError on malformed body — catch it
+    // and return the raw string so the upstream gets a proper 400, not a 500.
+    try {
+      return JSON.parse(textBody) as unknown
+    } catch {
+      return textBody
+    }
   }
 
   const textBody = await request.text()

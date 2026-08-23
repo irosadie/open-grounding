@@ -9,6 +9,7 @@ import { useRagFeedback } from "$/hooks/transactions/use-rag-query"
 import { useRagQueryStream } from "$/hooks/transactions/use-rag-query"
 import { cn } from "$/utils/cn"
 import {
+  type RagQueryRoute,
   getRagEvidenceLevelLabel,
   getRagQueryRouteLabel,
 } from "@open-grounding/schemas"
@@ -74,24 +75,26 @@ export function RetrievalContent() {
   }
 
   const isStreaming = stream.state === "streaming"
-  const showAbstain =
-    stream.route === "abstain" ||
-    stream.route === "clarify" ||
-    (stream.evidenceLevel === "none" && stream.state === "completed")
+  const showRefusal = stream.route === "refused"
+  const showAbstain = stream.route === "abstain" || stream.route === "clarify"
+  const showUngrounded =
+    stream.route === "answered" &&
+    stream.state === "completed" &&
+    Boolean(stream.answer)
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Retrieval</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Ask questions against your knowledge bases and get document-grounded
-          answers with source citations.
+          Ask questions against your knowledge bases. Answers use document
+          evidence when available and can also respond generally.
         </p>
       </div>
 
       <PanelCard
         title="Ask a Question"
-        description="Answers are cited directly from ingested documents."
+        description="Answers use ingested documents when matching evidence is available."
       >
         <div className="flex flex-col gap-4">
           <KnowledgeBaseMultiSelect
@@ -100,7 +103,7 @@ export function RetrievalContent() {
             label="Knowledge Bases"
             required
             disabled={isStreaming}
-            hint="Select one or more knowledge bases as the answer source."
+            hint="Select one or more knowledge bases to provide optional evidence."
           />
 
           <div className="flex flex-col gap-1.5">
@@ -163,14 +166,30 @@ export function RetrievalContent() {
               <div className="flex items-center gap-2">
                 <span className="text-xs text-gray-500">Route</span>
                 <span className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">
-                  {getRagQueryRouteLabel(
-                    stream.route as "grounded" | "clarify" | "abstain",
-                  )}
+                  {getRagQueryRouteLabel(stream.route as RagQueryRoute)}
                 </span>
               </div>
             ) : null
           }
         >
+          {showRefusal ? (
+            <div className="flex items-start gap-3 rounded-lg bg-danger-50 p-4">
+              <AlertTriangle className="mt-0.5 h-5 w-5 text-danger-600" />
+              <div>
+                <p className="text-sm font-medium text-danger-800">
+                  Request refused by safety guardrails
+                </p>
+                {stream.limitations.length > 0 ? (
+                  <ul className="mt-1 list-inside list-disc text-sm text-danger-700">
+                    {stream.limitations.map((limitation) => (
+                      <li key={limitation}>{limitation}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           {showAbstain ? (
             <div className="flex items-start gap-3 rounded-lg bg-warning-50 p-4">
               <AlertTriangle className="mt-0.5 h-5 w-5 text-warning-600" />
@@ -188,6 +207,12 @@ export function RetrievalContent() {
                   </ul>
                 ) : null}
               </div>
+            </div>
+          ) : null}
+
+          {showUngrounded ? (
+            <div className="mb-3 rounded-lg bg-info-50 p-3 text-sm text-info-800">
+              This answer is not grounded in the selected knowledge bases.
             </div>
           ) : null}
 
@@ -268,7 +293,7 @@ export function RetrievalContent() {
                         {citation.title}
                       </span>
                       <a
-                        href="/console/document"
+                        href={`/console/document/${citation.documentVersionId}`}
                         className="text-xs text-primary-600 hover:underline"
                       >
                         {citation.locator ?? citation.documentVersionId}

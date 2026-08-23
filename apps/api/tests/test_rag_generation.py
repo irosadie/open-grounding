@@ -43,6 +43,21 @@ async def test_generation_is_evidence_bound_and_returns_typed_answer() -> None:
 
 
 @pytest.mark.asyncio
+async def test_generation_answers_from_general_knowledge_without_evidence() -> None:
+    generator = GenerationStub({"facts": [{"text": "Hello from the LLM.", "citationIds": []}], "inferences": [], "conflicts": [], "limitations": []})
+    answer = await RagGenerationService(Settings(_env_file=None), generator).generate(
+        tenant=_tenant(),
+        question="hi",
+        evidence=EvidenceContext(prompt_data="", citations=(), token_count=0),
+        profile_id="generation-v1",
+        grounded=False,
+    )
+
+    assert answer.facts[0].citation_ids == ()
+    assert "general knowledge" in generator.prompt
+
+
+@pytest.mark.asyncio
 async def test_generation_defers_citation_validation_to_the_repair_workflow() -> None:
     generator = GenerationStub({"facts": [{"text": "Unsupported", "citationIds": ["S99"]}], "inferences": [], "conflicts": [], "limitations": []})
 

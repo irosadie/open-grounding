@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import cast
 from uuid import uuid4
@@ -126,9 +127,21 @@ def create_session_factory(settings: Settings) -> async_sessionmaker[AsyncSessio
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
+# Module-level singleton — engine and session factory are created once on first
+# use and reused for the lifetime of the process. This avoids creating a new
+# connection pool on every request (BUG-API-04).
+_session_factory: async_sessionmaker[AsyncSession] | None = None
+
+
+def _get_session_factory() -> async_sessionmaker[AsyncSession]:
+    global _session_factory
+    if _session_factory is None:
+        _session_factory = create_session_factory(get_settings())
+    return _session_factory
+
+
 async def get_session() -> AsyncIterator[AsyncSession]:
-    session_factory = create_session_factory(get_settings())
-    async with session_factory() as session:
+    async with _get_session_factory()() as session:
         yield session
 
 
@@ -178,6 +191,31 @@ class SqlAlchemyAuthRepository:
     async def delete_auth_sessions_for_user(self, user_id: str) -> None:
         await self._session.execute(delete(AuthSessionRecord).where(AuthSessionRecord.user_id == user_id))
         await self._session.commit()
+
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[None]:
+        """Wrap multiple repository calls in a single atomic transaction.
+
+        Individual repo methods call session.commit() — inside this context
+        those commits are replaced with flush() so rows become visible within
+        the session (allowing refresh()) but are not yet committed to the DB.
+        Only the final commit at the end of this block persists the changes.
+        On exception the whole transaction is rolled back.
+        """
+        original_commit = self._session.commit
+
+        async def _flush_instead() -> None:
+            await self._session.flush()
+
+        self._session.commit = _flush_instead  # type: ignore[method-assign]
+        try:
+            yield
+            self._session.commit = original_commit
+            await self._session.commit()
+        except Exception:
+            self._session.commit = original_commit
+            await self._session.rollback()
+            raise
 
 
 class SqlAlchemyTenantRepository:

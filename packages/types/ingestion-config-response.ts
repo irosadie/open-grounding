@@ -6,6 +6,9 @@ export type IngestionConfigResponse = {
   minAggregateConfidence: number
   minPageCoverage: number
   autoReview: boolean
+  parser: string
+  doclingServeUrl: string | null
+  doclingServeApiKeySet: boolean
   createdAt: string | null
   updatedAt: string | null
   isDefault: boolean

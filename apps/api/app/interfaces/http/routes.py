@@ -719,8 +719,8 @@ async def upload_document(
     """Upload document file to object store."""
     import aioboto3  # type: ignore
 
-    version = await service._version_repo.find_by_id(
-        tenant_id=tenant.tenant_id,
+    version = await service.get_version_by_id(
+        tenant=tenant,
         version_id=document_version_id,
     )
     if version is None:
@@ -777,8 +777,8 @@ async def list_documents(
     service: IngestionServiceDependency,
 ) -> dict[str, object]:
     """List document versions for a knowledge base."""
-    rows = await service._version_repo.list_by_knowledge_base(
-        tenant_id=tenant.tenant_id,
+    rows = await service.list_versions_by_knowledge_base(
+        tenant=tenant,
         knowledge_base_id=knowledge_base_id,
     )
     return success(
@@ -818,7 +818,7 @@ async def get_parsed_text(
     tenant: TenantContextDependency,
     service: IngestionServiceDependency,
 ) -> dict[str, object]:
-    version = await service._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
+    version = await service.get_version_by_id(tenant=tenant, version_id=version_id)
     if version is None:
         from app.domain.errors import DomainError
         raise DomainError("NOT_FOUND", "Document version not found", 404)
@@ -846,13 +846,13 @@ async def update_parsed_text(
     from app.domain.errors import DomainError
     from app.domain.rag.catalog import DocumentVersionLifecycleState
 
-    version = await service._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
+    version = await service.get_version_by_id(tenant=tenant, version_id=version_id)
     if version is None:
         raise DomainError("NOT_FOUND", "Document version not found", 404)
     if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
         raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
-    updated = await service._version_repo.patch_parsed_text(
-        tenant_id=tenant.tenant_id, version_id=version_id, text=payload.text
+    updated = await service.patch_parsed_text(
+        tenant=tenant, version_id=version_id, text=payload.text
     )
     return success(
         "Parsed text updated",
@@ -874,20 +874,9 @@ async def approve_parsed_text(
     tenant: TenantContextDependency,
     service: IngestionServiceDependency,
 ) -> dict[str, object]:
-    from app.domain.errors import DomainError
-    from app.domain.rag.catalog import DocumentVersionLifecycleState
-
-    version = await service._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
-    if version is None:
-        raise DomainError("NOT_FOUND", "Document version not found", 404)
-    if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
-        raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
-    updated = await service._version_repo.update_lifecycle_state(
-        tenant_id=tenant.tenant_id,
-        version_id=version_id,
-        lifecycle_state="NORMALIZING",
-    )
-    enqueued = await service._enqueue_chunking(tenant=tenant, version=updated)
+    result = await service.approve_version(tenant=tenant, version_id=version_id)
+    updated = result["version"]
+    enqueued = result["enqueued"]
     return success(
         "Document version approved",
         {
@@ -908,19 +897,7 @@ async def reject_parsed_text(
     tenant: TenantContextDependency,
     service: IngestionServiceDependency,
 ) -> dict[str, object]:
-    from app.domain.errors import DomainError
-    from app.domain.rag.catalog import DocumentVersionLifecycleState
-
-    version = await service._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
-    if version is None:
-        raise DomainError("NOT_FOUND", "Document version not found", 404)
-    if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
-        raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
-    updated = await service._version_repo.update_lifecycle_state(
-        tenant_id=tenant.tenant_id,
-        version_id=version_id,
-        lifecycle_state="FAILED",
-    )
+    updated = await service.reject_version(tenant=tenant, version_id=version_id)
     return success(
         "Document version rejected",
         {"versionId": updated.id, "lifecycleState": updated.lifecycle_state.value},
@@ -1426,6 +1403,9 @@ async def get_ingestion_config(
         "minAggregateConfidence": result.min_aggregate_confidence,
         "minPageCoverage": result.min_page_coverage,
         "autoReview": result.auto_review,
+        "parser": result.parser,
+        "doclingServeUrl": result.docling_serve_url,
+        "doclingServeApiKeySet": result.docling_serve_api_key_set,
         "createdAt": result.created_at,
         "updatedAt": result.updated_at,
         "isDefault": result.is_default,
@@ -1438,8 +1418,11 @@ async def upsert_ingestion_config(
     payload: IngestionConfigWriteRequest,
     svc: IngestionConfigServiceDependency,
     tenant: TenantContextDependency,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
     """Create or update ingestion quality gate config for a knowledge base."""
+    from app.application.ingestion_config_service import _UNSET
+    api_key = payload.docling_serve_api_key if payload.docling_serve_api_key is not None else _UNSET
     result = await svc.upsert_config(
         tenant=tenant,
         knowledge_base_id=knowledge_base_id,
@@ -1448,6 +1431,10 @@ async def upsert_ingestion_config(
         min_aggregate_confidence=payload.min_aggregate_confidence,
         min_page_coverage=payload.min_page_coverage,
         auto_review=payload.auto_review,
+        parser=payload.parser,
+        docling_serve_url=payload.docling_serve_url,
+        docling_serve_api_key=api_key,
+        settings=settings,
     )
     return success("Ingestion config saved", {
         "id": result.id,
@@ -1457,6 +1444,9 @@ async def upsert_ingestion_config(
         "minAggregateConfidence": result.min_aggregate_confidence,
         "minPageCoverage": result.min_page_coverage,
         "autoReview": result.auto_review,
+        "parser": result.parser,
+        "doclingServeUrl": result.docling_serve_url,
+        "doclingServeApiKeySet": result.docling_serve_api_key_set,
         "createdAt": result.created_at,
         "updatedAt": result.updated_at,
         "isDefault": result.is_default,

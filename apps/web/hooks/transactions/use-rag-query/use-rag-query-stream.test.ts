@@ -42,6 +42,20 @@ describe("parseSseChunk", () => {
     expect(events[0]?.data).toEqual({ code: "QUERY_FAILED" })
   })
 
+  it("parses a non-grounded answer route like any other response route", () => {
+    const events = parseSseChunk(
+      sseBlock("response.route", { route: "answered" }) +
+        sseBlock("response.delta", {
+          answer: "Hello from the LLM.",
+        }),
+    )
+
+    expect(events.map((event) => event.data)).toEqual([
+      { route: "answered" },
+      { answer: "Hello from the LLM." },
+    ])
+  })
+
   it("ignores incomplete blocks", () => {
     const events = parseSseChunk("event: response.started\ndata: {")
     expect(events).toHaveLength(0)

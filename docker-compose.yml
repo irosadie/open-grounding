@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     container_name: open-grounding-postgres
     ports:
-      - "5433:5432"
+      - "5435:5432"
     environment:
       POSTGRES_DB: open_grounding
       POSTGRES_USER: postgres

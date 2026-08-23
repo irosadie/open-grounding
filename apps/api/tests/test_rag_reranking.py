@@ -55,4 +55,4 @@ def test_evidence_gate_has_no_numeric_confidence_and_bounded_retry() -> None:
     assert (high.level, high.route, high.should_retry) == (EvidenceLevel.HIGH, QueryRoute.GROUNDED, False)
     assert (medium.level, medium.should_retry) == (EvidenceLevel.MEDIUM, True)
     assert (retried_medium.route, retried_medium.should_retry) == (QueryRoute.CLARIFY, False)
-    assert (none.level, none.route) == (EvidenceLevel.NONE, QueryRoute.ABSTAIN)
+    assert (none.level, none.route) == (EvidenceLevel.NONE, QueryRoute.ANSWERED)

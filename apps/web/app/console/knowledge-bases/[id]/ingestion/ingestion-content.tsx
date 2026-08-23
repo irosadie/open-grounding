@@ -6,8 +6,8 @@ import {
   useIngestionConfig,
   useUpsertIngestionConfig,
 } from "$/hooks/transactions/use-ingestion-config"
-import { ingestionConfigSchema } from "@open-grounding/schemas"
-import type { IngestionConfigInput } from "@open-grounding/schemas"
+import { PARSER_OPTIONS, ingestionConfigSchema } from "@open-grounding/schemas"
+import type { IngestionConfigInput, ParserOption } from "@open-grounding/schemas"
 import { AlertTriangle, Save } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -19,6 +19,23 @@ const DEFAULT_VALUES: IngestionConfigInput = {
   minAggregateConfidence: 0.5,
   minPageCoverage: 0.5,
   autoReview: false,
+  parser: "auto",
+  doclingServeUrl: null,
+  doclingServeApiKey: null,
+}
+
+const PARSER_LABELS: Record<ParserOption, string> = {
+  auto: "Auto (recommended)",
+  docling_serve: "Docling Serve (remote HTTP)",
+  docling_inprocess: "Docling In-Process",
+  pdfminer: "pdfminer (basic)",
+}
+
+const PARSER_DESCRIPTIONS: Record<ParserOption, string> = {
+  auto: "Automatically selects the best available parser: Docling Serve → Docling In-Process → pdfminer.",
+  docling_serve: "Delegates conversion to a remote docling-serve instance via HTTP. Requires a serve URL.",
+  docling_inprocess: "Runs docling locally inside the worker process. Requires the parsing extra to be installed.",
+  pdfminer: "Uses pdfminer for basic PDF text extraction. No AI models required.",
 }
 
 type ThresholdFieldProps = {
@@ -77,6 +94,11 @@ export default function IngestionContent({ knowledgeBaseId }: Props) {
         minAggregateConfidence: config.minAggregateConfidence,
         minPageCoverage: config.minPageCoverage,
         autoReview: config.autoReview,
+        parser: (PARSER_OPTIONS as readonly string[]).includes(config.parser)
+          ? (config.parser as ParserOption)
+          : "auto",
+        doclingServeUrl: config.doclingServeUrl,
+        doclingServeApiKey: null, // write-only — never pre-fill from server
       })
     }
   }, [config])
@@ -114,6 +136,113 @@ export default function IngestionContent({ knowledgeBaseId }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Parser Selection */}
+      <PanelCard
+        title="Document Parser"
+        description="Controls which parser is used to extract text from documents in this knowledge base."
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="parser"
+              className="text-sm font-medium text-gray-700"
+            >
+              Parser
+            </label>
+            <select
+              id="parser"
+              value={form.parser}
+              onChange={(e) => {
+                setField("parser", e.target.value as ParserOption)
+                if (e.target.value !== "docling_serve") {
+                  setField("doclingServeUrl", null)
+                }
+              }}
+              className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            >
+              {PARSER_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {PARSER_LABELS[opt]}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500">
+              {PARSER_DESCRIPTIONS[form.parser]}
+            </p>
+          </div>
+
+          {form.parser === "docling_serve" ? (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
+                <label
+                  htmlFor="doclingServeUrl"
+                  className="text-sm font-medium text-gray-700"
+                >
+                  Docling Serve URL
+                </label>
+                <p className="text-xs text-gray-500">
+                  Base URL of the docling-serve instance for this knowledge base
+                  (e.g. http://localhost:5001). Overrides the global server
+                  setting.
+                </p>
+                <input
+                  id="doclingServeUrl"
+                  type="url"
+                  placeholder="http://localhost:5001"
+                  value={form.doclingServeUrl ?? ""}
+                  onChange={(e) =>
+                    setField(
+                      "doclingServeUrl",
+                      e.target.value.trim() || null,
+                    )
+                  }
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="doclingServeApiKey"
+                    className="text-sm font-medium text-gray-700"
+                  >
+                    API Key
+                  </label>
+                  {config?.doclingServeApiKeySet && !form.doclingServeApiKey ? (
+                    <span className="rounded-full bg-success-100 px-2 py-0.5 text-xs font-medium text-success-700">
+                      Key saved
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-xs text-gray-500">
+                  Authentication key sent as{" "}
+                  <code className="font-mono">X-Api-Key</code> header on every
+                  request. Leave blank to keep the existing key.
+                </p>
+                <input
+                  id="doclingServeApiKey"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={
+                    config?.doclingServeApiKeySet
+                      ? "Enter new key to replace"
+                      : "Enter API key"
+                  }
+                  value={form.doclingServeApiKey ?? ""}
+                  onChange={(e) =>
+                    setField(
+                      "doclingServeApiKey",
+                      e.target.value || null,
+                    )
+                  }
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </PanelCard>
+
       {/* Auto Review Toggle */}
       <PanelCard
         title="Human Review"

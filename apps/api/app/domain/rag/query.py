@@ -7,8 +7,10 @@ from unicodedata import normalize
 
 class QueryRoute(StrEnum):
     GROUNDED = "grounded"
+    ANSWERED = "answered"
     CLARIFY = "clarify"
     ABSTAIN = "abstain"
+    REFUSED = "refused"
 
 
 class EvidenceLevel(StrEnum):
@@ -27,14 +29,14 @@ class EvidenceDecision:
 
 def gate_evidence(*, candidate_count: int, independent_source_count: int, top_score: float | None, retry_attempted: bool) -> EvidenceDecision:
     if candidate_count == 0 or top_score is None:
-        return EvidenceDecision(EvidenceLevel.NONE, False, QueryRoute.ABSTAIN)
+        return EvidenceDecision(EvidenceLevel.NONE, False, QueryRoute.ANSWERED)
     if top_score >= 0.8 and independent_source_count >= 2:
         return EvidenceDecision(EvidenceLevel.HIGH, False, QueryRoute.GROUNDED)
     if top_score >= 0.5:
         return EvidenceDecision(EvidenceLevel.MEDIUM, not retry_attempted, QueryRoute.CLARIFY if retry_attempted else QueryRoute.GROUNDED)
     if top_score >= 0.25:
         return EvidenceDecision(EvidenceLevel.LOW, not retry_attempted, QueryRoute.GROUNDED)
-    return EvidenceDecision(EvidenceLevel.LOW, False, QueryRoute.CLARIFY)
+    return EvidenceDecision(EvidenceLevel.LOW, False, QueryRoute.ANSWERED)
 
 
 @dataclass(frozen=True)
@@ -50,9 +52,8 @@ def normalize_query(message: str, *, max_chars: int) -> str:
 
 
 def plan_query(message: str, *, max_chars: int, knowledge_base_ids: tuple[str, ...]) -> QueryPlan:
+    del knowledge_base_ids
     normalized = normalize_query(message, max_chars=max_chars)
     if not normalized:
         return QueryPlan(message, normalized, QueryRoute.CLARIFY, "A question is required.")
-    if not knowledge_base_ids:
-        return QueryPlan(message, normalized, QueryRoute.ABSTAIN, "No authorized knowledge base was selected.")
     return QueryPlan(message, normalized, QueryRoute.GROUNDED, None)

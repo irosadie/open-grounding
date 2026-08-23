@@ -2,7 +2,7 @@
 
 import type { PlannerOverrideInput } from "@open-grounding/schemas"
 import type { RagCitationResponse } from "@open-grounding/types"
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 const STREAM_BASE = "/api/stream"
 
@@ -59,7 +59,8 @@ export const parseSseChunk = (chunk: string): ParsedEvent[] => {
         const data = JSON.parse(dataLine) as Record<string, unknown>
         events.push({ event: eventName, data })
       } catch {
-        return events
+        // BUG-WEB-03: skip only the malformed block, not the rest of the chunk
+        continue
       }
     }
   }
@@ -115,6 +116,14 @@ export const useRagQueryStream = () => {
   const [tasks, setTasks] = useState<Array<Record<string, unknown>>>([])
   const [resume, setResume] = useState<Record<string, unknown> | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  // BUG-WEB-02: abort any in-flight stream when the component unmounts to
+  // prevent state updates on an unmounted component and avoid resource leaks.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort()
+    }
+  }, [])
 
   const reset = useCallback(() => {
     setState("idle")

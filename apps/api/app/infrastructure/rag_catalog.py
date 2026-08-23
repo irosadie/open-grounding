@@ -22,6 +22,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     Uuid,
     select,
@@ -2454,6 +2455,9 @@ class IngestionConfigRecord(Base):
     min_aggregate_confidence: Mapped[float] = mapped_column(nullable=False, default=0.5)
     min_page_coverage: Mapped[float] = mapped_column(nullable=False, default=0.5)
     auto_review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    parser: Mapped[str] = mapped_column(String(32), nullable=False, default="auto")
+    docling_serve_url: Mapped[str | None] = mapped_column(String(2048), nullable=True, default=None)
+    docling_serve_api_key_enc: Mapped[str | None] = mapped_column(Text(), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
 
@@ -2470,6 +2474,9 @@ def _to_ingestion_config(row: IngestionConfigRecord) -> IngestionConfig:
         min_aggregate_confidence=row.min_aggregate_confidence,
         min_page_coverage=row.min_page_coverage,
         auto_review=row.auto_review,
+        parser=row.parser,
+        docling_serve_url=row.docling_serve_url,
+        docling_serve_api_key_enc=row.docling_serve_api_key_enc,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -2499,6 +2506,9 @@ class SqlAlchemyIngestionConfigRepository:
         min_aggregate_confidence: float,
         min_page_coverage: float,
         auto_review: bool,
+        parser: str = "auto",
+        docling_serve_url: str | None = None,
+        docling_serve_api_key_enc: str | None = None,
     ) -> IngestionConfig:
         result = await self._session.execute(
             select(IngestionConfigRecord).where(
@@ -2519,6 +2529,9 @@ class SqlAlchemyIngestionConfigRepository:
         row.min_aggregate_confidence = min_aggregate_confidence
         row.min_page_coverage = min_page_coverage
         row.auto_review = auto_review
+        row.parser = parser
+        row.docling_serve_url = docling_serve_url
+        row.docling_serve_api_key_enc = docling_serve_api_key_enc
         await self._session.commit()
         await self._session.refresh(row)
         return _to_ingestion_config(row)

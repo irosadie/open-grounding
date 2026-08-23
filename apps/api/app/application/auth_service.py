@@ -37,7 +37,7 @@ class AuthService:
         return {"tokens": tokens}
 
     async def logout(self, *, user_id: str, session_id: str, access_token: str) -> None:
-        await logout_user(self._repository, user_id=user_id, session_id=session_id, access_token=access_token)
+        await logout_user(self._repository, self._settings, user_id=user_id, session_id=session_id, access_token=access_token)
 
     async def current_user(self, *, user_id: str, session_id: str) -> dict[str, object]:
         user, session = await get_current_user(self._repository, user_id=user_id, session_id=session_id)

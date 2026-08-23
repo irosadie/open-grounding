@@ -1,7 +1,7 @@
-"""Grounded query orchestration: plan → retrieve → evidence → generate → trace.
+"""LLM-first query orchestration: plan → guardrails → retrieve → generate → trace.
 
-Feature-flagged by ``rag_query_enabled``. On any gate failure the service falls
-back to a safe abstention, never an ungrounded answer.
+Feature-flagged by ``rag_query_enabled``. Retrieval evidence controls provenance
+and citations; it does not prevent a safe LLM answer when evidence is absent.
 """
 
 from __future__ import annotations
@@ -9,30 +9,32 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import replace
+from datetime import UTC
 from time import monotonic
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.application.evidence_merger import merge_evidence
+from app.application.mcp_runtime_service import McpRuntimeService
+from app.application.query_planner import QueryPlanner
 from app.application.rag_generation import RagGenerationService
 from app.application.rag_hybrid_retrieval import RagHybridRetrievalService
 from app.application.rag_query_admission import RagQueryAdmission
-from app.application.query_planner import QueryPlanner
 from app.application.task_executor import TaskExecutor
 from app.application.task_resumer import TaskResumer
-from app.application.mcp_runtime_service import McpRuntimeService
 from app.core.dev_trace import get_tracer
 from app.core.settings import Settings
 from app.domain.rag.answer import GroundedAnswer
 from app.domain.rag.answer_trace_repositories import AnswerRunRepository, AnswerTraceDetailRepository
+from app.domain.rag.answer_validation import validate_answer
 from app.domain.rag.catalog import IndexGeneration, KnowledgeBaseStatus
 from app.domain.rag.complexity_scorer import score as complexity_score
-from app.domain.rag.confidence import ConfidenceFeatureExtractor, ConfidenceScorer, override_route_for_confidence
+from app.domain.rag.confidence import ConfidenceFeatureExtractor, ConfidenceScorer
 from app.domain.rag.conversation_repositories import ConversationHistoryRepository
 from app.domain.rag.evidence import EvidenceChunk, build_evidence_context
+from app.domain.rag.guardrails import evaluate_answer, evaluate_query
 from app.domain.rag.policy import qdrant_policy_filter
 from app.domain.rag.query import EvidenceDecision, EvidenceLevel, QueryRoute, gate_evidence, plan_query
-from app.domain.rag.task_plan import TaskSpec
 from app.domain.rag.repositories import (
     DecompositionConfigRepository,
     IndexGenerationRepository,
@@ -40,6 +42,7 @@ from app.domain.rag.repositories import (
     KnowledgeBaseRepository,
     PlannerConfigRepository,
 )
+from app.domain.rag.task_plan import TaskSpec
 from app.domain.tenant_context import TenantContext
 from app.infrastructure.rag_metrics import record_query_metric
 
@@ -161,6 +164,18 @@ class RagQueryService:
         # Persist user message before pipeline
         await self._save_turn(tenant=tenant, conversation_id=conversation_id, speaker="user", content=message)
 
+        guardrail = evaluate_query(message)
+        if not guardrail.allowed:
+            return await self._finish_refused(
+                tenant=tenant,
+                plan=plan,
+                trace_id=trace_id,
+                conversation_id=conversation_id,
+                limitation=guardrail.reason or "This request cannot be answered due to safety guardrails.",
+                decomposition={"triggered": False, "reason": "guardrail"},
+                memory={"triggered": False, "chunks_retrieved": 0},
+            )
+
         # Load recent conversation messages and inject as chat history
         conversation_messages = await self._recent_messages(tenant=tenant, conversation_id=conversation_id)
 
@@ -200,7 +215,8 @@ class RagQueryService:
                 decomposition=decomposition_meta,
                 memory=memory_meta,
             )
-        if plan.route is not QueryRoute.GROUNDED:
+
+        if plan.route is QueryRoute.CLARIFY:
             return await self._finish_abstain(
                 tenant=tenant,
                 plan=plan,
@@ -212,30 +228,13 @@ class RagQueryService:
             )
 
         authorized_ids = await self._authorized_knowledge_base_ids(tenant=tenant, knowledge_base_ids=knowledge_base_ids)
-        if not authorized_ids:
-            return await self._finish_abstain(
-                tenant=tenant,
-                plan=plan,
-                trace_id=trace_id,
-                conversation_id=conversation_id,
-                limitation="No requested knowledge base is available to this tenant.",
-                decomposition=decomposition_meta,
-                memory=memory_meta,
-            )
+        generations = (
+            await self._generations.find_active_for_knowledge_bases(tenant_id=tenant.tenant_id, knowledge_base_ids=authorized_ids)
+            if authorized_ids
+            else []
+        )
 
-        generations = await self._generations.find_active_for_knowledge_bases(tenant_id=tenant.tenant_id, knowledge_base_ids=authorized_ids)
-        if not generations:
-            return await self._finish_abstain(
-                tenant=tenant,
-                plan=plan,
-                trace_id=trace_id,
-                conversation_id=conversation_id,
-                limitation="No active validated document generation is available.",
-                decomposition=decomposition_meta,
-                memory=memory_meta,
-            )
-
-        return await self._run_grounded(
+        return await self._run_answer(
             tenant=tenant,
             plan=plan,
             trace_id=trace_id,
@@ -248,7 +247,7 @@ class RagQueryService:
             session=session,
         )
 
-    async def _run_grounded(
+    async def _run_answer(
         self,
         *,
         tenant: TenantContext,
@@ -263,15 +262,16 @@ class RagQueryService:
         planner_meta: dict[str, object] | None = None,
         session: "AsyncSession | None" = None,
     ) -> dict[str, object]:
-        """Execute retrieval + generation. Returns grounded answer or abstain fallback."""
+        """Run optional retrieval, then generate a grounded or general answer."""
         active_generation_ids = tuple(generation.id for generation in generations)
         collection = self._settings.rag_query_profile_id or "rag"
+        retrieval_available = bool(authorized_ids and generations and self._retrieval)
 
         # Resolve retrieval profile from active index profile
         embedding_profile_id: str | None = None
         sparse_profile_id: str | None = None
         index_profile_id: str | None = None
-        if self._index_profiles:
+        if retrieval_available and self._index_profiles:
             index_profile = await self._index_profiles.find_active(tenant_id=tenant.tenant_id)
             if index_profile is not None:
                 index_profile_id = index_profile.id
@@ -279,24 +279,14 @@ class RagQueryService:
                 sparse_profile_id = index_profile.sparse_profile_id
                 collection = index_profile.collection or collection
 
-        if embedding_profile_id is None:
-            return await self._finish_abstain(
-                tenant=tenant,
-                plan=plan,
-                trace_id=trace_id,
-                conversation_id=conversation_id,
-                limitation="No active index profile with an embedding model is available.",
-                decomposition=decomposition_meta,
-                memory=memory_meta,
-            )
-
         query_text = getattr(plan, "standalone_query", None) or getattr(plan, "original_query", "")
         questions = [query_text]
         supplementary = (memory_meta or {}).get("context_block")
+        merged: list[dict[str, object]] = []
         task_meta: list[dict[str, object]] = []
         resume_meta: dict[str, object] | None = None
         planner_meta = decomposition_meta.get("planner") if isinstance(decomposition_meta.get("planner"), dict) else None
-        if planner_meta and planner_meta.get("triggered"):
+        if planner_meta and planner_meta.get("triggered") and retrieval_available and embedding_profile_id:
             planned = await self._execute_planned_tasks(
                 tenant=tenant,
                 query=query_text,
@@ -329,7 +319,7 @@ class RagQueryService:
         # Parallel retrieval across sub-queries when the task planner is not active.
         dense_results: list[list[dict[str, object]]] = []
         sparse_results: list[list[dict[str, object]]] = []
-        if self._retrieval and questions:
+        if retrieval_available and embedding_profile_id and questions:
             results = await asyncio.gather(
                 *[
                     self._retrieval.retrieve(
@@ -354,19 +344,8 @@ class RagQueryService:
                 dense_results.append(dense)
                 sparse_results.append(sparse)
 
-        if questions:
+        if questions and (dense_results or sparse_results):
             merged, _ = merge_evidence([*dense_results, *sparse_results], top_k=self._settings.rag_context_max_chunks)
-
-        if not merged and not supplementary:
-            return await self._finish_abstain(
-                tenant=tenant,
-                plan=plan,
-                trace_id=trace_id,
-                conversation_id=conversation_id,
-                limitation="No validated evidence is available yet.",
-                decomposition=decomposition_meta,
-                memory=memory_meta,
-            )
 
         # Build evidence context
         evidence_chunks = _to_evidence_chunks(merged, tenant_id=tenant.tenant_id)
@@ -378,7 +357,7 @@ class RagQueryService:
             output_reserve=self._settings.rag_generation_max_output_tokens,
         )
 
-        # Gate evidence — skip gate if MCP supplementary context is available
+        # Evidence quality determines provenance, not whether the LLM may answer.
         decision = gate_evidence(
             candidate_count=len(merged),
             independent_source_count=_independent_sources(merged),
@@ -394,18 +373,6 @@ class RagQueryService:
             budget=self._settings.rag_context_token_budget,
             verbose_meta={"gated": decision.route is QueryRoute.GROUNDED},
         )
-        if decision.route is not QueryRoute.GROUNDED and not supplementary:
-            return await self._finish_abstain(
-                tenant=tenant,
-                plan=plan,
-                trace_id=trace_id,
-                conversation_id=conversation_id,
-                limitation="Evidence quality is insufficient to answer this question.",
-                decomposition=decomposition_meta,
-                memory=memory_meta,
-                decision=decision,
-            )
-
         # Generate
         if self._generation is None:
             return await self._finish_abstain(
@@ -426,7 +393,41 @@ class RagQueryService:
             profile_id=generation_profile_id,
             supplementary=supplementary,
             messages=conversation_messages or [],
+            grounded=decision.route is QueryRoute.GROUNDED,
         )
+
+        answer_text = _render_answer(answer)
+        answer_guardrail = evaluate_answer(answer_text)
+        if not answer_guardrail.allowed:
+            return await self._finish_refused(
+                tenant=tenant,
+                plan=plan,
+                trace_id=trace_id,
+                conversation_id=conversation_id,
+                limitation=answer_guardrail.reason or "The generated answer was blocked by safety guardrails.",
+                decomposition=decomposition_meta,
+                memory=memory_meta,
+            )
+
+        grounded = decision.route is QueryRoute.GROUNDED and validate_answer(answer=answer, evidence=context).is_valid
+        if not grounded:
+            limitation = (
+                None
+                if decision.route is QueryRoute.GROUNDED
+                else "This answer is not grounded in the selected knowledge bases."
+            )
+            if decision.route is QueryRoute.GROUNDED:
+                limitation = "This answer could not be fully grounded in the selected knowledge bases."
+            return await self._finish_answered(
+                tenant=tenant,
+                plan=plan,
+                trace_id=trace_id,
+                conversation_id=conversation_id,
+                answer=answer_text,
+                limitation=limitation,
+                decomposition=decomposition_meta,
+                memory=memory_meta,
+            )
 
         return await self._finish_grounded(
             tenant=tenant,
@@ -470,7 +471,12 @@ class RagQueryService:
         owns_session = session is None
         active_session = session
         if active_session is None:
-            active_session = create_session_factory(self._settings)()
+            # BUG-API-05: use the module-level singleton factory instead of
+            # creating a new engine, and enter the session as a context manager
+            # so it is properly closed (and rolled back on error) even if an
+            # exception escapes the try/finally below.
+            from app.infrastructure.database import _get_session_factory
+            active_session = _get_session_factory()()
         try:
             profile = await SqlAlchemyModelProfileRepository(active_session).find_by_id(tenant_id=tenant.tenant_id, profile_id=config.model_profile_id)
             if profile is None:
@@ -574,6 +580,57 @@ class RagQueryService:
             logger.warning("Decomposition skipped: %s", e)
             return []
 
+    async def _finish_answered(
+        self,
+        *,
+        tenant: TenantContext,
+        plan: object,
+        trace_id: str,
+        conversation_id: str | None,
+        answer: str,
+        limitation: str | None,
+        decomposition: dict[str, object],
+        memory: dict[str, object],
+    ) -> dict[str, object]:
+        return await self._record_and_return(
+            tenant=tenant,
+            plan=plan,
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            route=QueryRoute.ANSWERED.value,
+            evidence_level=EvidenceLevel.NONE.value,
+            citations=(),
+            answer=answer,
+            limitation=limitation,
+            decomposition=decomposition,
+            memory=memory,
+        )
+
+    async def _finish_refused(
+        self,
+        *,
+        tenant: TenantContext,
+        plan: object,
+        trace_id: str,
+        conversation_id: str | None,
+        limitation: str,
+        decomposition: dict[str, object],
+        memory: dict[str, object],
+    ) -> dict[str, object]:
+        return await self._record_and_return(
+            tenant=tenant,
+            plan=plan,
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            route=QueryRoute.REFUSED.value,
+            evidence_level=EvidenceLevel.NONE.value,
+            citations=(),
+            answer=None,
+            limitation=limitation,
+            decomposition=decomposition,
+            memory=memory,
+        )
+
     async def _finish_abstain(
         self,
         *,
@@ -654,36 +711,16 @@ class RagQueryService:
                 )
                 # Score (task 5.4)
                 if self._confidence_scorer is not None:
-                    from app.domain.rag.confidence import ConfidenceConfigRepository
                     confidence_score = await self._confidence_scorer.score(
                         tenant_id=tenant.tenant_id,
                         profile_id=profile_id,
                         feature_vector=feature_vector,
                     )
-                    from app.infrastructure.rag_catalog import SqlConfidenceConfigRepository
                     if hasattr(self._confidence_scorer, "_configs"):
                         confidence_config = await self._confidence_scorer._configs.get_or_default(  # type: ignore[union-attr]
                             tenant_id=tenant.tenant_id,
                             retrieval_profile_id=profile_id,
                         )
-                    # Override route to abstain if below threshold
-                    if confidence_config is not None:
-                        new_route = override_route_for_confidence(
-                            route=QueryRoute.GROUNDED.value,
-                            score=confidence_score,
-                            abstention_threshold=confidence_config.abstention_threshold,
-                        )
-                        if new_route != QueryRoute.GROUNDED.value:
-                            run_result = await self._finish_abstain(
-                                tenant=tenant,
-                                plan=plan,
-                                trace_id=str(uuid4()),
-                                conversation_id=conversation_id,
-                                limitation="Confidence score below abstention threshold.",
-                                decomposition=decomposition,
-                                memory=memory,
-                            )
-                            return run_result
         except Exception:
             logger.warning("Confidence scoring skipped", exc_info=True)
 
@@ -879,7 +916,7 @@ class RagQueryService:
                 conversation_id=conversation_id,
                 speaker=ConversationSpeaker.USER if speaker == "user" else ConversationSpeaker.ASSISTANT,
                 content=content,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC).replace(tzinfo=None),
             )
             await self._conversations.save_message(message=message)
         except Exception:
@@ -916,8 +953,13 @@ class RagQueryService:
         memory_enabled: bool | None,
         session: "AsyncSession | None",
     ) -> dict[str, object]:
-        empty = {"triggered": False, "chunks_retrieved": 0, "oldest_memory_age_days": None, "context_block": None}
-        if memory_enabled is False or session is None or not knowledge_base_ids:
+        empty: dict[str, object] = {"triggered": False, "chunks_retrieved": 0, "oldest_memory_age_days": None, "context_block": None}
+        # BUG-API-13: session is always provided by the FastAPI dependency in
+        # normal flow so the `session is None` guard here is misleading. Keep
+        # the guard for safety but make the condition explicit.
+        if memory_enabled is False or not knowledge_base_ids:
+            return empty
+        if session is None:
             return empty
         try:
             from app.application.memory_retriever import MemoryRetriever

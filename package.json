@@ -38,6 +38,10 @@
     "skills:validate": "node .agents/scripts/validate-skills.mjs",
     "web:validate-network-boundaries": "node .agents/scripts/validate-web-ui-network-boundaries.mjs"
   },
+  "overrides": {
+    "@tiptap/core": "3.30.2",
+    "@tiptap/pm": "3.30.2"
+  },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "turbo": "^2.6.3"

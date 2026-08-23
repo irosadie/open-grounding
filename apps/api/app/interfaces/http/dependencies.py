@@ -21,7 +21,7 @@ from app.application.rag_query_admission import RagQueryAdmission
 from app.application.rag_query_service import RagQueryService
 from app.application.rag_trace_service import RagTraceService
 from app.application.retrieval_config_service import RetrievalConfigService
-from app.core.security import decode_access_token
+from app.core.security import decode_access_token_async
 from app.core.settings import Settings, get_settings
 from app.domain.errors import DomainError
 from app.domain.models import UserRole
@@ -66,7 +66,7 @@ async def get_auth_context(
     token = authorization.removeprefix("Bearer ").strip()
     if not token:
         raise DomainError.unauthorized()
-    payload = decode_access_token(token, settings)
+    payload = await decode_access_token_async(token, settings)
     if payload.get("status") == "SUSPENDED":
         raise DomainError.forbidden("Account is suspended")
     if payload.get("type") not in {"admin", "user"}:

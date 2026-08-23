@@ -16,6 +16,8 @@ REFRESH_TOKEN_EXPIRY_SECONDS = 7 * 24 * 60 * 60
 JWT_ISSUER = "reva-api"
 JWT_AUDIENCE = "reva-client"
 password_hash = PasswordHash.recommended()
+
+# In-process fallback — only used when Redis is temporarily unavailable.
 revoked_tokens: set[str] = set()
 
 
@@ -69,7 +71,16 @@ def _encode(claims: dict[str, str], secret: str, expiry_seconds: int) -> str:
     )
 
 
+async def decode_access_token_async(token: str, settings: Settings) -> dict[str, str]:
+    """Async decode — checks Redis revocation store. Use this in all request handlers."""
+    from app.infrastructure.token_revocation import is_token_revoked_redis
+    if await is_token_revoked_redis(token, settings.redis_url):
+        raise DomainError.invalid_token("Token has been revoked")
+    return _decode(token, settings.jwt_secret)
+
+
 def decode_access_token(token: str, settings: Settings) -> dict[str, str]:
+    """Sync fallback — checks in-process set only. Kept for compatibility."""
     if token in revoked_tokens:
         raise DomainError.invalid_token("Token has been revoked")
     return _decode(token, settings.jwt_secret)
@@ -94,4 +105,11 @@ def new_session_id() -> str:
 
 
 def revoke_token(token: str) -> None:
+    """In-process only fallback. Prefer revoke_token_async in async contexts."""
     revoked_tokens.add(token)
+
+
+async def revoke_token_async(token: str, settings: Settings) -> None:
+    """Revoke token in Redis with TTL = ACCESS_TOKEN_EXPIRY_SECONDS."""
+    from app.infrastructure.token_revocation import revoke_token_redis
+    await revoke_token_redis(token, settings.redis_url)

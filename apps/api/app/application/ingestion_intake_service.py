@@ -167,39 +167,73 @@ class IngestionIntakeService:
         )
 
     async def _enqueue_parse(self, document_version_id: str, tenant_id: str) -> None:
-        """Enqueue parse job to BullMQ ingestion.parse queue."""
+        """Enqueue parse job to BullMQ ingestion.parse queue.
+
+        Uses the BullMQ v4/v5 wire format: a hash with all required fields
+        (id, name, data, opts, timestamp, delay, priority, stacktrace,
+        returnvalue, attemptsMade) and the job id pushed onto the wait list.
+        """
         redis_url = getattr(self._settings, "redis_url", "redis://127.0.0.1:6379")
+        import time as _time
         job_id = f"auto:{document_version_id}"
         queue_name = "ingestion.parse"
         job_key = f"bull:{queue_name}:{job_id}"
+        timestamp = int(_time.time() * 1000)
         data = json.dumps({
             "documentVersionId": document_version_id,
             "tenantId": tenant_id,
         })
         client = aioredis.from_url(redis_url, decode_responses=True)
         try:
-            await client.hset(job_key, "data", data)
+            await client.hset(job_key, mapping={
+                "id": job_id,
+                "name": "parse",
+                "data": data,
+                "opts": json.dumps({"attempts": 3, "backoff": {"type": "exponential", "delay": 1000}}),
+                "timestamp": str(timestamp),
+                "delay": "0",
+                "priority": "0",
+                "stacktrace": "[]",
+                "returnvalue": "null",
+                "attemptsMade": "0",
+            })
             await client.lpush(f"bull:{queue_name}:wait", job_id)
             logger.info("Enqueued parse job for %s", document_version_id)
         finally:
             await client.aclose()
 
     async def _enqueue_chunking(self, *, tenant: TenantContext, version: object) -> bool:
-        """Enqueue chunk job to BullMQ ingestion.chunk queue after approval."""
+        """Enqueue chunk job to BullMQ ingestion.chunk queue after approval.
+
+        Uses the BullMQ v4/v5 wire format (same as _enqueue_parse).
+        """
         version_id = getattr(version, "id", None)
         if version_id is None:
             return False
         redis_url = getattr(self._settings, "redis_url", "redis://127.0.0.1:6379")
+        import time as _time
         job_id = f"auto:{version_id}"
         queue_name = "ingestion.chunk"
         job_key = f"bull:{queue_name}:{job_id}"
+        timestamp = int(_time.time() * 1000)
         data = json.dumps({
             "documentVersionId": version_id,
             "tenantId": tenant.tenant_id,
         })
         client = aioredis.from_url(redis_url, decode_responses=True)
         try:
-            await client.hset(job_key, "data", data)
+            await client.hset(job_key, mapping={
+                "id": job_id,
+                "name": "chunk",
+                "data": data,
+                "opts": json.dumps({"attempts": 3, "backoff": {"type": "exponential", "delay": 1000}}),
+                "timestamp": str(timestamp),
+                "delay": "0",
+                "priority": "0",
+                "stacktrace": "[]",
+                "returnvalue": "null",
+                "attemptsMade": "0",
+            })
             await client.lpush(f"bull:{queue_name}:wait", job_id)
             logger.info("Enqueued chunk job for %s", version_id)
             return True
@@ -208,10 +242,6 @@ class IngestionIntakeService:
             return False
         finally:
             await client.aclose()
-
-    async def get_pending_review_count(self, *, tenant: TenantContext) -> int:
-        """Return count of document versions in NEEDS_REVIEW state for the tenant."""
-        return await self._version_repo.count_needs_review(tenant_id=tenant.tenant_id)
 
     async def get_status(
         self,
@@ -233,6 +263,11 @@ class IngestionIntakeService:
 
     async def soft_delete(self, *, tenant: TenantContext, document_version_id: str) -> None:
         """Mark a document version as DELETING (removes from active retrieval)."""
+        # BUG-API-12: check existence first so callers get a 404 instead of
+        # a silent no-op when the version doesn't exist or belongs to another tenant.
+        version = await self._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=document_version_id)
+        if version is None:
+            raise DomainError("VERSION_NOT_FOUND", "Document version not found", 404)
         await self._version_repo.update_lifecycle_state(
             tenant_id=tenant.tenant_id,
             version_id=document_version_id,
@@ -243,3 +278,64 @@ class IngestionIntakeService:
     def compute_checksum(data: bytes) -> str:
         """Compute SHA-256 checksum of raw bytes."""
         return hashlib.sha256(data).hexdigest()
+
+    # --- BUG-API-08: public facade methods so routers never touch private attrs ---
+
+    async def get_version_by_id(self, *, tenant: TenantContext, version_id: str) -> object | None:
+        """Return a DocumentVersion or None — public wrapper over _version_repo."""
+        return await self._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
+
+    async def list_versions_by_knowledge_base(self, *, tenant: TenantContext, knowledge_base_id: str) -> list[object]:
+        """Return (version, title, doc_id) rows — public wrapper over _version_repo."""
+        return await self._version_repo.list_by_knowledge_base(
+            tenant_id=tenant.tenant_id,
+            knowledge_base_id=knowledge_base_id,
+        )
+
+    async def patch_parsed_text(self, *, tenant: TenantContext, version_id: str, text: str) -> object:
+        """Patch parsed text on a version — public wrapper over _version_repo."""
+        return await self._version_repo.patch_parsed_text(
+            tenant_id=tenant.tenant_id, version_id=version_id, text=text
+        )
+
+    async def update_lifecycle_state(self, *, tenant: TenantContext, version_id: str, lifecycle_state: str) -> object:
+        """Update lifecycle state — public wrapper over _version_repo."""
+        return await self._version_repo.update_lifecycle_state(
+            tenant_id=tenant.tenant_id,
+            version_id=version_id,
+            lifecycle_state=lifecycle_state,
+        )
+
+    async def approve_version(self, *, tenant: TenantContext, version_id: str) -> dict[str, object]:
+        """Approve parsed text: transition to NORMALIZING and enqueue chunking."""
+        from app.domain.errors import DomainError
+        from app.domain.rag.catalog import DocumentVersionLifecycleState
+
+        version = await self._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
+        if version is None:
+            raise DomainError("NOT_FOUND", "Document version not found", 404)
+        if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
+            raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
+        updated = await self._version_repo.update_lifecycle_state(
+            tenant_id=tenant.tenant_id,
+            version_id=version_id,
+            lifecycle_state="NORMALIZING",
+        )
+        enqueued = await self._enqueue_chunking(tenant=tenant, version=updated)
+        return {"version": updated, "enqueued": enqueued}
+
+    async def reject_version(self, *, tenant: TenantContext, version_id: str) -> object:
+        """Reject parsed text: transition to FAILED."""
+        from app.domain.errors import DomainError
+        from app.domain.rag.catalog import DocumentVersionLifecycleState
+
+        version = await self._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
+        if version is None:
+            raise DomainError("NOT_FOUND", "Document version not found", 404)
+        if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
+            raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
+        return await self._version_repo.update_lifecycle_state(
+            tenant_id=tenant.tenant_id,
+            version_id=version_id,
+            lifecycle_state="FAILED",
+        )

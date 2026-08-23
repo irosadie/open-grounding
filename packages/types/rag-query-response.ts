@@ -7,8 +7,9 @@ export type RagCitationResponse = {
 }
 
 export type RagQueryResponse = {
-  answer: Record<string, unknown> | null
-  route: "grounded" | "clarify" | "abstain"
+  // BUG-PKG-01: backend _render_answer() returns a string, not a Record.
+  answer: string | null
+  route: "grounded" | "answered" | "clarify" | "abstain" | "refused"
   evidenceLevel: "high" | "medium" | "low" | "none"
   citations: RagCitationResponse[]
   limitations: string[]

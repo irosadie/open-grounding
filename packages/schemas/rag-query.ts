@@ -1,16 +1,26 @@
 import { z } from "zod"
 import { plannerOverrideSchema } from "./planner"
 
-export const ragQueryRoutes = ["grounded", "clarify", "abstain"] as const
+export const ragQueryRoutes = [
+  "grounded",
+  "answered",
+  "clarify",
+  "abstain",
+  "refused",
+] as const
+
+export type RagQueryRoute = (typeof ragQueryRoutes)[number]
 
 export const ragQueryRouteLabels = [
   { label: "Grounded", value: "grounded" },
+  { label: "Answered", value: "answered" },
   { label: "Clarify", value: "clarify" },
   { label: "Abstain", value: "abstain" },
+  { label: "Refused", value: "refused" },
 ]
 
 export const getRagQueryRouteLabel = (
-  value: (typeof ragQueryRoutes)[number],
+  value: RagQueryRoute,
 ) => {
   return (
     ragQueryRouteLabels.find((item) => item.value === value)?.label ?? value
@@ -54,17 +64,22 @@ export const ragQuerySchema = z.object({
 
 export type RagQueryProps = z.infer<typeof ragQuerySchema>
 
-export const ragAnswerFeedbackSchema = z.object({
-  rating: z
-    .number()
-    .int()
-    .min(1, "Rating must be between 1 and 5")
-    .max(5, "Rating must be between 1 and 5")
-    .optional(),
-  comment: z
-    .string()
-    .max(2000, "Comment must be 2000 characters or less")
-    .optional(),
-})
+export const ragAnswerFeedbackSchema = z
+  .object({
+    rating: z
+      .number()
+      .int()
+      .min(1, "Rating must be between 1 and 5")
+      .max(5, "Rating must be between 1 and 5")
+      .optional(),
+    comment: z
+      .string()
+      .max(2000, "Comment must be 2000 characters or less")
+      .optional(),
+  })
+  // BUG-PKG-02: require at least one field so empty {} payloads are rejected.
+  .refine((data) => data.rating !== undefined || (data.comment !== undefined && data.comment.length > 0), {
+    message: "At least one of rating or comment must be provided",
+  })
 
 export type RagAnswerFeedbackProps = z.infer<typeof ragAnswerFeedbackSchema>

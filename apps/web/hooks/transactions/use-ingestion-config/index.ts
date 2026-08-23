@@ -46,6 +46,9 @@ export const useUpsertIngestionConfig = (knowledgeBaseId: string) => {
           min_aggregate_confidence: data.minAggregateConfidence,
           min_page_coverage: data.minPageCoverage,
           auto_review: data.autoReview,
+          parser: data.parser,
+          docling_serve_url: data.doclingServeUrl,
+          docling_serve_api_key: data.doclingServeApiKey,
         },
       }),
     onSuccess: () => {

@@ -36,11 +36,14 @@ async def login_user(repo: AuthRepository, settings: Settings, *, email: str, pa
         session_id=session_id,
         settings=settings,
     )
-    await repo.delete_auth_sessions_for_user(user.id)
-    await repo.create_auth_session(
-        session_id=session_id,
-        user_id=user.id,
-        token_hash=hash_session_token(str(tokens["refreshToken"])),
-        expires_at=(datetime.now(UTC) + timedelta(seconds=REFRESH_TOKEN_EXPIRY_SECONDS)).replace(tzinfo=None),
-    )
+    # BUG-API-02: delete + create must be atomic — wrap in a single transaction
+    # so a crash between the two operations cannot leave the user with no session.
+    async with repo.transaction():
+        await repo.delete_auth_sessions_for_user(user.id)
+        await repo.create_auth_session(
+            session_id=session_id,
+            user_id=user.id,
+            token_hash=hash_session_token(str(tokens["refreshToken"])),
+            expires_at=(datetime.now(UTC) + timedelta(seconds=REFRESH_TOKEN_EXPIRY_SECONDS)).replace(tzinfo=None),
+        )
     return user, tokens

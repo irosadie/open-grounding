@@ -11,7 +11,9 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr = Field(max_length=255)
-    password: str = Field(min_length=8, max_length=128)
+    # BUG-API-10: min_length=8 here rejects legacy users with short passwords
+    # at login time. Length validation is only appropriate at registration.
+    password: str = Field(min_length=1, max_length=128)
 
 
 class SuccessEnvelope(BaseModel):
@@ -176,9 +178,9 @@ class MemoryOverride(BaseModel):
 
 class RagQueryRequest(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=120, description="Optional server-owned conversation identifier")
-    message: str = Field(min_length=1, max_length=8_000, description="Question to answer from permitted evidence")
-    knowledge_base_ids: list[str] = Field(min_length=1, max_length=20, description="Knowledge bases the caller may select")
-    mode: str = Field(default="grounded", pattern="^(grounded)$", description="Only grounded mode is supported")
+    message: str = Field(min_length=1, max_length=8_000, description="Question for the LLM; permitted evidence is used when available")
+    knowledge_base_ids: list[str] = Field(min_length=1, max_length=20, description="Knowledge bases that may provide optional evidence")
+    mode: str = Field(default="grounded", pattern="^(grounded)$", description="Compatibility mode; safe requests may still receive a general LLM answer")
     stream: bool = Field(default=False, description="Request an SSE response when enabled")
     decomposition: DecompositionOverride | None = Field(default=None, description="Optional per-request decomposition override")
     planner: PlannerOverride | None = Field(default=None, description="Optional per-request planner override")
@@ -203,8 +205,8 @@ class RagQueryCitationResponse(BaseModel):
 
 
 class RagQueryResponse(BaseModel):
-    answer: dict[str, object] | None = None
-    route: Literal["grounded", "clarify", "abstain"]
+    answer: str | None = None
+    route: Literal["grounded", "answered", "clarify", "abstain", "refused"]
     evidence_level: Literal["high", "medium", "low", "none"]
     citations: list[RagQueryCitationResponse]
     limitations: list[str]
@@ -605,6 +607,9 @@ class IngestionConfigWriteRequest(BaseModel):
     min_aggregate_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     min_page_coverage: float = Field(default=0.5, ge=0.0, le=1.0)
     auto_review: bool = Field(default=False)
+    parser: Literal["auto", "docling_serve", "docling_inprocess", "pdfminer"] = Field(default="auto")
+    docling_serve_url: str | None = Field(default=None)
+    docling_serve_api_key: str | None = Field(default=None)  # write-only, never returned
 
     model_config = {"extra": "forbid"}
 
@@ -617,6 +622,9 @@ class IngestionConfigResponse(BaseModel):
     min_aggregate_confidence: float
     min_page_coverage: float
     auto_review: bool
+    parser: str
+    docling_serve_url: str | None
+    docling_serve_api_key_set: bool
     created_at: str | None
     updated_at: str | None
     is_default: bool

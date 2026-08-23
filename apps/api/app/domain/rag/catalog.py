@@ -265,7 +265,7 @@ class PlannerConfig:
 
 @dataclass(frozen=True)
 class IngestionConfig:
-    """Per-KB configuration for ingestion quality gate and auto-review behavior."""
+    """Per-KB configuration for ingestion quality gate, auto-review, and parser selection."""
 
     id: str
     tenant_id: str
@@ -275,6 +275,14 @@ class IngestionConfig:
     min_aggregate_confidence: float
     min_page_coverage: float
     auto_review: bool
+    # Parser selection: "auto" | "docling_serve" | "docling_inprocess" | "pdfminer"
+    # "auto" preserves existing fallback chain (serve → in-process → pdfminer).
+    parser: str
+    # Optional KB-level docling-serve URL override. Only used when parser="docling_serve".
+    docling_serve_url: str | None
+    # AES-256-GCM encrypted API key for docling-serve. Plain-text MUST NOT be stored here.
+    # Use crypto.encrypt() on write and crypto.decrypt() on read (worker only).
+    docling_serve_api_key_enc: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -289,6 +297,9 @@ INGESTION_CONFIG_DEFAULTS = IngestionConfig(
     min_aggregate_confidence=0.5,
     min_page_coverage=0.5,
     auto_review=False,
+    parser="auto",
+    docling_serve_url=None,
+    docling_serve_api_key_enc=None,
     created_at=datetime.min,
     updated_at=datetime.min,
 )
@@ -309,4 +320,7 @@ class IngestionConfigRepository(Protocol):
         min_aggregate_confidence: float,
         min_page_coverage: float,
         auto_review: bool,
+        parser: str = "auto",
+        docling_serve_url: str | None = None,
+        docling_serve_api_key_enc: str | None = None,
     ) -> IngestionConfig: ...

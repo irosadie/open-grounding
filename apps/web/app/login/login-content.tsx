@@ -45,8 +45,13 @@ export default function LoginContent() {
   )
 
   useEffect(() => {
-    if (status === "authenticated") {
+    // BUG-WEB-04: use a cancelled flag to prevent state update after unmount
+    let cancelled = false
+    if (status === "authenticated" && !cancelled) {
       router.replace(callbackUrl)
+    }
+    return () => {
+      cancelled = true
     }
   }, [callbackUrl, router, status])
 

@@ -12,7 +12,7 @@ import {
 } from "@open-grounding/schemas"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { type FormEvent, useState } from "react"
+import { type FormEvent, useState, useTransition } from "react"
 
 type RegisterErrors = Partial<Record<keyof RegisterProps, string>>
 
@@ -37,6 +37,7 @@ export default function RegisterContent() {
   const router = useRouter()
   const registerMutation = useAuthRegister()
   const loginMutation = useAuthLogin()
+  const [isPendingTransition, startTransition] = useTransition()
   const [formError, setFormError] = useState("")
   const [fieldErrors, setFieldErrors] = useState<RegisterErrors>({})
   const [form, setForm] = useState<RegisterProps>({
@@ -46,7 +47,8 @@ export default function RegisterContent() {
     confirmPassword: "",
   })
 
-  const isPending = registerMutation.isPending || loginMutation.isPending
+  // BUG-WEB-08: include transition pending state so React tracks navigation
+  const isPending = registerMutation.isPending || loginMutation.isPending || isPendingTransition
 
   const handleChange = (field: keyof RegisterProps, value: string) => {
     setForm((current) => ({
@@ -85,7 +87,7 @@ export default function RegisterContent() {
       return
     }
 
-    void (async () => {
+    void startTransition(async () => {
       try {
         const payload = registerPayloadSchema.parse(parsedForm.data)
 
@@ -102,7 +104,7 @@ export default function RegisterContent() {
       } catch (error) {
         setFormError(getErrorMessage(error))
       }
-    })()
+    })
   }
 
   return (

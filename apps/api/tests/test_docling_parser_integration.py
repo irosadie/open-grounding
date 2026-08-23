@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.settings import Settings
+from app.domain.rag.catalog import INGESTION_CONFIG_DEFAULTS
 from app.workers.stages.parse import (
     _DEFAULT_PARSER_PROFILE,
     _parse_with_docling_or_fallback,
@@ -118,6 +120,8 @@ async def test_parse_with_docling_calls_adapter_and_returns_text() -> None:
             mime_type="application/pdf",
             filename="test.pdf",
             tenant_id="tenant-1",
+            settings=Settings(),
+            cfg=INGESTION_CONFIG_DEFAULTS,
         )
 
     assert result == parsed_doc
@@ -147,6 +151,8 @@ async def test_parse_falls_back_to_pdfminer_on_not_installed() -> None:
             mime_type="application/pdf",
             filename="test.pdf",
             tenant_id="tenant-1",
+            settings=Settings(),
+            cfg=INGESTION_CONFIG_DEFAULTS,
         )
 
     assert result == "pdfminer text"
@@ -164,6 +170,8 @@ async def test_parse_falls_back_on_import_error() -> None:
             mime_type="text/plain",
             filename="doc.txt",
             tenant_id="tenant-1",
+            settings=Settings(),
+            cfg=INGESTION_CONFIG_DEFAULTS,
         )
 
     assert result == "fallback text"
@@ -191,6 +199,8 @@ async def test_parse_propagates_non_parser_domain_error() -> None:
                 mime_type="application/unknown",
                 filename="file.bin",
                 tenant_id="tenant-1",
+                settings=Settings(),
+                cfg=INGESTION_CONFIG_DEFAULTS,
             )
 
     assert exc_info.value.code == "UNSUPPORTED_MIME_TYPE"

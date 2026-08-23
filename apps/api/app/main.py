@@ -38,7 +38,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Vibecoding Starter API", version="0.1.0", lifespan=lifespan)
-    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
+    settings = get_settings()
+    # BUG-API-11: wildcard allow_origins allows any domain to make cross-origin
+    # requests. In production, restrict this to the known frontend origin via
+    # the ALLOWED_ORIGINS environment variable.
+    import os as _os
+    allowed_origins_env = _os.environ.get("ALLOWED_ORIGINS", "")
+    allowed_origins: list[str] = (
+        [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+        if allowed_origins_env
+        else ["*"]
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     register_exception_handlers(app)
     app.include_router(system_router)
     app.include_router(auth_router)
