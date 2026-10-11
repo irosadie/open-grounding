@@ -1,10 +1,10 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid, delete, select, text
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid, delete, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -140,6 +140,16 @@ def _get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """Public singleton accessor. Reuses one engine+pool per process.
+
+    Request handlers MUST use this instead of ``create_session_factory``,
+    which builds a new pool (TCP+auth) on every call. Each request still
+    gets its own ``AsyncSession`` from the shared pool.
+    """
+    return _get_session_factory()
+
+
 async def get_session() -> AsyncIterator[AsyncSession]:
     async with _get_session_factory()() as session:
         yield session
@@ -184,6 +194,27 @@ class SqlAlchemyAuthRepository:
         row = result.scalar_one_or_none()
         return _to_session(row) if row else None
 
+    async def rotate_auth_session_token(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        current_token_hash: str,
+        next_token_hash: str,
+    ) -> bool:
+        result = await self._session.execute(
+            update(AuthSessionRecord)
+            .where(
+                AuthSessionRecord.id == session_id,
+                AuthSessionRecord.user_id == user_id,
+                AuthSessionRecord.token_hash == current_token_hash,
+                AuthSessionRecord.expires_at > utc_now(),
+            )
+            .values(token_hash=next_token_hash)
+        )
+        await self._session.commit()
+        return bool(getattr(result, "rowcount", 0) == 1)
+
     async def delete_auth_session(self, session_id: str, user_id: str) -> None:
         await self._session.execute(delete(AuthSessionRecord).where(AuthSessionRecord.id == session_id, AuthSessionRecord.user_id == user_id))
         await self._session.commit()
@@ -202,18 +233,19 @@ class SqlAlchemyAuthRepository:
         Only the final commit at the end of this block persists the changes.
         On exception the whole transaction is rolled back.
         """
-        original_commit = self._session.commit
+        session = cast(Any, self._session)
+        original_commit = session.commit
 
         async def _flush_instead() -> None:
             await self._session.flush()
 
-        self._session.commit = _flush_instead  # type: ignore[method-assign]
+        session.commit = _flush_instead
         try:
             yield
-            self._session.commit = original_commit
-            await self._session.commit()
+            session.commit = original_commit
+            await session.commit()
         except Exception:
-            self._session.commit = original_commit
+            session.commit = original_commit
             await self._session.rollback()
             raise
 

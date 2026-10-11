@@ -2,7 +2,6 @@
 
 import { Button } from "$/components/button"
 import { useRagIngestionDelete } from "$/hooks/transactions/use-rag-ingestion"
-import { useRagIngestionStatus } from "$/hooks/transactions/use-rag-ingestion"
 import { cn } from "$/utils/cn"
 import {
   getCurrentStageIndex,
@@ -10,6 +9,7 @@ import {
   ingestionStages,
   isIngestionTerminal,
 } from "$/utils/ingestion-pipeline"
+import type { IngestionStatusResponse } from "@open-grounding/types"
 import { Check, CircleAlert, ClipboardCheck, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
@@ -18,17 +18,17 @@ type VersionCardProps = {
   documentVersionId: string
   filename: string
   onDeleted: (documentVersionId: string) => void
+  status?: IngestionStatusResponse
+  isLoadingStatus?: boolean
 }
 
 export function IngestionVersionCard({
   documentVersionId,
   filename,
   onDeleted,
+  status: data,
+  isLoadingStatus: isLoading = false,
 }: VersionCardProps) {
-  const { data, isLoading } = useRagIngestionStatus({
-    documentVersionId,
-    enabled: true,
-  })
   const deleteVersion = useRagIngestionDelete()
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
@@ -87,7 +87,8 @@ export function IngestionVersionCard({
                 <ClipboardCheck className="h-3.5 w-3.5" />
                 Review
               </Link>
-            ) : confirmingDelete ? (
+            ) : null}
+            {confirmingDelete ? (
               <div className="flex items-center gap-1">
                 <Button
                   intent="danger"

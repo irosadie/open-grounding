@@ -72,6 +72,46 @@ async def verify_and_bootstrap_tenant(settings: Settings) -> TenantBootstrapResu
             status=TenantMembershipStatus.ACTIVE,
         )
 
+        # Every tenant must have an active default Project so new Knowledge
+        # Bases are never left without an owning workspace.
+        from app.infrastructure.rag_projects import SqlAlchemyProjectRepository
+
+        project_repository = SqlAlchemyProjectRepository(session)
+        if await project_repository.find_default(tenant_id=tenant.id) is None:
+            await project_repository.create(
+                tenant_id=tenant.id,
+                slug="default",
+                name="Default Project",
+                is_default=True,
+            )
+
+        # New deployments created after the policy migration receive the same
+        # explicit, versioned defaults as existing tenants. Missing policy is
+        # never silently replaced in the query path.
+        from app.domain.models import PolicyScope
+        from app.domain.rag.answer_policy import AnswerBehaviorProfile, GuardrailProfile
+        from app.infrastructure.answer_policy import (
+            SqlAlchemyAnswerBehaviorProfileRepository,
+            SqlAlchemyGuardrailProfileRepository,
+        )
+
+        answer_profiles = SqlAlchemyAnswerBehaviorProfileRepository(session)
+        if await answer_profiles.find_active_deployment(tenant_id=tenant.id) is None:
+            await answer_profiles.create(
+                tenant_id=tenant.id,
+                knowledge_base_id=None,
+                profile=AnswerBehaviorProfile(version="migrated-default-v1", scope=PolicyScope.DEPLOYMENT),
+                created_by=None,
+            )
+        guardrail_profiles = SqlAlchemyGuardrailProfileRepository(session)
+        if await guardrail_profiles.find_active_deployment(tenant_id=tenant.id) is None:
+            await guardrail_profiles.create(
+                tenant_id=tenant.id,
+                knowledge_base_id=None,
+                profile=GuardrailProfile.platform_baseline(),
+                created_by=None,
+            )
+
     return TenantBootstrapResult(
         tenant_id=tenant.id,
         tenant_slug=tenant.slug,

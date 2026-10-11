@@ -29,15 +29,15 @@ Delete document is currently broken end-to-end. The API endpoint exists (`DELETE
 
 **Rationale:** Async worker with retry is the right pattern for multi-system cleanup. Consistent with how ingestion stages are handled.
 
-### D2: Answer evidence — null document_version_id before hard-delete
+### D2: Answer trace — null source references before hard-delete
 
-**Chosen:** Before hard-deleting the `rag_document_versions` row, set `document_version_id = NULL` on all `rag_answer_evidence` rows referencing it. This satisfies the RESTRICT FK without losing the answer run history.
+**Chosen:** Before hard-deleting the `rag_document_versions` row, set `document_version_id = NULL` on all `rag_answer_citations` rows referencing it and null their chunk references. The selected-evidence chunk references are nulled as well. This satisfies the RESTRICT FKs without losing answer-run history.
 
 **Alternatives considered:**
-- _Hard-delete evidence rows_: Destroys answer audit history, unacceptable.
+- _Hard-delete trace rows_: Destroys answer audit history, unacceptable.
 - _Defer FK to DEFERRABLE INITIALLY DEFERRED_: Requires migration, adds DB complexity.
 
-**Rationale:** Nulling the FK preserves answer history while unblocking the version delete. Evidence rows become orphaned but traceable via `answer_run_id`.
+**Rationale:** Nulling the FKs preserves answer history while unblocking the version and chunk deletes. Trace rows remain traceable via `answer_run_id`.
 
 ### D3: Delete worker cascade order
 
@@ -46,7 +46,7 @@ Delete document is currently broken end-to-end. The API endpoint exists (`DELETE
 2. Delete Qdrant vectors (tenant_id + document_version_id filter)
 3. Delete S3 raw file (object_key_raw)
 4. Null parsed_text on document_version (free DB storage)
-5. Transition rag_index_generations → DELETED
+5. Transition rag_index_generations → DELETED and detach the version reference
 6. Hard-delete rag_document_versions row
 7. If no versions remain → soft-delete rag_documents row
 ```
@@ -71,7 +71,7 @@ apps/web/app/console/document/ingestion-content.tsx ← MODIFY: delete button + 
 
 ## Risks / Trade-offs
 
-- **[Risk] Qdrant delete with stale collection name** — If the index profile collection has changed since indexing, the delete filter may target the wrong collection. Mitigation: resolve active collection from `rag_index_generations` for that version, not from current active profile.
+- **[Risk] Qdrant delete with stale collection name** — If the index profile collection has changed since indexing, the delete filter may target the wrong collection. Mitigation: resolve every collection from the version's `rag_index_generations`, not from the current active profile.
 - **[Risk] S3 key mismatch** — `object_key_raw` may have been stored with a different prefix in dev vs prod. Mitigation: non-fatal, log warning, continue.
 - **[Risk] Partial cascade failure** — If Qdrant delete succeeds but S3 delete fails, the job retries. Qdrant delete is idempotent (no-op if points already gone). S3 delete is also idempotent. Safe to retry the full cascade.
 - **[Trade-off] Hard-delete vs soft-delete** — We hard-delete `rag_document_versions` rather than leaving the row. This means the version ID is gone from DB. Any external reference (e.g. a bookmark to the review URL) will 404. Acceptable — the version is intentionally destroyed.

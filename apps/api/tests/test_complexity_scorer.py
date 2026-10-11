@@ -1,6 +1,5 @@
 """Unit tests for the linguistic query complexity scorer."""
 
-import pytest
 
 from app.domain.rag.complexity_scorer import score
 

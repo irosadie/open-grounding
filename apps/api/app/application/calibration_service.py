@@ -28,7 +28,6 @@ from app.domain.rag.confidence import (
 )
 from app.domain.rag.repositories import ChunkRepository
 
-
 LABEL_VALUES = {
     ConfidenceLabel.SUPPORTED: 1.0,
     ConfidenceLabel.PARTIALLY_SUPPORTED: 0.6,
@@ -174,7 +173,9 @@ async def validate_calibration_ready(configs: ConfidenceConfigRepository, fixtur
 
 
 class CalibrationRunner:
-    def __init__(self, fixtures: CalibrationFixtureRepository, answer_runs: AnswerRunRepository, models: CalibrationModelRepository, artifacts: CalibrationArtifactStore, configs: ConfidenceConfigRepository | None = None) -> None:
+    def __init__(
+        self, fixtures: CalibrationFixtureRepository, answer_runs: AnswerRunRepository, models: CalibrationModelRepository, artifacts: CalibrationArtifactStore, configs: ConfidenceConfigRepository | None = None
+    ) -> None:
         self._fixtures = fixtures
         self._answer_runs = answer_runs
         self._models = models
@@ -236,7 +237,14 @@ def precision_recall_svg(curve: tuple[tuple[float, float, float], ...], threshol
     marker = min(curve, key=lambda point: abs(point[0] - threshold)) if curve else (threshold, 0.0, 0.0)
     x = 40 + marker[2] * (width - 60)
     y = height - 30 - marker[1] * (height - 60)
-    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}" role="img" aria-label="Precision recall curve at threshold {escape(f"{threshold:.2f}")}"><path d="M40 10V{height - 30}H{width - 20}" fill="none" stroke="#64748b"/><polyline points="{points}" fill="none" stroke="#2563eb" stroke-width="2"/><circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#dc2626"/></svg>'
+    threshold_label = escape(f"{threshold:.2f}")
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" aria-label="Precision recall curve at threshold {threshold_label}">'
+        f'<path d="M40 10V{height - 30}H{width - 20}" fill="none" stroke="#64748b"/>'
+        f'<polyline points="{points}" fill="none" stroke="#2563eb" stroke-width="2"/>'
+        f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#dc2626"/></svg>'
+    )
 
 
 class CalibrationPromoter:

@@ -1,5 +1,4 @@
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from typing import Protocol
 
@@ -12,11 +11,18 @@ class AuthRepository(Protocol):
     async def create_user(self, *, email: str, password_hash: str, name: str, role: UserRole, status: UserStatus, photo: str | None) -> User: ...
     async def create_auth_session(self, *, session_id: str, user_id: str, token_hash: str, expires_at: datetime) -> AuthSession: ...
     async def find_auth_session(self, session_id: str, user_id: str) -> AuthSession | None: ...
+    async def rotate_auth_session_token(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        current_token_hash: str,
+        next_token_hash: str,
+    ) -> bool: ...
     async def delete_auth_session(self, session_id: str, user_id: str) -> None: ...
     async def delete_auth_sessions_for_user(self, user_id: str) -> None: ...
 
-    @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[None]:
+    def transaction(self) -> AbstractAsyncContextManager[None]:
         """Context manager that wraps multiple operations in a single atomic transaction."""
         ...
 

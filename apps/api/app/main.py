@@ -10,6 +10,7 @@ from app.infrastructure.profile_seed import seed_default_profiles
 from app.infrastructure.tenant_bootstrap import verify_and_bootstrap_tenant
 from app.interfaces.http.errors import register_exception_handlers
 from app.interfaces.http.routes import (
+    answer_policy_router,
     auth_router,
     confidence_router,
     index_profile_router,
@@ -19,6 +20,7 @@ from app.interfaces.http.routes import (
     memory_config_router,
     memory_router,
     model_profile_router,
+    project_router,
     provider_credential_router,
     rag_query_router,
     rag_router,
@@ -38,17 +40,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Vibecoding Starter API", version="0.1.0", lifespan=lifespan)
-    settings = get_settings()
     # BUG-API-11: wildcard allow_origins allows any domain to make cross-origin
     # requests. In production, restrict this to the known frontend origin via
     # the ALLOWED_ORIGINS environment variable.
     import os as _os
+
     allowed_origins_env = _os.environ.get("ALLOWED_ORIGINS", "")
-    allowed_origins: list[str] = (
-        [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
-        if allowed_origins_env
-        else ["*"]
-    )
+    allowed_origins: list[str] = [o.strip() for o in allowed_origins_env.split(",") if o.strip()] if allowed_origins_env else ["*"]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -59,10 +57,12 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(system_router)
     app.include_router(auth_router)
+    app.include_router(answer_policy_router)
     app.include_router(confidence_router)
     app.include_router(rag_router)
     app.include_router(rag_query_router)
     app.include_router(kb_router)
+    app.include_router(project_router)
     app.include_router(model_profile_router)
     app.include_router(index_profile_router)
     app.include_router(provider_credential_router)

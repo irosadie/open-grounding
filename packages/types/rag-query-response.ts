@@ -4,6 +4,14 @@ export type RagCitationResponse = {
   title: string
   locator: string | null
   snippet: string
+  sourceKind: "DOCUMENT" | "MCP"
+  sourceId?: string | null
+  serverId?: string | null
+  toolId?: string | null
+  invocationId?: string | null
+  traceId?: string | null
+  producedAt?: string | null
+  expiresAt?: string | null
 }
 
 export type RagQueryResponse = {
@@ -14,6 +22,7 @@ export type RagQueryResponse = {
   citations: RagCitationResponse[]
   limitations: string[]
   traceId: string
+  conversationId: string
 }
 
 export type RagAnswerFeedbackResponse = {

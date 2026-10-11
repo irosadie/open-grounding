@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Mapping
 
 
 class TaskType(StrEnum):
@@ -22,6 +22,7 @@ class TaskSpec:
     query: str | None = None
     knowledge_base_ids: tuple[str, ...] = ()
     refs: tuple[str, ...] = ()
+    depends_on: tuple[str, ...] = ()
     tool_ref: str | None = None
     arguments: dict[str, object] = field(default_factory=dict)
 
@@ -44,6 +45,8 @@ class TaskResult:
     rag: list[dict[str, object]] | None = None
     mcp: dict[str, object] | None = None
     general: str | None = None
+    dependency_ids: tuple[str, ...] = ()
+    dependency_context_chars: int = 0
 
 
 @dataclass(frozen=True)
@@ -53,16 +56,20 @@ class ResumeResult:
     route: str
     dedup_removed: int = 0
     supplementary_blocks: int = 0
+    mcp_provenance: tuple[dict[str, object], ...] = ()
 
 
 def parse_task_plan(
     raw_json: str,
     max_tasks: int,
     allowed_types: set[TaskType | str] | tuple[TaskType | str, ...] | None = None,
+    max_depth: int = 2,
 ) -> TaskPlan:
     """Parse and validate the planner's JSON array, truncating excess tasks."""
     if not 1 <= max_tasks <= 8:
         raise ValueError("max_tasks must be between 1 and 8")
+    if not 1 <= max_depth <= 2:
+        raise ValueError("max_depth must be between 1 and 2")
 
     raw = raw_json.strip()
     if raw.startswith("```"):
@@ -92,7 +99,16 @@ def parse_task_plan(
             if query is not None:
                 query = str(query).strip() or None
             knowledge_base_ids = tuple(str(value) for value in item.get("knowledge_base_ids", ()))
-            refs = tuple(str(value) for value in item.get("refs", ()))
+            raw_dependencies = item.get("depends_on", item.get("dependsOn", item.get("refs", ())))
+            if raw_dependencies is None:
+                raw_dependencies = ()
+            if isinstance(raw_dependencies, (str, bytes)) or not isinstance(raw_dependencies, (list, tuple, set)):
+                raise ValueError("depends_on must be an array of task IDs")
+            depends_on = tuple(str(value).strip() for value in raw_dependencies)
+            if any(not dependency for dependency in depends_on):
+                raise ValueError("depends_on task IDs must be non-empty strings")
+            if len(set(depends_on)) != len(depends_on):
+                raise ValueError("depends_on must not contain duplicate task IDs")
             arguments = item.get("arguments", {})
             if not isinstance(arguments, Mapping):
                 raise ValueError("MCP arguments must be an object")
@@ -110,7 +126,8 @@ def parse_task_plan(
                 intent=intent,
                 query=query,
                 knowledge_base_ids=knowledge_base_ids,
-                refs=refs,
+                refs=depends_on,
+                depends_on=depends_on,
                 tool_ref=str(item.get("tool_ref")).strip() if item.get("tool_ref") else None,
                 arguments=dict(arguments),
             )
@@ -118,7 +135,56 @@ def parse_task_plan(
 
     if not tasks:
         raise ValueError("Task plan must contain at least one task")
-    return TaskPlan(tasks=tuple(tasks[:max_tasks]), truncated=len(tasks) > max_tasks)
+    selected_tasks = tuple(tasks[:max_tasks])
+    validate_task_dependencies(selected_tasks, max_depth=max_depth)
+    return TaskPlan(tasks=selected_tasks, truncated=len(tasks) > max_tasks)
+
+
+def task_dependencies(task: TaskSpec) -> tuple[str, ...]:
+    """Return the canonical dependency IDs, including legacy ``refs`` plans."""
+    return task.depends_on or task.refs
+
+
+def validate_task_dependencies(tasks: tuple[TaskSpec, ...] | list[TaskSpec], *, max_depth: int = 2) -> None:
+    """Validate a bounded dependency graph before any task is executed."""
+    if not 1 <= max_depth <= 2:
+        raise ValueError("max_depth must be between 1 and 2")
+
+    task_by_id: dict[str, TaskSpec] = {}
+    for task in tasks:
+        if not task.id or task.id in task_by_id:
+            raise ValueError(f"Task IDs must be unique and non-empty: {task.id!r}")
+        task_by_id[task.id] = task
+
+    for task in tasks:
+        dependencies = task_dependencies(task)
+        if task.type is TaskType.MCP and dependencies:
+            raise ValueError("MCP tasks cannot declare dependencies")
+        for dependency in dependencies:
+            if dependency == task.id:
+                raise ValueError(f"Task {task.id!r} cannot depend on itself")
+            if dependency not in task_by_id:
+                raise ValueError(f"Task {task.id!r} references unknown dependency {dependency!r}")
+
+    depths: dict[str, int] = {}
+
+    def resolve_depth(task_id: str, visiting: set[str]) -> int:
+        if task_id in depths:
+            return depths[task_id]
+        if task_id in visiting:
+            raise ValueError("Task dependencies must be acyclic")
+        visiting.add(task_id)
+        task = task_by_id[task_id]
+        dependencies = task_dependencies(task)
+        depth = 1 if not dependencies else 1 + max(resolve_depth(dependency, visiting) for dependency in dependencies)
+        visiting.remove(task_id)
+        if depth > max_depth:
+            raise ValueError(f"Task dependency depth exceeds maximum of {max_depth}")
+        depths[task_id] = depth
+        return depth
+
+    for task in tasks:
+        resolve_depth(task.id, set())
 
 
 def fallback_task_plan(

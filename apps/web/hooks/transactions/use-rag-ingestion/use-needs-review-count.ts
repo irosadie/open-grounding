@@ -12,11 +12,20 @@ const fetchPendingReviewCount = async (): Promise<number> => {
   return result.count
 }
 
-export const useNeedsReviewCount = () => {
+type UseNeedsReviewCountArgs = {
+  enabled?: boolean
+}
+
+export const useNeedsReviewCount = (args?: UseNeedsReviewCountArgs) => {
+  const { enabled = true } = args ?? {}
   return useQuery({
     queryKey: [queryKeys.rag.ingestion.pendingReviewCount],
     queryFn: fetchPendingReviewCount,
+    enabled,
     refetchInterval: 30_000,
+    // Tidak ada poller permanen saat tab hidden (visibility bawaan react-query).
+    refetchIntervalInBackground: false,
+    staleTime: 30_000,
   })
 }
 

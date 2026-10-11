@@ -7,7 +7,7 @@ Supports fallback chain: if primary provider fails, tries next in chain.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from app.core.settings import Settings
 
@@ -21,7 +21,7 @@ async def get_provider_api_key(
     provider: str,
     key_name: str,
     tenant_id: str,
-    session: "AsyncSession | None",
+    session: AsyncSession | None,
     settings: Settings,
 ) -> str | None:
     """Get credential: DB-first, env fallback."""
@@ -57,7 +57,7 @@ def build_embedding_provider(
     settings: Settings,
     api_key: str | None = None,
     base_url: str | None = None,
-):  # type: ignore[return]
+) -> Any:
     """Build an embedding provider instance."""
     if provider == "fastembed":
         from app.infrastructure.providers.fastembed_provider import FastEmbedProvider
@@ -83,7 +83,7 @@ class ProviderRegistry:
         self._settings = settings
         self._cache: dict[str, object] = {}
 
-    def get_embedding_provider(self, provider: str, model: str, api_key: str | None = None):  # type: ignore[return]
+    def get_embedding_provider(self, provider: str, model: str, api_key: str | None = None) -> Any:
         """Get or build a cached embedding provider (sync, uses env only)."""
         key = f"{provider}:{model}"
         if key not in self._cache:
@@ -95,8 +95,8 @@ class ProviderRegistry:
         provider: str,
         model: str,
         tenant_id: str,
-        session: "AsyncSession | None" = None,
-    ):  # type: ignore[return]
+        session: AsyncSession | None = None,
+    ) -> Any:
         """Build provider with DB-first credential lookup."""
         key_name = "api_key" if provider == "openai" else "base_url" if provider == "ollama" else None
         api_key = None
@@ -123,7 +123,7 @@ class ProviderRegistry:
         primary_provider: str,
         primary_model: str,
         tenant_id: str = "",
-        session: "AsyncSession | None" = None,
+        session: AsyncSession | None = None,
         fallback_providers: list[tuple[str, str]] | None = None,
     ) -> list[list[float]]:
         """Embed texts with DB-first credentials and automatic fallback chain."""
@@ -135,7 +135,7 @@ class ProviderRegistry:
                 provider = await self.get_embedding_provider_async(
                     provider_name, model_name, tenant_id=tenant_id, session=session
                 )
-                return await provider.embed(texts)  # type: ignore[union-attr]
+                return cast(list[list[float]], await provider.embed(texts))
             except Exception as e:
                 logger.warning("Embedding provider %s/%s failed: %s — trying fallback", provider_name, model_name, e)
                 last_error = e

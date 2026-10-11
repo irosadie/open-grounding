@@ -5,8 +5,11 @@ import { EmptyState } from "$/components/empty-state"
 import { Input } from "$/components/input"
 import { KnowledgeBaseMultiSelect } from "$/components/knowledge-base-multi-select"
 import { PanelCard } from "$/components/panel-card"
-import { useRagFeedback } from "$/hooks/transactions/use-rag-query"
-import { useRagQueryStream } from "$/hooks/transactions/use-rag-query"
+import { useProjects } from "$/hooks/transactions/use-projects"
+import {
+  useRagFeedback,
+  useRagQueryStream,
+} from "$/hooks/transactions/use-rag-query"
 import { cn } from "$/utils/cn"
 import {
   type RagQueryRoute,
@@ -16,6 +19,8 @@ import {
 import type { KnowledgeBaseResponseProps } from "@open-grounding/types"
 import { AlertTriangle, MessageSquareText, Send, Star } from "lucide-react"
 import { type ChangeEvent, useId, useState } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 const EVIDENCE_VARIANT: Record<string, string> = {
   high: "bg-success-100 text-success-700",
@@ -23,14 +28,16 @@ const EVIDENCE_VARIANT: Record<string, string> = {
   low: "bg-warning-100 text-warning-700",
   none: "bg-gray-100 text-gray-600",
 }
-
 export function RetrievalContent() {
   const stream = useRagQueryStream()
+  const { data: projects } = useProjects()
   const [message, setMessage] = useState("")
   const [selectedKbs, setSelectedKbs] = useState<KnowledgeBaseResponseProps[]>(
     [],
   )
+  const [projectId, setProjectId] = useState<string>("")
   const [formError, setFormError] = useState("")
+  const [streamEnabled, setStreamEnabled] = useState(true)
   const [feedbackRating, setFeedbackRating] = useState<number | null>(null)
   const [feedbackHover, setFeedbackHover] = useState<number | null>(null)
   const [feedbackComment, setFeedbackComment] = useState("")
@@ -57,6 +64,8 @@ export function RetrievalContent() {
     void stream.stream({
       message: trimmedMessage,
       knowledgeBaseIds,
+      projectId: projectId || undefined,
+      stream: streamEnabled,
       onCompleted: () => {
         setFeedbackRating(null)
         setFeedbackComment("")
@@ -97,6 +106,30 @@ export function RetrievalContent() {
         description="Answers use ingested documents when matching evidence is available."
       >
         <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-main-700">
+            Project
+            <select
+              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              value={projectId}
+              onChange={(event) => {
+                setProjectId(event.target.value)
+                setSelectedKbs([])
+              }}
+              disabled={isStreaming}
+            >
+              <option value="">Infer from selected Knowledge Bases</option>
+              {projects
+                ?.filter((project) => project.status === "ACTIVE")
+                .map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+            </select>
+            <span className="text-xs font-normal text-gray-400">
+              All selected Knowledge Bases must belong to one Project.
+            </span>
+          </label>
           <KnowledgeBaseMultiSelect
             value={selectedKbs}
             onChange={setSelectedKbs}
@@ -104,6 +137,7 @@ export function RetrievalContent() {
             required
             disabled={isStreaming}
             hint="Select one or more knowledge bases to provide optional evidence."
+            projectId={projectId || null}
           />
 
           <div className="flex flex-col gap-1.5">
@@ -123,6 +157,20 @@ export function RetrievalContent() {
               disabled={isStreaming}
             />
           </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={streamEnabled}
+              onChange={(event) => setStreamEnabled(event.target.checked)}
+              disabled={isStreaming}
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <span>Stream answer</span>
+            <span className="text-xs text-gray-500">
+              Show the validated conclusion progressively
+            </span>
+          </label>
 
           {formError ? (
             <p className="text-sm text-danger-500">{formError}</p>
@@ -172,6 +220,16 @@ export function RetrievalContent() {
             ) : null
           }
         >
+          {isStreaming ? (
+            <output
+              className="mb-4 flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600"
+              aria-live="polite"
+            >
+              <span className="h-2 w-2 animate-pulse rounded-full bg-primary-500" />
+              {stream.progress}
+            </output>
+          ) : null}
+
           {showRefusal ? (
             <div className="flex items-start gap-3 rounded-lg bg-danger-50 p-4">
               <AlertTriangle className="mt-0.5 h-5 w-5 text-danger-600" />
@@ -217,9 +275,11 @@ export function RetrievalContent() {
           ) : null}
 
           {stream.answer ? (
-            <p className="whitespace-pre-wrap text-sm text-gray-800">
-              {stream.answer}
-            </p>
+            <div className="prose prose-sm prose-headings:text-main-800 prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-a:text-primary-600 prose-code:rounded prose-code:bg-gray-100 prose-code:px-1 prose-code:text-primary-700 prose-pre:bg-main-800 prose-pre:text-gray-100 max-w-none text-gray-800">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {stream.answer}
+              </ReactMarkdown>
+            </div>
           ) : null}
 
           {stream.evidenceLevel ? (
@@ -289,15 +349,33 @@ export function RetrievalContent() {
                     className="rounded-lg border border-gray-200 p-3"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-900">
-                        {citation.title}
-                      </span>
-                      <a
-                        href={`/console/document/${citation.documentVersionId}`}
-                        className="text-xs text-primary-600 hover:underline"
-                      >
-                        {citation.locator ?? citation.documentVersionId}
-                      </a>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">
+                          {citation.title}
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-medium",
+                            citation.sourceKind === "MCP"
+                              ? "bg-info-100 text-info-700"
+                              : "bg-success-100 text-success-700",
+                          )}
+                        >
+                          {citation.sourceKind === "MCP" ? "MCP" : "DOCUMENT"}
+                        </span>
+                      </div>
+                      {citation.sourceKind === "MCP" ? (
+                        <span className="text-xs text-gray-500">
+                          {citation.toolId ?? citation.invocationId}
+                        </span>
+                      ) : (
+                        <a
+                          href={`/console/document/${citation.documentVersionId}`}
+                          className="text-xs text-primary-600 hover:underline"
+                        >
+                          {citation.locator ?? citation.documentVersionId}
+                        </a>
+                      )}
                     </div>
                     <p className="mt-1 text-xs text-gray-600">
                       {citation.snippet}

@@ -1,4 +1,4 @@
-import DecompositionConfigContent from "./decomposition-config-content"
+import LegacyProjectRedirect from "../legacy-project-redirect"
 
 type Props = {
   params: Promise<{ id: string }>
@@ -6,5 +6,5 @@ type Props = {
 
 export default async function DecompositionConfigPage({ params }: Props) {
   const { id } = await params
-  return <DecompositionConfigContent knowledgeBaseId={id} />
+  return <LegacyProjectRedirect knowledgeBaseId={id} section="decomposition" />
 }

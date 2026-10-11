@@ -11,19 +11,20 @@ from typing import TYPE_CHECKING
 
 from bullmq import Job, Worker
 
+from app.core.llm_rollout_trace import rollout_context
 from app.core.settings import Settings
 from app.domain.models import UserRole
 from app.domain.tenant_context import TenantContext
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
 
 def create_tool_worker(
     settings: Settings,
-    session_factory: "async_sessionmaker",
+    session_factory: async_sessionmaker[AsyncSession],
     redis_url: str,
 ) -> Worker:
     """Create BullMQ Worker for tool-execution queue."""
@@ -46,10 +47,9 @@ def create_tool_worker(
         from app.application.provider_credential_service import ProviderCredentialService
         from app.infrastructure.mcp.connection_manager import McpConnectionManager
         from app.infrastructure.rag_catalog import (
+            SqlAlchemyMcpInvocationRepository,
             SqlAlchemyMcpServerRepository,
             SqlAlchemyMcpToolRepository,
-            SqlAlchemyMcpInvocationRepository,
-            SqlAlchemyProviderCredentialRepository,
         )
 
         async with session_factory() as session:
@@ -61,11 +61,23 @@ def create_tool_worker(
                 credentials=ProviderCredentialService(session, settings),
                 connections=McpConnectionManager(),
             )
-            result = await service.invoke_tool(
-                tenant=tenant,
-                tool_id=tool_id,
-                arguments=input_data,
-            )
+            async with rollout_context(
+                source="tool-execution",
+                trace_dir=settings.rag_llm_trace_dir,
+                enabled=settings.rag_llm_trace_enabled,
+                metadata={"job_id": job.id, "tool_id": tool_id},
+            ) as trace:
+                trace.record("turn_started", {"job_id": job.id, "tool_id": tool_id})
+                try:
+                    result = await service.invoke_tool(
+                        tenant=tenant,
+                        tool_id=tool_id,
+                        arguments=input_data,
+                    )
+                    trace.record("turn_completed", {"job_id": job.id, "tool_id": tool_id})
+                except Exception as error:
+                    trace.record("turn_failed", {"job_id": job.id, "tool_id": tool_id, "error_type": type(error).__name__, "error": str(error)})
+                    raise
 
         logger.info("[tool-execution] job=%s completed", job.id)
         return result

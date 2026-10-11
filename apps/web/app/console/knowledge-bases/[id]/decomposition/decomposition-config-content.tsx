@@ -7,7 +7,11 @@ import {
   useDecompositionConfig,
   useDecompositionDefaults,
   useDeleteDecompositionConfig,
+  useDeleteProjectDecompositionConfig,
+  useProjectDecompositionConfig,
+  useProjectDecompositionDefaults,
   useUpsertDecompositionConfig,
+  useUpsertProjectDecompositionConfig,
 } from "$/hooks/transactions/use-decomposition-config"
 import { useModelProfiles } from "$/hooks/transactions/use-model-profiles"
 import { decompositionConfigSchema } from "@open-grounding/schemas"
@@ -19,15 +23,32 @@ const JINJA_VARS_HINT =
   "Available variables: {{ query }}, {{ knowledge_base_name }}, {{ max_sub_queries }}"
 
 type Props = {
-  knowledgeBaseId: string
+  knowledgeBaseId?: string
+  projectId?: string
 }
 
-export default function DecompositionConfigContent({ knowledgeBaseId }: Props) {
-  const { data: config, isLoading } = useDecompositionConfig(knowledgeBaseId)
-  const { data: defaults } = useDecompositionDefaults(knowledgeBaseId)
+export default function DecompositionConfigContent({
+  knowledgeBaseId,
+  projectId,
+}: Props) {
+  const kbConfig = useDecompositionConfig(knowledgeBaseId ?? null)
+  const projectConfig = useProjectDecompositionConfig(projectId ?? null)
+  const kbDefaults = useDecompositionDefaults(knowledgeBaseId ?? null)
+  const projectDefaults = useProjectDecompositionDefaults(projectId ?? null)
+  const config = projectId ? projectConfig.data : kbConfig.data
+  const defaults = projectId ? projectDefaults.data : kbDefaults.data
+  const isLoading = projectId ? projectConfig.isLoading : kbConfig.isLoading
   const { data: modelProfiles } = useModelProfiles()
-  const upsertMutation = useUpsertDecompositionConfig(knowledgeBaseId)
-  const deleteMutation = useDeleteDecompositionConfig(knowledgeBaseId)
+  const upsertKbMutation = useUpsertDecompositionConfig(knowledgeBaseId ?? "")
+  const upsertProjectMutation = useUpsertProjectDecompositionConfig(
+    projectId ?? "",
+  )
+  const deleteKbMutation = useDeleteDecompositionConfig(knowledgeBaseId ?? "")
+  const deleteProjectMutation = useDeleteProjectDecompositionConfig(
+    projectId ?? "",
+  )
+  const upsertMutation = projectId ? upsertProjectMutation : upsertKbMutation
+  const deleteMutation = projectId ? deleteProjectMutation : deleteKbMutation
   const systemPromptId = useId()
   const userPromptId = useId()
   const maxSubQueriesId = useId()
@@ -115,14 +136,19 @@ export default function DecompositionConfigContent({ knowledgeBaseId }: Props) {
           Query Decomposition
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          Configure hybrid query decomposition for this knowledge base. Complex
-          queries will be broken into sub-queries for better retrieval recall.
+          Configure hybrid query decomposition for this{" "}
+          {projectId ? "Project" : "knowledge base"}. Complex queries will be
+          broken into sub-queries for better retrieval recall.
         </p>
       </div>
 
       <PanelCard
         title="Configuration"
-        description="Decomposition settings for this knowledge base."
+        description={
+          projectId
+            ? "Shared decomposition settings for every Knowledge Base in this Project."
+            : "Decomposition settings for this knowledge base."
+        }
       >
         <div className="flex flex-col gap-5">
           {/* Enable toggle */}

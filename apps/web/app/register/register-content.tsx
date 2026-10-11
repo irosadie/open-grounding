@@ -48,7 +48,8 @@ export default function RegisterContent() {
   })
 
   // BUG-WEB-08: include transition pending state so React tracks navigation
-  const isPending = registerMutation.isPending || loginMutation.isPending || isPendingTransition
+  const isPending =
+    registerMutation.isPending || loginMutation.isPending || isPendingTransition
 
   const handleChange = (field: keyof RegisterProps, value: string) => {
     setForm((current) => ({

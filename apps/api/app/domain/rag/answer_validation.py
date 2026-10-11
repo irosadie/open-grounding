@@ -1,7 +1,9 @@
 """Deterministic validation for evidence-bound generated answers."""
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
+from app.domain.models import ProvenanceKind
 from app.domain.rag.answer import GroundedAnswer
 from app.domain.rag.evidence import EvidenceContext
 
@@ -12,7 +14,13 @@ class AnswerValidation:
     errors: tuple[str, ...]
 
 
-def validate_answer(*, answer: GroundedAnswer, evidence: EvidenceContext) -> AnswerValidation:
+def validate_answer(
+    *,
+    answer: GroundedAnswer,
+    evidence: EvidenceContext,
+    tenant_id: str | None = None,
+    trace_id: str | None = None,
+) -> AnswerValidation:
     allowed_citations = {citation.citation_id for citation in evidence.citations}
     errors: list[str] = []
     for claim in (*answer.facts, *answer.inferences):
@@ -28,6 +36,20 @@ def validate_answer(*, answer: GroundedAnswer, evidence: EvidenceContext) -> Ans
         errors.append("A claim cannot be both fact and inference")
     if any(_contains_disallowed_policy_text(text) for text in (*answer.conflicts, *answer.limitations)):
         errors.append("Answer contains disallowed policy output")
+    for citation in evidence.citations:
+        if citation.source_kind is ProvenanceKind.MCP:
+            if tenant_id and citation.tenant_id != tenant_id:
+                errors.append("MCP citation is outside the active tenant")
+            if trace_id and citation.trace_id != trace_id:
+                errors.append("MCP citation belongs to another trace")
+            if not citation.server_id or not citation.tool_id or not citation.invocation_id:
+                errors.append("MCP citation is missing stable provenance")
+            if citation.expires_at:
+                expiry = citation.expires_at
+                if expiry.tzinfo is None:
+                    expiry = expiry.replace(tzinfo=UTC)
+                if expiry <= datetime.now(UTC):
+                    errors.append("MCP citation is stale")
     return AnswerValidation(is_valid=not errors, errors=tuple(errors))
 
 

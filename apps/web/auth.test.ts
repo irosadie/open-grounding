@@ -16,7 +16,6 @@ vi.mock("next-auth/react", () => ({
         id: "test-user-id",
         email: "test@example.com",
         name: "Test User",
-        companyId: 123,
       },
       accessToken: "mock-access-token",
       refreshToken: "mock-refresh-token",
@@ -108,7 +107,6 @@ describe("Auth Configuration", () => {
         id: "user-123",
         name: "Test User",
         email: "test@example.com",
-        companyId: 123,
         accessToken: "access-token",
         refreshToken: "refresh-token",
       }
@@ -170,7 +168,6 @@ describe("Auth Configuration", () => {
           id: "",
           email: "",
           name: "",
-          companyId: 0,
         },
       }
 
@@ -178,7 +175,6 @@ describe("Auth Configuration", () => {
         id: "user-123",
         email: "test@example.com",
         name: "Test User",
-        companyId: 456,
         accessToken: "access-token",
         refreshToken: "refresh-token",
       }
@@ -191,7 +187,6 @@ describe("Auth Configuration", () => {
       }
 
       expect(result.user.id).toBe("user-123")
-      expect(result.user.companyId).toBe(456)
       expect(result.accessToken).toBe("access-token")
     })
   })

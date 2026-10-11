@@ -48,7 +48,9 @@ export function ReviewActionBar({
 
           {confirmReject ? (
             <div className="flex items-center gap-2">
-              <span className="text-sm text-danger-600">Reject this document?</span>
+              <span className="text-sm text-danger-600">
+                Reject this document?
+              </span>
               <Button
                 intent="danger"
                 size="small"

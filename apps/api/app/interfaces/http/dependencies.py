@@ -1,9 +1,10 @@
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.answer_policy_service import AnswerPolicyService
 from app.application.auth_service import AuthService
 from app.application.confidence_service import ConfidenceService
 from app.application.decomposition_config_service import DecompositionConfigService
@@ -14,6 +15,7 @@ from app.application.mcp_runtime_service import McpRuntimeService
 from app.application.memory_config_service import MemoryConfigService
 from app.application.planner_config_service import PlannerConfigService
 from app.application.profile_service import IndexProfileService, ModelProfileService
+from app.application.project_service import ProjectService
 from app.application.provider_credential_service import ProviderCredentialService
 from app.application.rag_generation import RagGenerationService
 from app.application.rag_hybrid_retrieval import RagHybridRetrievalService
@@ -21,6 +23,7 @@ from app.application.rag_query_admission import RagQueryAdmission
 from app.application.rag_query_service import RagQueryService
 from app.application.rag_trace_service import RagTraceService
 from app.application.retrieval_config_service import RetrievalConfigService
+from app.application.similar_documents_service import SimilarDocumentsService
 from app.core.security import decode_access_token_async
 from app.core.settings import Settings, get_settings
 from app.domain.errors import DomainError
@@ -34,9 +37,10 @@ from app.infrastructure.qdrant import QdrantVectorStoreAdapter
 from app.infrastructure.rag_answer_trace import SqlAlchemyAnswerFeedbackRepository, SqlAlchemyAnswerRunRepository, SqlAlchemyAnswerTraceDetailRepository
 from app.infrastructure.rag_catalog import (
     SqlAlchemyDecompositionConfigRepository,
+    SqlAlchemyDocumentRepository,
+    SqlAlchemyDocumentVersionRepository,
     SqlAlchemyIndexGenerationRepository,
     SqlAlchemyIndexProfileRepository,
-    SqlAlchemyIngestionConfigRepository,
     SqlAlchemyKnowledgeBaseRepository,
     SqlAlchemyMcpInvocationRepository,
     SqlAlchemyMcpServerRepository,
@@ -81,6 +85,19 @@ def get_ingestion_service(
     return IngestionIntakeService(session, settings)
 
 
+def get_similar_documents_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SimilarDocumentsService:
+    return SimilarDocumentsService(
+        versions=SqlAlchemyDocumentVersionRepository(session),
+        documents=SqlAlchemyDocumentRepository(session),
+        generations=SqlAlchemyIndexGenerationRepository(session),
+        profiles=SqlAlchemyIndexProfileRepository(session),
+        retrieval=_retrieval_service(settings, session),
+    )
+
+
 def get_rag_query_service(
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -99,14 +116,12 @@ def get_rag_query_service(
         _generation_service(settings),
         planner_configs=SqlAlchemyPlannerConfigRepository(session),
         mcp_runtime=get_mcp_runtime_service(session, settings, get_mcp_connection_manager()),
+        answer_policy=AnswerPolicyService(session, settings),
     )
 
 
 def _retrieval_service(settings: Settings, session: AsyncSession) -> RagHybridRetrievalService:
-    import httpx
-
-    client = httpx.AsyncClient(timeout=30.0)
-    qdrant = QdrantVectorStoreAdapter(settings, client)
+    qdrant = QdrantVectorStoreAdapter(settings, _get_shared_qdrant_client())
     return RagHybridRetrievalService(
         settings,
         ProviderEmbeddingAdapter(settings),
@@ -114,6 +129,21 @@ def _retrieval_service(settings: Settings, session: AsyncSession) -> RagHybridRe
         qdrant,
         SqlAlchemyRetrievalConfigRepository(session),
     )
+
+
+@lru_cache
+def _get_shared_qdrant_client() -> Any:
+    """Process-lifetime shared httpx client for Qdrant (no per-request leak).
+
+    Pool limits bound connections; default timeout follows the retrieval budget
+    (8s — per-request timeouts in ``qdrant.py`` still win). The client is never
+    closed per request. Close it on app shutdown via lifespan (follow-up in
+    ``main.py`` — lifespan currently only bootstraps tenant + seeds profiles).
+    """
+    import httpx
+
+    limits = httpx.Limits(max_connections=20, max_keepalive_connections=10)
+    return httpx.AsyncClient(timeout=8.0, limits=limits)
 
 
 def _generation_service(settings: Settings) -> RagGenerationService:
@@ -135,6 +165,7 @@ def get_rag_query_admission() -> RagQueryAdmission:
 AuthServiceDependency = Annotated[AuthService, Depends(get_auth_service)]
 AuthContextDependency = Annotated[dict[str, str], Depends(get_auth_context)]
 IngestionServiceDependency = Annotated[IngestionIntakeService, Depends(get_ingestion_service)]
+SimilarDocumentsServiceDependency = Annotated[SimilarDocumentsService, Depends(get_similar_documents_service)]
 RagQueryServiceDependency = Annotated[RagQueryService, Depends(get_rag_query_service)]
 RagTraceServiceDependency = Annotated[RagTraceService, Depends(get_rag_trace_service)]
 
@@ -185,6 +216,15 @@ def get_knowledge_base_service(
 
 
 KnowledgeBaseServiceDependency = Annotated[KnowledgeBaseService, Depends(get_knowledge_base_service)]
+
+
+def get_project_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ProjectService:
+    return ProjectService(session)
+
+
+ProjectServiceDependency = Annotated[ProjectService, Depends(get_project_service)]
 
 
 def get_ingestion_config_service(
@@ -250,6 +290,16 @@ def get_memory_config_service(
 
 
 MemoryConfigServiceDependency = Annotated[MemoryConfigService, Depends(get_memory_config_service)]
+
+
+def get_answer_policy_service(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AnswerPolicyService:
+    return AnswerPolicyService(session, settings)
+
+
+AnswerPolicyServiceDependency = Annotated[AnswerPolicyService, Depends(get_answer_policy_service)]
 
 
 def get_retrieval_config_service(

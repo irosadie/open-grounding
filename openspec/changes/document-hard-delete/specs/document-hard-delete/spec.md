@@ -8,8 +8,8 @@ When a document version is deleted, the system SHALL remove all associated data 
 - **THEN** Qdrant vectors filtered by `document_version_id` are deleted, the raw S3 object at `object_key_raw` is deleted, `parsed_text` is set to null, `rag_index_generations` for the version transition to `DELETED`, the `rag_document_versions` row transitions to `DELETED`, and if no other versions exist for the parent document the `rag_documents` row is soft-deleted
 
 #### Scenario: Answer evidence RESTRICT FK handled before hard-delete
-- **WHEN** `rag_answer_evidence` rows reference the version being deleted
-- **THEN** those rows are soft-deleted (or `document_version_id` nulled) before the version row is hard-deleted, preventing FK constraint violation
+- **WHEN** answer-trace rows reference the version being deleted
+- **THEN** `rag_answer_citations.document_version_id` and related chunk references are nulled before the version row is hard-deleted, preventing FK constraint violation while preserving the answer run history
 
 #### Scenario: Qdrant vectors removed
 - **WHEN** the delete stage runs for a version with indexed vectors

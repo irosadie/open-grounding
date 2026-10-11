@@ -30,8 +30,9 @@ class MemoryRetriever:
         query: str,
         tenant_id: str,
         knowledge_base_id: str,
+        project_id: str | None = None,
         user_id: str,
-        session: "AsyncSession",
+        session: AsyncSession,
     ) -> dict[str, object]:
         """Retrieve relevant memory chunks for a query. Never raises — returns empty on failure."""
         try:
@@ -40,12 +41,13 @@ class MemoryRetriever:
                     query=query,
                     tenant_id=tenant_id,
                     knowledge_base_id=knowledge_base_id,
+                    project_id=project_id,
                     user_id=user_id,
                     session=session,
                 ),
                 timeout=_RETRIEVAL_TIMEOUT_S,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("[memory.retrieve] timeout for kb=%s user=%s", knowledge_base_id, user_id)
             return _empty_result()
         except Exception as e:
@@ -58,21 +60,26 @@ class MemoryRetriever:
         query: str,
         tenant_id: str,
         knowledge_base_id: str,
+        project_id: str | None,
         user_id: str,
-        session: "AsyncSession",
+        session: AsyncSession,
     ) -> dict[str, object]:
+        from app.infrastructure.providers.registry import ProviderRegistry
         from app.infrastructure.rag_catalog import (
             SqlAlchemyMemoryChunkRepository,
             SqlAlchemyMemoryConfigRepository,
             SqlAlchemyModelProfileRepository,
         )
-        from app.infrastructure.providers.registry import ProviderRegistry
 
         # 1. Load config
         config_repo = SqlAlchemyMemoryConfigRepository(session)
-        config = await config_repo.find_by_knowledge_base(
-            tenant_id=tenant_id, knowledge_base_id=knowledge_base_id
-        )
+        config = None
+        if project_id is not None:
+            config = await config_repo.find_by_project(tenant_id=tenant_id, project_id=project_id)
+        if config is None:
+            config = await config_repo.find_by_knowledge_base(
+                tenant_id=tenant_id, knowledge_base_id=knowledge_base_id
+            )
         if config is None or not config.enabled:
             return _empty_result()
 
@@ -143,13 +150,13 @@ class MemoryRetriever:
         oldest_age_days: int | None = None
         now_naive = datetime.now(UTC).replace(tzinfo=None)
 
-        for chunk_id in chunk_ids:
-            chunk = await chunk_repo.find_by_id(tenant_id=tenant_id, chunk_id=chunk_id)
-            if chunk:
-                summaries.append(chunk.summary)
-                age_days = (now_naive - chunk.created_at).days
-                if oldest_age_days is None or age_days > oldest_age_days:
-                    oldest_age_days = age_days
+        # Batched single-query lookup (no N+1). Order follows Qdrant ranking.
+        chunks = await chunk_repo.find_by_ids(tenant_id=tenant_id, chunk_ids=chunk_ids)
+        for chunk in chunks:
+            summaries.append(chunk.summary)
+            age_days = (now_naive - chunk.created_at).days
+            if oldest_age_days is None or age_days > oldest_age_days:
+                oldest_age_days = age_days
 
         if not summaries:
             return _empty_result()

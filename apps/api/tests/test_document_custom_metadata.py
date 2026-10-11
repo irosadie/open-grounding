@@ -13,7 +13,6 @@ from pydantic import ValidationError
 
 from app.interfaces.http.schemas import CreateIntakeRequest
 
-
 # ---------------------------------------------------------------------------
 # 7.1 — Valid metadata diterima
 # ---------------------------------------------------------------------------
@@ -122,7 +121,8 @@ def test_intake_request_metadata_exactly_256_chars_accepted() -> None:
 @pytest.mark.asyncio
 async def test_create_intake_passes_metadata_to_repo() -> None:
     from unittest.mock import AsyncMock, MagicMock
-    from app.application.ingestion_intake_service import IngestionIntakeService, IntakeResult
+
+    from app.application.ingestion_intake_service import IngestionIntakeService
     from app.core.settings import Settings
     from app.domain.models import UserRole
     from app.domain.tenant_context import TenantContext

@@ -26,8 +26,8 @@ class AnswerCitation:
     tenant_id: str
     answer_run_id: str
     citation_id: str
-    chunk_id: str
-    document_version_id: str
+    chunk_id: str | None
+    document_version_id: str | None
     locator: str | None
     created_at: datetime
 

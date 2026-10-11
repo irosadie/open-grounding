@@ -16,7 +16,9 @@ from app.core.settings import Settings
 from app.infrastructure.rag_catalog import SqlAlchemyRagQueryJobRepository
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.application.rag_query_service import RagQueryService
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,11 @@ async def _fire_webhook(
         pass  # fire-and-forget
 
 
-def _build_rag_query_service(settings: Settings, session: "AsyncSession") -> "RagQueryService":  # type: ignore[name-defined]
+def _build_rag_query_service(
+    settings: Settings,
+    session: AsyncSession,
+) -> RagQueryService:
+    from app.application.answer_policy_service import AnswerPolicyService
     from app.application.rag_generation import RagGenerationService
     from app.application.rag_hybrid_retrieval import RagHybridRetrievalService
     from app.application.rag_query_service import RagQueryService
@@ -80,12 +86,13 @@ def _build_rag_query_service(settings: Settings, session: "AsyncSession") -> "Ra
         retrieval,
         generation,
         planner_configs=SqlAlchemyPlannerConfigRepository(session),
+        answer_policy=AnswerPolicyService(session, settings),
     )
 
 
 def create_query_worker(
     settings: Settings,
-    session_factory: "async_sessionmaker",
+    session_factory: async_sessionmaker[AsyncSession],
     redis_url: str,
 ) -> Worker:
     """Return a BullMQ Worker for the rag.query queue."""
@@ -118,6 +125,7 @@ def create_query_worker(
                     tenant=tenant,
                     message=data["message"],
                     knowledge_base_ids=tuple(data["knowledge_base_ids"]),
+                    project_id=data.get("project_id"),
                     conversation_id=data.get("conversation_id"),
                     decomposition_enabled=decomposition.get("enabled") if decomposition else None,
                     decomposition_max_sub_queries=decomposition.get("max_sub_queries") if decomposition else None,
@@ -137,7 +145,5 @@ def create_query_worker(
                 raise
 
     worker = Worker("rag.query", handle_rag_query, {"connection": redis_url, "concurrency": 10})
-    worker.on("failed", lambda job, err: logger.error(
-        "[rag.query] job=%s permanently failed: %s", job.id if job else "?", err
-    ))
+    worker.on("failed", lambda job, err: logger.error("[rag.query] job=%s permanently failed: %s", job.id if job else "?", err))
     return worker

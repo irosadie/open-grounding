@@ -1,4 +1,4 @@
-import PlannerConfigContent from "./planner-config-content"
+import LegacyProjectRedirect from "../legacy-project-redirect"
 
 type Props = {
   params: Promise<{ id: string }>
@@ -6,5 +6,5 @@ type Props = {
 
 export default async function PlannerConfigPage({ params }: Props) {
   const { id } = await params
-  return <PlannerConfigContent knowledgeBaseId={id} />
+  return <LegacyProjectRedirect knowledgeBaseId={id} section="planner" />
 }

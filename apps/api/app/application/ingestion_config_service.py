@@ -57,20 +57,28 @@ def _to_result(config: IngestionConfig, *, is_default: bool = False) -> Ingestio
     )
 
 
-def _validate_parser(parser: str, docling_serve_url: str | None) -> None:
+def _validate_parser(parser: str, docling_serve_url: str | None) -> str | None:
     if parser not in _ALLOWED_PARSERS:
-        raise DomainError("VALIDATION_ERROR", f"parser must be one of {sorted(_ALLOWED_PARSERS)}, got: {parser!r}", 422)
+        raise DomainError.validation(f"parser must be one of {sorted(_ALLOWED_PARSERS)}, got: {parser!r}")
+
+    normalized_url = docling_serve_url.strip() if docling_serve_url is not None else None
+    normalized_url = normalized_url or None
+    if normalized_url is not None and len(normalized_url) > 2048:
+        raise DomainError.validation("docling_serve_url must be at most 2048 characters")
     if parser == "docling_serve":
-        if not docling_serve_url or not docling_serve_url.strip():
-            raise DomainError("VALIDATION_ERROR", "docling_serve_url is required when parser='docling_serve'", 422)
-        stripped = docling_serve_url.strip()
+        if normalized_url is None:
+            raise DomainError.validation("docling_serve_url is required when parser='docling_serve'")
         try:
             import httpx
-            parsed = httpx.URL(stripped)
+            parsed = httpx.URL(normalized_url)
         except Exception as exc:
-            raise DomainError("VALIDATION_ERROR", f"docling_serve_url must be a valid URL, got: {stripped!r}", 422) from exc
+            raise DomainError.validation(f"docling_serve_url must be a valid URL, got: {normalized_url!r}") from exc
         if parsed.scheme not in ("http", "https"):
-            raise DomainError("VALIDATION_ERROR", f"docling_serve_url must use http or https, got: {parsed.scheme!r}", 422)
+            raise DomainError.validation(f"docling_serve_url must use http or https, got: {parsed.scheme!r}")
+        if not parsed.host:
+            raise DomainError.validation(f"docling_serve_url must include a host, got: {normalized_url!r}")
+
+    return normalized_url
 
 
 def _validate_thresholds(
@@ -145,7 +153,7 @@ class IngestionConfigService:
             raise DomainError.not_found("Knowledge base not found")
 
         _validate_thresholds(min_text_coverage, max_invalid_char_ratio, min_aggregate_confidence, min_page_coverage)
-        _validate_parser(parser, docling_serve_url)
+        docling_serve_url = _validate_parser(parser, docling_serve_url)
 
         # Resolve encrypted API key
         if docling_serve_api_key is _UNSET:
@@ -158,8 +166,12 @@ class IngestionConfigService:
         else:
             # New key provided — encrypt it
             from app.infrastructure.crypto import encrypt, get_encryption_key
+
+            normalized_api_key = str(docling_serve_api_key).strip()
+            if not normalized_api_key:
+                raise DomainError.validation("docling_serve_api_key must not be empty")
             enc_key = get_encryption_key(settings)
-            api_key_enc = encrypt(str(docling_serve_api_key).strip(), enc_key)
+            api_key_enc = encrypt(normalized_api_key, enc_key)
 
         config = await self._repo.upsert(
             tenant_id=tenant.tenant_id,

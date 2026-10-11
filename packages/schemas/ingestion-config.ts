@@ -1,6 +1,11 @@
 import { z } from "zod"
 
-export const PARSER_OPTIONS = ["auto", "docling_serve", "docling_inprocess", "pdfminer"] as const
+export const PARSER_OPTIONS = [
+  "auto",
+  "docling_serve",
+  "docling_inprocess",
+  "pdfminer",
+] as const
 export type ParserOption = (typeof PARSER_OPTIONS)[number]
 
 export const ingestionConfigSchema = z.object({
@@ -10,7 +15,7 @@ export const ingestionConfigSchema = z.object({
   minPageCoverage: z.number().min(0).max(1).default(0.5),
   autoReview: z.boolean().default(false),
   parser: z.enum(PARSER_OPTIONS).default("auto"),
-  doclingServeUrl: z.string().nullable().default(null),
+  doclingServeUrl: z.string().max(2048).nullable().default(null),
   doclingServeApiKey: z.string().nullable().default(null),
 })
 

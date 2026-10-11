@@ -7,7 +7,10 @@ import {
   useUpsertIngestionConfig,
 } from "$/hooks/transactions/use-ingestion-config"
 import { PARSER_OPTIONS, ingestionConfigSchema } from "@open-grounding/schemas"
-import type { IngestionConfigInput, ParserOption } from "@open-grounding/schemas"
+import type {
+  IngestionConfigInput,
+  ParserOption,
+} from "@open-grounding/schemas"
 import { AlertTriangle, Save } from "lucide-react"
 import { useEffect, useState } from "react"
 
@@ -33,9 +36,12 @@ const PARSER_LABELS: Record<ParserOption, string> = {
 
 const PARSER_DESCRIPTIONS: Record<ParserOption, string> = {
   auto: "Automatically selects the best available parser: Docling Serve → Docling In-Process → pdfminer.",
-  docling_serve: "Delegates conversion to a remote docling-serve instance via HTTP. Requires a serve URL.",
-  docling_inprocess: "Runs docling locally inside the worker process. Requires the parsing extra to be installed.",
-  pdfminer: "Uses pdfminer for basic PDF text extraction. No AI models required.",
+  docling_serve:
+    "Delegates conversion to a remote docling-serve instance via HTTP. Requires a serve URL.",
+  docling_inprocess:
+    "Runs docling locally inside the worker process. Requires the parsing extra to be installed.",
+  pdfminer:
+    "Uses pdfminer for basic PDF text extraction. No AI models required.",
 }
 
 type ThresholdFieldProps = {
@@ -191,10 +197,7 @@ export default function IngestionContent({ knowledgeBaseId }: Props) {
                   placeholder="http://localhost:5001"
                   value={form.doclingServeUrl ?? ""}
                   onChange={(e) =>
-                    setField(
-                      "doclingServeUrl",
-                      e.target.value.trim() || null,
-                    )
+                    setField("doclingServeUrl", e.target.value.trim() || null)
                   }
                   className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
@@ -230,10 +233,7 @@ export default function IngestionContent({ knowledgeBaseId }: Props) {
                   }
                   value={form.doclingServeApiKey ?? ""}
                   onChange={(e) =>
-                    setField(
-                      "doclingServeApiKey",
-                      e.target.value || null,
-                    )
+                    setField("doclingServeApiKey", e.target.value || null)
                   }
                   className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />

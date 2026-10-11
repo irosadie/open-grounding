@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -37,6 +40,20 @@ class InMemoryAuthRepository:
             return None
         return session
 
+    async def rotate_auth_session_token(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        current_token_hash: str,
+        next_token_hash: str,
+    ) -> bool:
+        session = await self.find_auth_session(session_id, user_id)
+        if session is None or session.token_hash != current_token_hash:
+            return False
+        self.sessions[session_id] = replace(session, token_hash=next_token_hash)
+        return True
+
     async def delete_auth_session(self, session_id: str, user_id: str) -> None:
         session = await self.find_auth_session(session_id, user_id)
         if session:
@@ -47,6 +64,10 @@ class InMemoryAuthRepository:
             if session.user_id == user_id:
                 del self.sessions[session_id]
 
+    @asynccontextmanager
+    async def transaction(self) -> AsyncIterator[None]:
+        yield
+
 
 @pytest.mark.asyncio
 async def test_register_login_and_refresh() -> None:
@@ -55,10 +76,17 @@ async def test_register_login_and_refresh() -> None:
     registered = await service.register(name="Baim", email="BAIM@example.com", password="password123")
     logged_in = await service.login(email="baim@example.com", password="password123")
     refreshed = await service.refresh(logged_in["tokens"]["refreshToken"])
+    refreshed_again = await service.refresh(refreshed["tokens"]["refreshToken"])
 
     assert registered["user"]["email"] == "baim@example.com"
     assert logged_in["tokens"]["accessToken"]
     assert refreshed["tokens"]["accessToken"]
+    assert refreshed_again["tokens"]["accessToken"]
+
+    with pytest.raises(DomainError) as error:
+        await service.refresh(logged_in["tokens"]["refreshToken"])
+
+    assert error.value.code == "INVALID_TOKEN"
 
 
 @pytest.mark.asyncio

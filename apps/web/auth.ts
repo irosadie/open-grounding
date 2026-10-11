@@ -66,6 +66,7 @@ export const authOptions: NextAuthOptions = {
             email: result.user.email,
             name: result.user.name,
             photo: result.user.photo ?? undefined,
+            role: result.user.role ?? undefined,
             // BUG-WEB-05: companyId removed — field is not returned by backend
             accessToken: result.tokens.accessToken,
             refreshToken: result.tokens.refreshToken,
@@ -99,7 +100,7 @@ export const authOptions: NextAuthOptions = {
         token.name = user.name
         token.email = user.email
         token.photo = user.photo
-        token.companyId = user.companyId
+        token.role = user.role
         token.accessToken = user.accessToken
         token.refreshToken = user.refreshToken
         token.accessTokenExpires = user.accessTokenExpires
@@ -133,6 +134,7 @@ export const authOptions: NextAuthOptions = {
         email: token.email ?? undefined,
         name: token.name ?? undefined,
         photo: token.photo ?? undefined,
+        role: token.role ?? undefined,
         // BUG-WEB-05: companyId removed — not returned by backend
       }
 

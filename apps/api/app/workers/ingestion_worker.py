@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from bullmq import Job, Queue, Worker
 
 from app.core.settings import Settings
-from app.infrastructure.database import create_session_factory
 from app.workers.stages.chunk import chunk_document
+from app.workers.stages.delete import delete_document_version
 from app.workers.stages.embed import embed_chunks
 from app.workers.stages.index import index_chunks
 from app.workers.stages.memory_prune import prune_expired_memory
@@ -24,7 +25,7 @@ from app.workers.stages.parse import parse_document
 from app.workers.stages.validate import validate_and_finalize
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ QUEUE_CHUNK = "ingestion.chunk"
 QUEUE_EMBED = "ingestion.embed"
 QUEUE_INDEX = "ingestion.index"
 QUEUE_VALIDATE = "ingestion.validate"
+QUEUE_DELETE = "ingestion.delete"
 QUEUE_MEMORY_SUMMARIZE = "memory.summarize"
 QUEUE_MEMORY_PRUNE = "memory.prune"
 
@@ -47,21 +49,27 @@ async def enqueue_memory_summarize(
     conversation_id: str,
     tenant_id: str,
     knowledge_base_id: str,
+    project_id: str | None = None,
     user_id: str,
     redis_url: str,
+    job_id: str | None = None,
 ) -> None:
     """Enqueue a memory.summarize job. Called from application layer."""
     q = Queue(QUEUE_MEMORY_SUMMARIZE, {"connection": redis_url})
     try:
+        resolved_job_id = job_id or f"mem:{conversation_id}:{uuid4()}"
+        payload = {
+            "conversationId": conversation_id,
+            "tenantId": tenant_id,
+            "knowledgeBaseId": knowledge_base_id,
+            "userId": user_id,
+        }
+        if project_id is not None:
+            payload["projectId"] = project_id
         await q.add(
             "summarize",
-            {
-                "conversationId": conversation_id,
-                "tenantId": tenant_id,
-                "knowledgeBaseId": knowledge_base_id,
-                "userId": user_id,
-            },
-            {**_DEFAULT_JOB_OPTS, "jobId": f"mem:{conversation_id}"},
+            payload,
+            {**_DEFAULT_JOB_OPTS, "jobId": resolved_job_id},
         )
     finally:
         await q.close()
@@ -70,7 +78,7 @@ async def enqueue_memory_summarize(
 async def _mark_failed(
     document_version_id: str,
     tenant_id: str,
-    session_factory: "async_sessionmaker",
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     from app.infrastructure.rag_catalog import SqlAlchemyDocumentVersionRepository
 
@@ -85,7 +93,7 @@ async def _mark_failed(
 
 def create_ingestion_workers(
     settings: Settings,
-    session_factory: "async_sessionmaker",
+    session_factory: async_sessionmaker[AsyncSession],
     redis_url: str,
 ) -> list[Worker]:
     """Create all ingestion + memory BullMQ workers."""
@@ -171,6 +179,14 @@ def create_ingestion_workers(
         async with session_factory() as session:
             await validate_and_finalize(version_id, tenant_id, session, settings)
 
+    async def handle_delete(job: Job, token: str) -> None:
+        data = job.data
+        version_id = data["documentVersionId"]
+        tenant_id = data["tenantId"]
+        logger.info("[delete] %s", version_id)
+        async with session_factory() as session:
+            await delete_document_version(version_id, tenant_id, session, settings)
+
     async def handle_memory_summarize(job: Job, token: str) -> None:
         data = job.data
         logger.info("[memory.summarize] conversation=%s", data.get("conversationId"))
@@ -179,6 +195,7 @@ def create_ingestion_workers(
                 conversation_id=data["conversationId"],
                 tenant_id=data["tenantId"],
                 knowledge_base_id=data.get("knowledgeBaseId", ""),
+                project_id=data.get("projectId"),
                 user_id=data.get("userId", ""),
                 session=session,
                 settings=settings,
@@ -198,6 +215,7 @@ def create_ingestion_workers(
     embed_worker = Worker(QUEUE_EMBED, handle_embed, {**ingestion_opts})
     index_worker = Worker(QUEUE_INDEX, handle_index, {**ingestion_opts})
     validate_worker = Worker(QUEUE_VALIDATE, handle_validate, {**ingestion_opts})
+    delete_worker = Worker(QUEUE_DELETE, handle_delete, {**conn, "concurrency": 2})
 
     for w in (parse_worker, chunk_worker, embed_worker, index_worker, validate_worker):
         w.on("failed", _on_failed_ingestion)
@@ -215,6 +233,7 @@ def create_ingestion_workers(
         embed_worker,
         index_worker,
         validate_worker,
+        delete_worker,
         memory_summarize_worker,
         memory_prune_worker,
     ]

@@ -70,8 +70,6 @@ instance.interceptors.response.use(
         callbackUrl,
       )}&sessionExpired=1`
       window.location.href = loginUrl
-
-      return new Promise(() => {})
     }
 
     throw (error.response?.data ?? error) as ErrorResponse

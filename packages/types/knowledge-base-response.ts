@@ -4,6 +4,7 @@ export type KnowledgeBaseResponseProps = {
   slug: string
   name: string
   status: string
+  projectId: string
   createdAt: string
   updatedAt: string
 }

@@ -19,9 +19,7 @@ export const ragQueryRouteLabels = [
   { label: "Refused", value: "refused" },
 ]
 
-export const getRagQueryRouteLabel = (
-  value: RagQueryRoute,
-) => {
+export const getRagQueryRouteLabel = (value: RagQueryRoute) => {
   return (
     ragQueryRouteLabels.find((item) => item.value === value)?.label ?? value
   )
@@ -53,6 +51,7 @@ export const ragQuerySchema = z.object({
     .array(z.string().min(1))
     .min(1, "Select at least one knowledge base")
     .max(20, "Select at most 20 knowledge bases"),
+  projectId: z.string().max(120).optional(),
   conversationId: z
     .string()
     .max(120, "Conversation id must be 120 characters or less")
@@ -78,8 +77,13 @@ export const ragAnswerFeedbackSchema = z
       .optional(),
   })
   // BUG-PKG-02: require at least one field so empty {} payloads are rejected.
-  .refine((data) => data.rating !== undefined || (data.comment !== undefined && data.comment.length > 0), {
-    message: "At least one of rating or comment must be provided",
-  })
+  .refine(
+    (data) =>
+      data.rating !== undefined ||
+      (data.comment !== undefined && data.comment.length > 0),
+    {
+      message: "At least one of rating or comment must be provided",
+    },
+  )
 
 export type RagAnswerFeedbackProps = z.infer<typeof ragAnswerFeedbackSchema>

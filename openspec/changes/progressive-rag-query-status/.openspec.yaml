@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-09-18
+goal: Show planning, retrieval, generation, and validation progress during
+  streamed RAG queries without exposing unvalidated answer content.

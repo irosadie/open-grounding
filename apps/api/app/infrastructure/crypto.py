@@ -9,6 +9,7 @@ Storage format: base64(iv[12] + ciphertext + tag[16])
 import base64
 import hashlib
 import os
+from typing import cast
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -42,8 +43,8 @@ def get_encryption_key(settings: object) -> str:
     """Get the encryption key from settings. Falls back to jwt_secret."""
     secret_key = getattr(settings, "secret_key", None)
     if secret_key:
-        return secret_key
+        return cast(str, secret_key)
     jwt_secret = getattr(settings, "jwt_secret", None)
     if jwt_secret:
-        return jwt_secret
+        return cast(str, jwt_secret)
     raise RuntimeError("No SECRET_KEY or JWT_SECRET configured for credential encryption.")

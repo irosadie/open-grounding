@@ -13,7 +13,7 @@ Covers tasks 11.1–11.8:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -49,6 +49,7 @@ def _make_cfg(**kwargs) -> IngestionConfig:
 # ---------------------------------------------------------------------------
 # 11.1 — upsert_config with key → encrypted, not plain text
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_upsert_encrypts_api_key() -> None:
@@ -91,9 +92,38 @@ async def test_upsert_encrypts_api_key() -> None:
     assert result.docling_serve_api_key_set is True
 
 
+@pytest.mark.asyncio
+async def test_upsert_rejects_blank_api_key() -> None:
+    from app.application.ingestion_config_service import IngestionConfigService
+    from app.core.settings import Settings
+    from app.domain.errors import DomainError
+
+    mock_session = AsyncMock()
+    svc = IngestionConfigService(mock_session)
+    svc._kb_repo = MagicMock()
+    svc._kb_repo.find_by_id = AsyncMock(return_value=MagicMock())
+    svc._repo = MagicMock()
+
+    with pytest.raises(DomainError, match="must not be empty"):
+        await svc.upsert_config(
+            tenant=_TENANT,
+            knowledge_base_id="kb-1",
+            min_text_coverage=0.3,
+            max_invalid_char_ratio=0.1,
+            min_aggregate_confidence=0.5,
+            min_page_coverage=0.5,
+            auto_review=False,
+            parser="docling_serve",
+            docling_serve_url="http://serve:5001",
+            docling_serve_api_key="   ",
+            settings=Settings(secret_key="test-secret-key-32-chars-padding!"),
+        )
+
+
 # ---------------------------------------------------------------------------
 # 11.2 — upsert_config with key=None → clears enc
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_upsert_clears_api_key_when_none() -> None:
@@ -137,9 +167,10 @@ async def test_upsert_clears_api_key_when_none() -> None:
 # 11.3 — upsert_config with key=_UNSET → keeps existing enc
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_upsert_keeps_existing_key_when_unset() -> None:
-    from app.application.ingestion_config_service import IngestionConfigService, _UNSET
+    from app.application.ingestion_config_service import _UNSET, IngestionConfigService
     from app.core.settings import Settings
 
     settings = Settings()
@@ -177,8 +208,58 @@ async def test_upsert_keeps_existing_key_when_unset() -> None:
 
 
 # ---------------------------------------------------------------------------
+# HTTP route preserves explicit null versus omitted API key
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_http_route_passes_explicit_null_to_clear_api_key() -> None:
+    from app.application.ingestion_config_service import _to_result
+    from app.core.settings import Settings
+    from app.interfaces.http.routes import upsert_ingestion_config
+    from app.interfaces.http.schemas import IngestionConfigWriteRequest
+
+    service = MagicMock()
+    service.upsert_config = AsyncMock(return_value=_to_result(_make_cfg()))
+    payload = IngestionConfigWriteRequest(docling_serve_api_key=None)
+
+    await upsert_ingestion_config(
+        "kb-1",
+        payload,
+        service,
+        _TENANT,
+        Settings(),
+    )
+
+    assert service.upsert_config.await_args.kwargs["docling_serve_api_key"] is None
+
+
+@pytest.mark.asyncio
+async def test_http_route_uses_unset_when_api_key_is_omitted() -> None:
+    from app.application.ingestion_config_service import _UNSET, _to_result
+    from app.core.settings import Settings
+    from app.interfaces.http.routes import upsert_ingestion_config
+    from app.interfaces.http.schemas import IngestionConfigWriteRequest
+
+    service = MagicMock()
+    service.upsert_config = AsyncMock(return_value=_to_result(_make_cfg()))
+    payload = IngestionConfigWriteRequest()
+
+    await upsert_ingestion_config(
+        "kb-1",
+        payload,
+        service,
+        _TENANT,
+        Settings(),
+    )
+
+    assert service.upsert_config.await_args.kwargs["docling_serve_api_key"] is _UNSET
+
+
+# ---------------------------------------------------------------------------
 # 11.4 — get_api_key_decrypted returns original plain-text
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_get_api_key_decrypted_returns_plaintext() -> None:
@@ -209,6 +290,7 @@ async def test_get_api_key_decrypted_returns_plaintext() -> None:
 # 11.5 — DoclingServeAdapter with api_key → X-Api-Key on all requests
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_adapter_injects_api_key_header() -> None:
     from app.domain.rag.elements import ParserProfile
@@ -217,11 +299,15 @@ async def test_adapter_injects_api_key_header() -> None:
     profile = ParserProfile(id="default-v1", pipeline="standard", model="layout", ocr_enabled=False, version="1")
     client = MagicMock(spec=httpx.AsyncClient)
 
-    submit_resp = MagicMock(); submit_resp.status_code = 200; submit_resp.json.return_value = {"task_id": "t1"}
-    poll_resp = MagicMock(); poll_resp.status_code = 200; poll_resp.json.return_value = {"task_status": "success"}
-    result_resp = MagicMock(); result_resp.status_code = 200; result_resp.json.return_value = {
-        "document": {"md_content": "hello"}, "confidence": {"mean_score": 0.9, "parse_score": 1.0, "layout_score": 0.9}
-    }
+    submit_resp = MagicMock()
+    submit_resp.status_code = 200
+    submit_resp.json.return_value = {"task_id": "t1"}
+    poll_resp = MagicMock()
+    poll_resp.status_code = 200
+    poll_resp.json.return_value = {"task_status": "success"}
+    result_resp = MagicMock()
+    result_resp.status_code = 200
+    result_resp.json.return_value = {"document": {"md_content": "hello"}, "confidence": {"mean_score": 0.9, "parse_score": 1.0, "layout_score": 0.9}}
     client.post = AsyncMock(return_value=submit_resp)
     client.get = AsyncMock(side_effect=[poll_resp, result_resp])
 
@@ -255,6 +341,7 @@ async def test_adapter_injects_api_key_header() -> None:
 # 11.6 — DoclingServeAdapter with api_key=None → no X-Api-Key header
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_adapter_no_header_when_api_key_none() -> None:
     from app.domain.rag.elements import ParserProfile
@@ -263,11 +350,15 @@ async def test_adapter_no_header_when_api_key_none() -> None:
     profile = ParserProfile(id="default-v1", pipeline="standard", model="layout", ocr_enabled=False, version="1")
     client = MagicMock(spec=httpx.AsyncClient)
 
-    submit_resp = MagicMock(); submit_resp.status_code = 200; submit_resp.json.return_value = {"task_id": "t1"}
-    poll_resp = MagicMock(); poll_resp.status_code = 200; poll_resp.json.return_value = {"task_status": "success"}
-    result_resp = MagicMock(); result_resp.status_code = 200; result_resp.json.return_value = {
-        "document": {"md_content": "hello"}, "confidence": {}
-    }
+    submit_resp = MagicMock()
+    submit_resp.status_code = 200
+    submit_resp.json.return_value = {"task_id": "t1"}
+    poll_resp = MagicMock()
+    poll_resp.status_code = 200
+    poll_resp.json.return_value = {"task_status": "success"}
+    result_resp = MagicMock()
+    result_resp.status_code = 200
+    result_resp.json.return_value = {"document": {"md_content": "hello"}, "confidence": {}}
     client.post = AsyncMock(return_value=submit_resp)
     client.get = AsyncMock(side_effect=[poll_resp, result_resp])
 
@@ -296,8 +387,10 @@ async def test_adapter_no_header_when_api_key_none() -> None:
 # 11.7 — IngestionConfigResult.docling_serve_api_key_set
 # ---------------------------------------------------------------------------
 
+
 def test_ingestion_config_result_api_key_set_true() -> None:
     from app.application.ingestion_config_service import _to_result
+
     cfg = _make_cfg(docling_serve_api_key_enc="some-encrypted-value")
     result = _to_result(cfg)
     assert result.docling_serve_api_key_set is True
@@ -305,6 +398,7 @@ def test_ingestion_config_result_api_key_set_true() -> None:
 
 def test_ingestion_config_result_api_key_set_false() -> None:
     from app.application.ingestion_config_service import _to_result
+
     cfg = _make_cfg(docling_serve_api_key_enc=None)
     result = _to_result(cfg)
     assert result.docling_serve_api_key_set is False
@@ -313,6 +407,7 @@ def test_ingestion_config_result_api_key_set_false() -> None:
 # ---------------------------------------------------------------------------
 # 11.8 — parse stage passes decrypted key to _run_serve_adapter
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_parse_stage_passes_decrypted_key_to_serve_adapter() -> None:

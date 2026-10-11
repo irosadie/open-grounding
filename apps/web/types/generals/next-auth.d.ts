@@ -8,7 +8,7 @@ declare module "next-auth" {
       name?: string | null
       email?: string | null
       photo?: string
-      companyId: number
+      role?: string | null
     } & DefaultSession["user"]
     accessToken?: string
     refreshToken?: string
@@ -21,7 +21,7 @@ declare module "next-auth" {
     name: string
     email: string
     photo?: string
-    companyId: number
+    role?: string | null
     accessToken?: string
     refreshToken?: string
     accessTokenExpires?: number
@@ -34,7 +34,7 @@ declare module "next-auth/jwt" {
     name?: string
     email?: string
     photo?: string
-    companyId?: number
+    role?: string | null
     accessToken?: string
     refreshToken?: string
     accessTokenExpires?: number

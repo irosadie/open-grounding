@@ -1,4 +1,5 @@
 """Unit tests for rag-numeric-confidence: tasks 12.1 – 12.9."""
+
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -97,7 +98,9 @@ class AnswerRuns:
         run = self.runs.get(answer_run_id)
         if run is None:
             return None
-        updated = AnswerRun(run.id, run.tenant_id, run.trace_id, run.conversation_id, run.original_query, run.standalone_query, run.route, run.evidence_level, run.profile_snapshot, run.limitations, run.created_at, feature_vector)
+        updated = AnswerRun(
+            run.id, run.tenant_id, run.trace_id, run.conversation_id, run.original_query, run.standalone_query, run.route, run.evidence_level, run.profile_snapshot, run.limitations, run.created_at, feature_vector
+        )
         self.runs[answer_run_id] = updated
         return updated
 
@@ -119,6 +122,7 @@ class Models:
     async def promote(self, *, model_id: str, promoted_by: str, **_: object) -> CalibrationModelVersion | None:
         if self.model and self.model.id == model_id:
             from dataclasses import replace
+
             self.model = replace(self.model, is_active=True, promoted_by=promoted_by)
             return self.model
         return None
@@ -130,7 +134,8 @@ class Models:
 class Configs:
     def __init__(self, emit: bool = False, minimum: int = 0, active_model_id: str | None = None) -> None:
         self.config = ConfidenceConfig(
-            "tenant", "profile",
+            "tenant",
+            "profile",
             emit_numeric_score=emit,
             min_labeled_entries=minimum,
             active_model_id=active_model_id,

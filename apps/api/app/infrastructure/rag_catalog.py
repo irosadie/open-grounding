@@ -7,8 +7,9 @@ return raw records. Imports SQLAlchemy only; domain code never imports this
 module's types.
 """
 
+from builtins import list as builtin_list
 from datetime import datetime
-from typing import cast
+from typing import TYPE_CHECKING, Any, cast
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -27,21 +28,23 @@ from sqlalchemy import (
     Uuid,
     select,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import CursorResult
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.domain.mcp.entities import McpInvocation, McpServer, McpTool, McpToolDescriptor
+from app.domain.mcp.enums import McpInvocationStatus, McpServerStatus, McpTransport
 from app.domain.rag.catalog import (
     Chunk,
     ChunkType,
     DecompositionConfig,
-    IngestionConfig,
-    PlannerConfig,
     Document,
     DocumentVersion,
     DocumentVersionLifecycleState,
     IndexGeneration,
     IndexGenerationStatus,
+    IngestionConfig,
     IngestionJob,
     IngestionJobStatus,
     KnowledgeBase,
@@ -50,15 +53,18 @@ from app.domain.rag.catalog import (
     KnowledgeSourceType,
     OutboxEvent,
     OutboxEventStatus,
+    PlannerConfig,
     StageCheckpoint,
     StageCheckpointStatus,
 )
 from app.domain.rag.confidence import CalibrationFixture, CalibrationFixtureEntry, CalibrationModelVersion, CalibrationSource, ConfidenceConfig, ConfidenceLabel
 from app.domain.rag.policy import Classification
 from app.domain.rag.profiles import IndexProfile, ModelProfile, RetrievalConfig
-from app.domain.mcp.entities import McpInvocation, McpServer, McpTool, McpToolDescriptor
-from app.domain.mcp.enums import McpInvocationStatus, McpServerStatus, McpTransport
 from app.infrastructure.database import Base, utc_now
+
+if TYPE_CHECKING:
+    from app.domain.rag.memory import MemoryChunk, MemoryConfig
+    from app.domain.rag.query_job import RagQueryJob
 
 
 def _tenant_fk() -> ForeignKey:
@@ -71,6 +77,12 @@ class KnowledgeBaseRecord(Base):
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    project_id: Mapped[str | None] = mapped_column(
+        "project_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_projects.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     slug: Mapped[str] = mapped_column(String(120), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[KnowledgeBaseStatus] = mapped_column(
@@ -106,6 +118,9 @@ class DocumentRecord(Base):
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column("deleted_at", DateTime(timezone=False), nullable=True)
+
+    __table_args__ = (Index("ix_rag_documents_tenant_kb", "tenant_id", "knowledge_base_id"),)
 
 
 class DocumentVersionRecord(Base):
@@ -124,13 +139,11 @@ class DocumentVersionRecord(Base):
     source_revision: Mapped[str | None] = mapped_column(String(512), nullable=True)
     pipeline_fingerprint: Mapped[str | None] = mapped_column(String(512), nullable=True)
     parsed_text: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
-    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
+    metadata_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=None)
     object_key_raw: Mapped[str] = mapped_column(String(1024), nullable=False)
     size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    classification: Mapped[Classification] = mapped_column(
-        Enum(Classification, name="Classification"), default=Classification.INTERNAL, nullable=False
-    )
+    classification: Mapped[Classification] = mapped_column(Enum(Classification, name="Classification"), default=Classification.INTERNAL, nullable=False)
     acl_principals: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     effective_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     effective_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
@@ -183,9 +196,7 @@ class RetrievalConfigRecord(Base):
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), _tenant_fk(), nullable=False)
-    index_profile_id: Mapped[str] = mapped_column(
-        Uuid(as_uuid=False), ForeignKey("rag_index_profiles.id", ondelete="CASCADE"), nullable=False
-    )
+    index_profile_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_index_profiles.id", ondelete="CASCADE"), nullable=False)
     dense_weight: Mapped[float] = mapped_column(nullable=False, default=1.0)
     sparse_weight: Mapped[float] = mapped_column(nullable=False, default=1.0)
     fusion_k: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
@@ -212,9 +223,7 @@ class CalibrationFixtureRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
     created_by: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
-    __table_args__ = (
-        Index("uq_calibration_fixture_active_profile", "tenant_id", "retrieval_profile_id", unique=True, postgresql_where=is_active.is_(True)),
-    )
+    __table_args__ = (Index("uq_calibration_fixture_active_profile", "tenant_id", "retrieval_profile_id", unique=True, postgresql_where=is_active.is_(True)),)
 
 
 class CalibrationFixtureEntryRecord(Base):
@@ -250,9 +259,7 @@ class CalibrationModelVersionRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
     promoted_by: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
-    __table_args__ = (
-        Index("uq_calibration_model_active_profile", "tenant_id", "retrieval_profile_id", unique=True, postgresql_where=is_active.is_(True)),
-    )
+    __table_args__ = (Index("uq_calibration_model_active_profile", "tenant_id", "retrieval_profile_id", unique=True, postgresql_where=is_active.is_(True)),)
 
 
 class ConfidenceConfigRecord(Base):
@@ -277,7 +284,7 @@ class IndexGenerationRecord(Base):
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
-    document_version_id: Mapped[str] = mapped_column("document_version_id", Uuid(as_uuid=False), ForeignKey("rag_document_versions.id", ondelete="CASCADE"), nullable=False)
+    document_version_id: Mapped[str | None] = mapped_column("document_version_id", Uuid(as_uuid=False), ForeignKey("rag_document_versions.id", ondelete="SET NULL"), nullable=True)
     index_profile_id: Mapped[str] = mapped_column("index_profile_id", Uuid(as_uuid=False), ForeignKey("rag_index_profiles.id", ondelete="RESTRICT"), nullable=False)
     status: Mapped[IndexGenerationStatus] = mapped_column(
         Enum(IndexGenerationStatus, name="IndexGenerationStatus"),
@@ -398,6 +405,7 @@ def _to_knowledge_base(row: KnowledgeBaseRecord) -> KnowledgeBase:
         slug=row.slug,
         name=row.name,
         status=row.status,
+        project_id=row.project_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -425,6 +433,7 @@ def _to_document(row: DocumentRecord) -> Document:
         title=row.title,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        deleted_at=row.deleted_at,
     )
 
 
@@ -514,7 +523,22 @@ def _to_calibration_fixture_entry(row: CalibrationFixtureEntryRecord) -> Calibra
 
 
 def _to_calibration_model(row: CalibrationModelVersionRecord) -> CalibrationModelVersion:
-    return CalibrationModelVersion(row.id, row.tenant_id, row.retrieval_profile_id, row.fixture_id, row.artifact_path, tuple(row.feature_names), row.threshold_used, row.precision_at_threshold, row.recall_at_threshold, row.f1_at_threshold, row.entry_count, row.is_active, row.created_at, row.promoted_by)
+    return CalibrationModelVersion(
+        row.id,
+        row.tenant_id,
+        row.retrieval_profile_id,
+        row.fixture_id,
+        row.artifact_path,
+        tuple(row.feature_names),
+        row.threshold_used,
+        row.precision_at_threshold,
+        row.recall_at_threshold,
+        row.f1_at_threshold,
+        row.entry_count,
+        row.is_active,
+        row.created_at,
+        row.promoted_by,
+    )
 
 
 def _to_confidence_config(row: ConfidenceConfigRecord) -> ConfidenceConfig:
@@ -567,29 +591,55 @@ def _to_outbox_event(row: OutboxEventRecord) -> OutboxEvent:
 
 def _to_mcp_server(row: McpServerRecord) -> McpServer:
     return McpServer(
-        id=row.id, tenant_id=row.tenant_id, name=row.name, transport=row.transport,
-        command=row.command, args=list(row.args), url=row.url, auth_type=row.auth_type,
-        credential_ref=row.credential_ref, headers_json=dict(row.headers_json),
-        timeout_seconds=row.timeout_seconds, max_payload_bytes=row.max_payload_bytes,
-        allow_insecure=row.allow_insecure, enabled=row.enabled, status=row.status,
-        last_error=row.last_error, created_at=row.created_at, updated_at=row.updated_at,
+        id=row.id,
+        tenant_id=row.tenant_id,
+        name=row.name,
+        transport=row.transport,
+        command=row.command,
+        args=list(row.args),
+        url=row.url,
+        auth_type=row.auth_type,
+        credential_ref=row.credential_ref,
+        headers_json=dict(row.headers_json),
+        timeout_seconds=row.timeout_seconds,
+        max_payload_bytes=row.max_payload_bytes,
+        allow_insecure=row.allow_insecure,
+        enabled=row.enabled,
+        status=row.status,
+        last_error=row.last_error,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
 def _to_mcp_tool(row: McpToolRecord) -> McpTool:
     return McpTool(
-        id=row.id, tenant_id=row.tenant_id, server_id=row.server_id, name=row.name,
-        description=row.description, input_schema=dict(row.input_schema), allowed=row.allowed,
-        is_stale=row.is_stale, last_discovered_at=row.last_discovered_at,
-        created_at=row.created_at, updated_at=row.updated_at,
+        id=row.id,
+        tenant_id=row.tenant_id,
+        server_id=row.server_id,
+        name=row.name,
+        description=row.description,
+        input_schema=dict(row.input_schema),
+        allowed=row.allowed,
+        is_stale=row.is_stale,
+        last_discovered_at=row.last_discovered_at,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
     )
 
 
 def _to_mcp_invocation(row: McpInvocationRecord) -> McpInvocation:
     return McpInvocation(
-        id=row.id, tenant_id=row.tenant_id, server_id=row.server_id, tool_id=row.tool_id,
-        user_id=row.user_id, args_json=dict(row.args_json), args_hash=row.args_hash,
-        status=row.status, result_text=row.result_text, duration_ms=row.duration_ms,
+        id=row.id,
+        tenant_id=row.tenant_id,
+        server_id=row.server_id,
+        tool_id=row.tool_id,
+        user_id=row.user_id,
+        args_json=dict(row.args_json),
+        args_hash=row.args_hash,
+        status=row.status,
+        result_text=row.result_text,
+        duration_ms=row.duration_ms,
         created_at=row.created_at,
     )
 
@@ -621,10 +671,19 @@ class SqlAlchemyKnowledgeBaseRepository:
         row = result.scalar_one_or_none()
         return _to_knowledge_base(row) if row else None
 
-    async def create(self, *, tenant_id: str, slug: str, name: str, status: str) -> KnowledgeBase:
+    async def create(
+        self,
+        *,
+        tenant_id: str,
+        slug: str,
+        name: str,
+        status: str,
+        project_id: str | None = None,
+    ) -> KnowledgeBase:
         row = KnowledgeBaseRecord(
             id=str(uuid4()),
             tenant_id=tenant_id,
+            project_id=project_id,
             slug=slug,
             name=name,
             status=KnowledgeBaseStatus(status),
@@ -636,10 +695,12 @@ class SqlAlchemyKnowledgeBaseRepository:
 
     async def list_by_tenant(self, *, tenant_id: str) -> list[KnowledgeBase]:
         result = await self._session.execute(
-            select(KnowledgeBaseRecord).where(
+            select(KnowledgeBaseRecord)
+            .where(
                 KnowledgeBaseRecord.tenant_id == tenant_id,
                 KnowledgeBaseRecord.status == KnowledgeBaseStatus.ACTIVE,
-            ).order_by(KnowledgeBaseRecord.created_at.desc())
+            )
+            .order_by(KnowledgeBaseRecord.created_at.desc())
         )
         return [_to_knowledge_base(row) for row in result.scalars().all()]
 
@@ -695,6 +756,7 @@ class SqlAlchemyDocumentRepository:
             select(DocumentRecord).where(
                 DocumentRecord.tenant_id == tenant_id,
                 DocumentRecord.id == document_id,
+                DocumentRecord.deleted_at.is_(None),
             )
         )
         row = result.scalar_one_or_none()
@@ -812,18 +874,9 @@ class SqlAlchemyDocumentVersionRepository:
         return row.parsed_text if row else None
 
     async def count_needs_review(self, *, tenant_id: str) -> int:
-        from sqlalchemy import func, select
-        result = await self._session.execute(
-            select(func.count()).where(
-                DocumentVersionRecord.tenant_id == tenant_id,
-                DocumentVersionRecord.lifecycle_state == DocumentVersionLifecycleState.NEEDS_REVIEW,
-            )
-        )
-        return result.scalar_one() or 0
-
-    async def count_needs_review(self, *, tenant_id: str) -> int:
         """Return count of document versions in NEEDS_REVIEW state for a tenant."""
         from sqlalchemy import func
+
         result = await self._session.execute(
             select(func.count()).where(
                 DocumentVersionRecord.tenant_id == tenant_id,
@@ -837,23 +890,54 @@ class SqlAlchemyDocumentVersionRepository:
         *,
         tenant_id: str,
         knowledge_base_id: str,
+        limit: int | None = 200,
     ) -> list[tuple[DocumentVersion, str, str]]:
         """Return list of (version, document_title, filename) for a KB."""
-        result = await self._session.execute(
+        stmt = (
             select(DocumentVersionRecord, DocumentRecord)
             .join(DocumentRecord, DocumentVersionRecord.document_id == DocumentRecord.id)
             .where(
                 DocumentVersionRecord.tenant_id == tenant_id,
                 DocumentRecord.knowledge_base_id == knowledge_base_id,
                 DocumentRecord.tenant_id == tenant_id,
+                DocumentRecord.deleted_at.is_(None),
+            )
+            .order_by(DocumentVersionRecord.created_at.desc())
+        )
+        if limit is not None:
+            stmt = stmt.limit(max(1, limit))
+        result = await self._session.execute(stmt)
+        rows = result.all()
+        return [(_to_document_version(ver), doc.title or doc.id, doc.id) for ver, doc in rows]
+
+    async def list_by_ids(
+        self,
+        *,
+        tenant_id: str,
+        version_ids: tuple[str, ...] | list[str],
+        limit: int | None = 200,
+    ) -> list[tuple[DocumentVersion, str, str]]:
+        """Batch-load (version, title, document_id) for explicit version ids only."""
+        if not version_ids:
+            return []
+        unique_ids = list(dict.fromkeys(version_ids))
+        if limit is not None:
+            unique_ids = unique_ids[: max(1, limit)]
+        if not unique_ids:
+            return []
+        result = await self._session.execute(
+            select(DocumentVersionRecord, DocumentRecord)
+            .join(DocumentRecord, DocumentVersionRecord.document_id == DocumentRecord.id)
+            .where(
+                DocumentVersionRecord.tenant_id == tenant_id,
+                DocumentVersionRecord.id.in_(unique_ids),
+                DocumentRecord.tenant_id == tenant_id,
+                DocumentRecord.deleted_at.is_(None),
             )
             .order_by(DocumentVersionRecord.created_at.desc())
         )
         rows = result.all()
-        return [
-            (_to_document_version(ver), doc.title or doc.id, doc.id)
-            for ver, doc in rows
-        ]
+        return [(_to_document_version(ver), doc.title or doc.id, doc.id) for ver, doc in rows]
 
 
 class SqlAlchemyModelProfileRepository:
@@ -872,10 +956,12 @@ class SqlAlchemyModelProfileRepository:
 
     async def list_by_tenant(self, *, tenant_id: str) -> list[ModelProfile]:
         result = await self._session.execute(
-            select(ModelProfileRecord).where(
+            select(ModelProfileRecord)
+            .where(
                 ModelProfileRecord.tenant_id == tenant_id,
                 ModelProfileRecord.is_active == True,  # noqa: E712
-            ).order_by(ModelProfileRecord.created_at.desc())
+            )
+            .order_by(ModelProfileRecord.created_at.desc())
         )
         return [_to_model_profile(row) for row in result.scalars().all()]
 
@@ -942,19 +1028,23 @@ class SqlAlchemyIndexProfileRepository:
 
     async def find_active(self, *, tenant_id: str) -> IndexProfile | None:
         result = await self._session.execute(
-            select(IndexProfileRecord).where(
+            select(IndexProfileRecord)
+            .where(
                 IndexProfileRecord.tenant_id == tenant_id,
                 IndexProfileRecord.is_active == True,  # noqa: E712
-            ).limit(1)
+            )
+            .limit(1)
         )
         row = result.scalar_one_or_none()
         return _to_index_profile(row) if row else None
 
     async def list_by_tenant(self, *, tenant_id: str) -> list[IndexProfile]:
         result = await self._session.execute(
-            select(IndexProfileRecord).where(
+            select(IndexProfileRecord)
+            .where(
                 IndexProfileRecord.tenant_id == tenant_id,
-            ).order_by(IndexProfileRecord.created_at.desc())
+            )
+            .order_by(IndexProfileRecord.created_at.desc())
         )
         return [_to_index_profile(row) for row in result.scalars().all()]
 
@@ -1095,8 +1185,15 @@ class SqlCalibrationFixtureRepository:
 
     async def save(self, fixture: CalibrationFixture) -> CalibrationFixture:
         row = CalibrationFixtureRecord(
-            id=fixture.id, tenant_id=fixture.tenant_id, retrieval_profile_id=fixture.retrieval_profile_id, version=fixture.version,
-            source=fixture.source, entry_count=fixture.entry_count, is_active=fixture.is_active, created_at=fixture.created_at, created_by=fixture.created_by,
+            id=fixture.id,
+            tenant_id=fixture.tenant_id,
+            retrieval_profile_id=fixture.retrieval_profile_id,
+            version=fixture.version,
+            source=fixture.source,
+            entry_count=fixture.entry_count,
+            is_active=fixture.is_active,
+            created_at=fixture.created_at,
+            created_by=fixture.created_by,
         )
         self._session.add(row)
         await self._session.commit()
@@ -1104,31 +1201,62 @@ class SqlCalibrationFixtureRepository:
         return _to_calibration_fixture(row)
 
     async def get_active(self, *, tenant_id: str, retrieval_profile_id: str) -> CalibrationFixture | None:
-        result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id, CalibrationFixtureRecord.is_active.is_(True)))
+        result = await self._session.execute(
+            select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id, CalibrationFixtureRecord.is_active.is_(True))
+        )
         row = result.scalar_one_or_none()
         return _to_calibration_fixture(row) if row else None
 
     async def list(self, *, tenant_id: str, retrieval_profile_id: str) -> list[CalibrationFixture]:
-        result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id).order_by(CalibrationFixtureRecord.created_at.desc()))
+        result = await self._session.execute(
+            select(CalibrationFixtureRecord)
+            .where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id)
+            .order_by(CalibrationFixtureRecord.created_at.desc())
+        )
         return [_to_calibration_fixture(row) for row in result.scalars()]
 
     async def deactivate_previous(self, *, tenant_id: str, retrieval_profile_id: str) -> None:
-        result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id, CalibrationFixtureRecord.is_active.is_(True)))
+        result = await self._session.execute(
+            select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id, CalibrationFixtureRecord.is_active.is_(True))
+        )
         for row in result.scalars():
             row.is_active = False
         await self._session.commit()
 
-    async def append_entries(self, *, tenant_id: str, fixture_id: str, entries: list[CalibrationFixtureEntry]) -> None:
+    async def append_entries(self, *, tenant_id: str, fixture_id: str, entries: builtin_list[CalibrationFixtureEntry]) -> None:
         result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.id == fixture_id, CalibrationFixtureRecord.tenant_id == tenant_id))
         fixture = result.scalar_one_or_none()
         if fixture is None:
             return
-        self._session.add_all([CalibrationFixtureEntryRecord(id=entry.id, fixture_id=fixture_id, answer_run_id=entry.answer_run_id, query=entry.query, evidence_chunk_ids=list(entry.evidence_chunk_ids), answer=entry.answer, confidence_label=entry.confidence_label, annotator_id=entry.annotator_id, annotated_at=entry.annotated_at, created_at=entry.created_at) for entry in entries])
+        self._session.add_all(
+            [
+                CalibrationFixtureEntryRecord(
+                    id=entry.id,
+                    fixture_id=fixture_id,
+                    answer_run_id=entry.answer_run_id,
+                    query=entry.query,
+                    evidence_chunk_ids=list(entry.evidence_chunk_ids),
+                    answer=entry.answer,
+                    confidence_label=entry.confidence_label,
+                    annotator_id=entry.annotator_id,
+                    annotated_at=entry.annotated_at,
+                    created_at=entry.created_at,
+                )
+                for entry in entries
+            ]
+        )
         fixture.entry_count += len(entries)
         await self._session.commit()
 
     async def count_labeled_entries(self, *, tenant_id: str, retrieval_profile_id: str) -> int:
-        result = await self._session.execute(select(CalibrationFixtureRecord.entry_count).where(CalibrationFixtureRecord.tenant_id == tenant_id, CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id, CalibrationFixtureRecord.source == CalibrationSource.OPERATOR_LABELED, CalibrationFixtureRecord.is_active.is_(True)))
+        result = await self._session.execute(
+            select(CalibrationFixtureRecord.entry_count).where(
+                CalibrationFixtureRecord.tenant_id == tenant_id,
+                CalibrationFixtureRecord.retrieval_profile_id == retrieval_profile_id,
+                CalibrationFixtureRecord.source == CalibrationSource.OPERATOR_LABELED,
+                CalibrationFixtureRecord.is_active.is_(True),
+            )
+        )
         return sum(result.scalars())
 
     async def get(self, *, tenant_id: str, fixture_id: str) -> CalibrationFixture | None:
@@ -1136,7 +1264,7 @@ class SqlCalibrationFixtureRepository:
         row = result.scalar_one_or_none()
         return _to_calibration_fixture(row) if row else None
 
-    async def get_entries(self, *, tenant_id: str, fixture_id: str) -> list[CalibrationFixtureEntry]:
+    async def get_entries(self, *, tenant_id: str, fixture_id: str) -> builtin_list[CalibrationFixtureEntry]:
         result = await self._session.execute(
             select(CalibrationFixtureEntryRecord)
             .join(CalibrationFixtureRecord, CalibrationFixtureEntryRecord.fixture_id == CalibrationFixtureRecord.id)
@@ -1145,22 +1273,37 @@ class SqlCalibrationFixtureRepository:
         )
         return [_to_calibration_fixture_entry(row) for row in result.scalars()]
 
-    async def upsert_answer_run_entries(self, *, tenant_id: str, fixture_id: str, entries: list[CalibrationFixtureEntry]) -> int:
+    async def upsert_answer_run_entries(self, *, tenant_id: str, fixture_id: str, entries: builtin_list[CalibrationFixtureEntry]) -> int:
         result = await self._session.execute(select(CalibrationFixtureRecord).where(CalibrationFixtureRecord.id == fixture_id, CalibrationFixtureRecord.tenant_id == tenant_id).with_for_update())
         fixture = result.scalar_one_or_none()
         if fixture is None:
             return 0
         created = 0
         for entry in entries:
-            result = await self._session.execute(select(CalibrationFixtureEntryRecord).where(CalibrationFixtureEntryRecord.fixture_id == fixture_id, CalibrationFixtureEntryRecord.answer_run_id == entry.answer_run_id))
-            row = result.scalar_one_or_none()
-            if row is None:
-                self._session.add(CalibrationFixtureEntryRecord(id=entry.id, fixture_id=fixture_id, answer_run_id=entry.answer_run_id, query=entry.query, evidence_chunk_ids=list(entry.evidence_chunk_ids), answer=entry.answer, confidence_label=entry.confidence_label, annotator_id=entry.annotator_id, annotated_at=entry.annotated_at, created_at=entry.created_at))
+            entry_result = await self._session.execute(
+                select(CalibrationFixtureEntryRecord).where(CalibrationFixtureEntryRecord.fixture_id == fixture_id, CalibrationFixtureEntryRecord.answer_run_id == entry.answer_run_id)
+            )
+            entry_row = entry_result.scalar_one_or_none()
+            if entry_row is None:
+                self._session.add(
+                    CalibrationFixtureEntryRecord(
+                        id=entry.id,
+                        fixture_id=fixture_id,
+                        answer_run_id=entry.answer_run_id,
+                        query=entry.query,
+                        evidence_chunk_ids=list(entry.evidence_chunk_ids),
+                        answer=entry.answer,
+                        confidence_label=entry.confidence_label,
+                        annotator_id=entry.annotator_id,
+                        annotated_at=entry.annotated_at,
+                        created_at=entry.created_at,
+                    )
+                )
                 created += 1
             else:
-                row.confidence_label = entry.confidence_label
-                row.annotator_id = entry.annotator_id
-                row.annotated_at = entry.annotated_at
+                entry_row.confidence_label = entry.confidence_label
+                entry_row.annotator_id = entry.annotator_id
+                entry_row.annotated_at = entry.annotated_at
         fixture.entry_count += created
         await self._session.commit()
         return created
@@ -1171,14 +1314,33 @@ class SqlCalibrationModelRepository:
         self._session = session
 
     async def save(self, model: CalibrationModelVersion) -> CalibrationModelVersion:
-        row = CalibrationModelVersionRecord(id=model.id, tenant_id=model.tenant_id, retrieval_profile_id=model.retrieval_profile_id, fixture_id=model.fixture_id, artifact_path=model.artifact_path, feature_names=list(model.feature_names), threshold_used=model.threshold_used, precision_at_threshold=model.precision_at_threshold, recall_at_threshold=model.recall_at_threshold, f1_at_threshold=model.f1_at_threshold, entry_count=model.entry_count, is_active=model.is_active, created_at=model.created_at, promoted_by=model.promoted_by)
+        row = CalibrationModelVersionRecord(
+            id=model.id,
+            tenant_id=model.tenant_id,
+            retrieval_profile_id=model.retrieval_profile_id,
+            fixture_id=model.fixture_id,
+            artifact_path=model.artifact_path,
+            feature_names=list(model.feature_names),
+            threshold_used=model.threshold_used,
+            precision_at_threshold=model.precision_at_threshold,
+            recall_at_threshold=model.recall_at_threshold,
+            f1_at_threshold=model.f1_at_threshold,
+            entry_count=model.entry_count,
+            is_active=model.is_active,
+            created_at=model.created_at,
+            promoted_by=model.promoted_by,
+        )
         self._session.add(row)
         await self._session.commit()
         await self._session.refresh(row)
         return _to_calibration_model(row)
 
     async def get_active(self, *, tenant_id: str, retrieval_profile_id: str) -> CalibrationModelVersion | None:
-        result = await self._session.execute(select(CalibrationModelVersionRecord).where(CalibrationModelVersionRecord.tenant_id == tenant_id, CalibrationModelVersionRecord.retrieval_profile_id == retrieval_profile_id, CalibrationModelVersionRecord.is_active.is_(True)))
+        result = await self._session.execute(
+            select(CalibrationModelVersionRecord).where(
+                CalibrationModelVersionRecord.tenant_id == tenant_id, CalibrationModelVersionRecord.retrieval_profile_id == retrieval_profile_id, CalibrationModelVersionRecord.is_active.is_(True)
+            )
+        )
         row = result.scalar_one_or_none()
         return _to_calibration_model(row) if row else None
 
@@ -1187,7 +1349,11 @@ class SqlCalibrationModelRepository:
         target = result.scalar_one_or_none()
         if target is None:
             return None
-        active = await self._session.execute(select(CalibrationModelVersionRecord).where(CalibrationModelVersionRecord.tenant_id == tenant_id, CalibrationModelVersionRecord.retrieval_profile_id == target.retrieval_profile_id, CalibrationModelVersionRecord.is_active.is_(True)))
+        active = await self._session.execute(
+            select(CalibrationModelVersionRecord).where(
+                CalibrationModelVersionRecord.tenant_id == tenant_id, CalibrationModelVersionRecord.retrieval_profile_id == target.retrieval_profile_id, CalibrationModelVersionRecord.is_active.is_(True)
+            )
+        )
         for row in active.scalars():
             row.is_active = False
         target.is_active = True
@@ -1197,7 +1363,11 @@ class SqlCalibrationModelRepository:
         return _to_calibration_model(target)
 
     async def list(self, *, tenant_id: str, retrieval_profile_id: str) -> list[CalibrationModelVersion]:
-        result = await self._session.execute(select(CalibrationModelVersionRecord).where(CalibrationModelVersionRecord.tenant_id == tenant_id, CalibrationModelVersionRecord.retrieval_profile_id == retrieval_profile_id).order_by(CalibrationModelVersionRecord.created_at.desc()))
+        result = await self._session.execute(
+            select(CalibrationModelVersionRecord)
+            .where(CalibrationModelVersionRecord.tenant_id == tenant_id, CalibrationModelVersionRecord.retrieval_profile_id == retrieval_profile_id)
+            .order_by(CalibrationModelVersionRecord.created_at.desc())
+        )
         return [_to_calibration_model(row) for row in result.scalars()]
 
     async def get(self, *, tenant_id: str, model_id: str) -> CalibrationModelVersion | None:
@@ -1233,7 +1403,9 @@ class SqlConfidenceConfigRepository:
 
     async def set_active_model(self, *, tenant_id: str, retrieval_profile_id: str, active_model_id: str | None, updated_by: str | None) -> ConfidenceConfig:
         config = await self.get_or_default(tenant_id=tenant_id, retrieval_profile_id=retrieval_profile_id)
-        return await self.upsert(ConfidenceConfig(tenant_id, retrieval_profile_id, config.feature_weights, config.abstention_threshold, config.emit_numeric_score, config.min_labeled_entries, active_model_id, updated_by=updated_by))
+        return await self.upsert(
+            ConfidenceConfig(tenant_id, retrieval_profile_id, config.feature_weights, config.abstention_threshold, config.emit_numeric_score, config.min_labeled_entries, active_model_id, updated_by=updated_by)
+        )
 
 
 class SqlAlchemyIndexGenerationRepository:
@@ -1261,9 +1433,18 @@ class SqlAlchemyIndexGenerationRepository:
         row = result.scalar_one_or_none()
         return _to_index_generation(row) if row else None
 
-    async def find_active_for_knowledge_bases(
-        self, *, tenant_id: str, knowledge_base_ids: tuple[str, ...]
-    ) -> list[IndexGeneration]:
+    async def list_for_version(self, *, tenant_id: str, document_version_id: str) -> list[IndexGeneration]:
+        result = await self._session.execute(
+            select(IndexGenerationRecord)
+            .where(
+                IndexGenerationRecord.tenant_id == tenant_id,
+                IndexGenerationRecord.document_version_id == document_version_id,
+            )
+            .order_by(IndexGenerationRecord.created_at)
+        )
+        return [_to_index_generation(row) for row in result.scalars().all()]
+
+    async def find_active_for_knowledge_bases(self, *, tenant_id: str, knowledge_base_ids: tuple[str, ...]) -> list[IndexGeneration]:
         if not knowledge_base_ids:
             return []
         result = await self._session.execute(
@@ -1679,9 +1860,11 @@ class SqlAlchemyProviderCredentialRepository:
 
     async def list_by_tenant(self, *, tenant_id: str) -> list[ProviderCredentialRecord]:
         result = await self._session.execute(
-            select(ProviderCredentialRecord).where(
+            select(ProviderCredentialRecord)
+            .where(
                 ProviderCredentialRecord.tenant_id == tenant_id,
-            ).order_by(ProviderCredentialRecord.provider, ProviderCredentialRecord.key_name)
+            )
+            .order_by(ProviderCredentialRecord.provider, ProviderCredentialRecord.key_name)
         )
         return list(result.scalars().all())
 
@@ -1713,31 +1896,40 @@ class DecompositionConfigRecord(Base):
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    project_id: Mapped[str | None] = mapped_column("project_id", Uuid(as_uuid=False), ForeignKey("rag_projects.id", ondelete="CASCADE"), nullable=True)
     knowledge_base_id: Mapped[str] = mapped_column(
-        "knowledge_base_id", Uuid(as_uuid=False),
-        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+        "knowledge_base_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     model_profile_id: Mapped[str] = mapped_column(
-        "model_profile_id", Uuid(as_uuid=False),
-        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=False,
+        "model_profile_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
     )
     system_prompt: Mapped[str] = mapped_column(String, nullable=False)
     user_prompt_template: Mapped[str] = mapped_column(String, nullable=False)
     max_sub_queries: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     max_depth: Mapped[int] = mapped_column(Integer, default=2, nullable=False)
     min_complexity_score: Mapped[float] = mapped_column(nullable=False, default=0.6)
-    guardrails_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    guardrails_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
 
-    __table_args__ = (UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_decomp_config_tenant_kb"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_decomp_config_tenant_kb"),
+        UniqueConstraint("tenant_id", "project_id", name="uq_decomp_config_tenant_project"),
+    )
 
 
 def _to_decomposition_config(row: DecompositionConfigRecord) -> DecompositionConfig:
     return DecompositionConfig(
         id=row.id,
         tenant_id=row.tenant_id,
+        project_id=row.project_id,
         knowledge_base_id=row.knowledge_base_id,
         enabled=row.enabled,
         model_profile_id=row.model_profile_id,
@@ -1761,6 +1953,16 @@ class SqlAlchemyDecompositionConfigRepository:
             select(DecompositionConfigRecord).where(
                 DecompositionConfigRecord.tenant_id == tenant_id,
                 DecompositionConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_decomposition_config(row) if row else None
+
+    async def find_by_project(self, *, tenant_id: str, project_id: str) -> DecompositionConfig | None:
+        result = await self._session.execute(
+            select(DecompositionConfigRecord).where(
+                DecompositionConfigRecord.tenant_id == tenant_id,
+                DecompositionConfigRecord.project_id == project_id,
             )
         )
         row = result.scalar_one_or_none()
@@ -1820,20 +2022,75 @@ class SqlAlchemyDecompositionConfigRepository:
         await self._session.commit()
         return True
 
+    async def upsert_for_project(
+        self,
+        *,
+        tenant_id: str,
+        project_id: str,
+        enabled: bool,
+        model_profile_id: str,
+        system_prompt: str,
+        user_prompt_template: str,
+        max_sub_queries: int,
+        max_depth: int,
+        min_complexity_score: float,
+        guardrails: dict[str, object],
+    ) -> DecompositionConfig:
+        result = await self._session.execute(
+            select(DecompositionConfigRecord).where(
+                DecompositionConfigRecord.tenant_id == tenant_id,
+                DecompositionConfigRecord.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = DecompositionConfigRecord(id=str(uuid4()), tenant_id=tenant_id, project_id=project_id, knowledge_base_id=None)
+            self._session.add(row)
+        row.enabled = enabled
+        row.model_profile_id = model_profile_id
+        row.system_prompt = system_prompt
+        row.user_prompt_template = user_prompt_template
+        row.max_sub_queries = max_sub_queries
+        row.max_depth = max_depth
+        row.min_complexity_score = min_complexity_score
+        row.guardrails_json = guardrails
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_decomposition_config(row)
+
+    async def delete_for_project(self, *, tenant_id: str, project_id: str) -> bool:
+        result = await self._session.execute(
+            select(DecompositionConfigRecord).where(
+                DecompositionConfigRecord.tenant_id == tenant_id,
+                DecompositionConfigRecord.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.commit()
+        return True
+
 
 class PlannerConfigRecord(Base):
     __tablename__ = "rag_planner_configs"
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
+    project_id: Mapped[str | None] = mapped_column("project_id", Uuid(as_uuid=False), ForeignKey("rag_projects.id", ondelete="CASCADE"), nullable=True)
     knowledge_base_id: Mapped[str] = mapped_column(
-        "knowledge_base_id", Uuid(as_uuid=False),
-        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+        "knowledge_base_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     model_profile_id: Mapped[str] = mapped_column(
-        "model_profile_id", Uuid(as_uuid=False),
-        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=False,
+        "model_profile_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
     )
     system_prompt: Mapped[str] = mapped_column(String, nullable=False)
     user_prompt_template: Mapped[str] = mapped_column(String, nullable=False)
@@ -1841,17 +2098,21 @@ class PlannerConfigRecord(Base):
     task_timeout_seconds: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
     task_types_json: Mapped[list[str]] = mapped_column(JSON, default=lambda: ["RAG", "MCP", "GENERAL"], nullable=False)
     mcp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    guardrails_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    guardrails_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
 
-    __table_args__ = (UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_planner_config_tenant_kb"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_planner_config_tenant_kb"),
+        UniqueConstraint("tenant_id", "project_id", name="uq_planner_config_tenant_project"),
+    )
 
 
 def _to_planner_config(row: PlannerConfigRecord) -> PlannerConfig:
     return PlannerConfig(
         id=row.id,
         tenant_id=row.tenant_id,
+        project_id=row.project_id,
         knowledge_base_id=row.knowledge_base_id,
         enabled=row.enabled,
         model_profile_id=row.model_profile_id,
@@ -1872,18 +2133,46 @@ class SqlAlchemyPlannerConfigRepository:
         self._session = session
 
     async def find_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> PlannerConfig | None:
-        result = await self._session.execute(select(PlannerConfigRecord).where(
-            PlannerConfigRecord.tenant_id == tenant_id,
-            PlannerConfigRecord.knowledge_base_id == knowledge_base_id,
-        ))
+        result = await self._session.execute(
+            select(PlannerConfigRecord).where(
+                PlannerConfigRecord.tenant_id == tenant_id,
+                PlannerConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
         row = result.scalar_one_or_none()
         return _to_planner_config(row) if row else None
 
-    async def upsert(self, *, tenant_id: str, knowledge_base_id: str, enabled: bool, model_profile_id: str, system_prompt: str, user_prompt_template: str, max_tasks: int, task_timeout_seconds: int, task_types: tuple[str, ...], mcp_enabled: bool, guardrails: dict[str, object]) -> PlannerConfig:
-        result = await self._session.execute(select(PlannerConfigRecord).where(
-            PlannerConfigRecord.tenant_id == tenant_id,
-            PlannerConfigRecord.knowledge_base_id == knowledge_base_id,
-        ))
+    async def find_by_project(self, *, tenant_id: str, project_id: str) -> PlannerConfig | None:
+        result = await self._session.execute(
+            select(PlannerConfigRecord).where(
+                PlannerConfigRecord.tenant_id == tenant_id,
+                PlannerConfigRecord.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_planner_config(row) if row else None
+
+    async def upsert(
+        self,
+        *,
+        tenant_id: str,
+        knowledge_base_id: str,
+        enabled: bool,
+        model_profile_id: str,
+        system_prompt: str,
+        user_prompt_template: str,
+        max_tasks: int,
+        task_timeout_seconds: int,
+        task_types: tuple[str, ...],
+        mcp_enabled: bool,
+        guardrails: dict[str, object],
+    ) -> PlannerConfig:
+        result = await self._session.execute(
+            select(PlannerConfigRecord).where(
+                PlannerConfigRecord.tenant_id == tenant_id,
+                PlannerConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
         row = result.scalar_one_or_none()
         if row is None:
             row = PlannerConfigRecord(id=str(uuid4()), tenant_id=tenant_id, knowledge_base_id=knowledge_base_id)
@@ -1902,10 +2191,64 @@ class SqlAlchemyPlannerConfigRepository:
         return _to_planner_config(row)
 
     async def delete(self, *, tenant_id: str, knowledge_base_id: str) -> bool:
-        result = await self._session.execute(select(PlannerConfigRecord).where(
-            PlannerConfigRecord.tenant_id == tenant_id,
-            PlannerConfigRecord.knowledge_base_id == knowledge_base_id,
-        ))
+        result = await self._session.execute(
+            select(PlannerConfigRecord).where(
+                PlannerConfigRecord.tenant_id == tenant_id,
+                PlannerConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.commit()
+        return True
+
+    async def upsert_for_project(
+        self,
+        *,
+        tenant_id: str,
+        project_id: str,
+        enabled: bool,
+        model_profile_id: str,
+        system_prompt: str,
+        user_prompt_template: str,
+        max_tasks: int,
+        task_timeout_seconds: int,
+        task_types: tuple[str, ...],
+        mcp_enabled: bool,
+        guardrails: dict[str, object],
+    ) -> PlannerConfig:
+        result = await self._session.execute(
+            select(PlannerConfigRecord).where(
+                PlannerConfigRecord.tenant_id == tenant_id,
+                PlannerConfigRecord.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = PlannerConfigRecord(id=str(uuid4()), tenant_id=tenant_id, project_id=project_id, knowledge_base_id=None)
+            self._session.add(row)
+        row.enabled = enabled
+        row.model_profile_id = model_profile_id
+        row.system_prompt = system_prompt
+        row.user_prompt_template = user_prompt_template
+        row.max_tasks = max_tasks
+        row.task_timeout_seconds = task_timeout_seconds
+        row.task_types_json = list(task_types)
+        row.mcp_enabled = mcp_enabled
+        row.guardrails_json = guardrails
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_planner_config(row)
+
+    async def delete_for_project(self, *, tenant_id: str, project_id: str) -> bool:
+        result = await self._session.execute(
+            select(PlannerConfigRecord).where(
+                PlannerConfigRecord.tenant_id == tenant_id,
+                PlannerConfigRecord.project_id == project_id,
+            )
+        )
         row = result.scalar_one_or_none()
         if row is None:
             return False
@@ -1916,23 +2259,31 @@ class SqlAlchemyPlannerConfigRepository:
 
 # --- Memory ORM models -------------------------------------------------------
 
+
 class MemoryConfigRecord(Base):
     __tablename__ = "rag_memory_configs"
 
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    project_id: Mapped[str | None] = mapped_column("project_id", Uuid(as_uuid=False), ForeignKey("rag_projects.id", ondelete="CASCADE"), nullable=True)
     knowledge_base_id: Mapped[str] = mapped_column(
-        "knowledge_base_id", Uuid(as_uuid=False),
-        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+        "knowledge_base_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     summarization_model_profile_id: Mapped[str] = mapped_column(
-        "summarization_model_profile_id", Uuid(as_uuid=False),
-        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=False,
+        "summarization_model_profile_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
     )
     embedding_profile_id: Mapped[str] = mapped_column(
-        "embedding_profile_id", Uuid(as_uuid=False),
-        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"), nullable=False,
+        "embedding_profile_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_model_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
     )
     retention_days: Mapped[int] = mapped_column(Integer, default=90, nullable=False)
     retrieval_top_k: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
@@ -1941,7 +2292,10 @@ class MemoryConfigRecord(Base):
     created_at: Mapped[datetime] = mapped_column("created_at", DateTime(timezone=False), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column("updated_at", DateTime(timezone=False), default=utc_now, onupdate=utc_now, nullable=False)
 
-    __table_args__ = (UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_memory_config_tenant_kb"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "knowledge_base_id", name="uq_memory_config_tenant_kb"),
+        UniqueConstraint("tenant_id", "project_id", name="uq_memory_config_tenant_project"),
+    )
 
 
 class MemoryChunkRecord(Base):
@@ -1950,13 +2304,17 @@ class MemoryChunkRecord(Base):
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     knowledge_base_id: Mapped[str] = mapped_column(
-        "knowledge_base_id", Uuid(as_uuid=False),
-        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+        "knowledge_base_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
     )
     user_id: Mapped[str] = mapped_column("user_id", Uuid(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(
-        "conversation_id", Uuid(as_uuid=False),
-        ForeignKey("rag_conversations.id", ondelete="SET NULL"), nullable=True,
+        "conversation_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_conversations.id", ondelete="SET NULL"),
+        nullable=True,
     )
     summary: Mapped[str] = mapped_column(String, nullable=False)
     qdrant_point_id: Mapped[str] = mapped_column(String(120), nullable=False)
@@ -1973,11 +2331,14 @@ class MemoryChunkRecord(Base):
 
 # --- Memory entity mappers ---------------------------------------------------
 
+
 def _to_memory_config(row: MemoryConfigRecord) -> "MemoryConfig":
     from app.domain.rag.memory import MemoryConfig
+
     return MemoryConfig(
         id=row.id,
         tenant_id=row.tenant_id,
+        project_id=row.project_id,
         knowledge_base_id=row.knowledge_base_id,
         enabled=row.enabled,
         summarization_model_profile_id=row.summarization_model_profile_id,
@@ -1993,6 +2354,7 @@ def _to_memory_config(row: MemoryConfigRecord) -> "MemoryConfig":
 
 def _to_memory_chunk(row: MemoryChunkRecord) -> "MemoryChunk":
     from app.domain.rag.memory import MemoryChunk
+
     return MemoryChunk(
         id=row.id,
         tenant_id=row.tenant_id,
@@ -2010,6 +2372,7 @@ def _to_memory_chunk(row: MemoryChunkRecord) -> "MemoryChunk":
 
 # --- Memory repositories -----------------------------------------------------
 
+
 class SqlAlchemyMemoryConfigRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -2019,6 +2382,16 @@ class SqlAlchemyMemoryConfigRepository:
             select(MemoryConfigRecord).where(
                 MemoryConfigRecord.tenant_id == tenant_id,
                 MemoryConfigRecord.knowledge_base_id == knowledge_base_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        return _to_memory_config(row) if row else None
+
+    async def find_by_project(self, *, tenant_id: str, project_id: str) -> "MemoryConfig | None":
+        result = await self._session.execute(
+            select(MemoryConfigRecord).where(
+                MemoryConfigRecord.tenant_id == tenant_id,
+                MemoryConfigRecord.project_id == project_id,
             )
         )
         row = result.scalar_one_or_none()
@@ -2076,6 +2449,54 @@ class SqlAlchemyMemoryConfigRepository:
         await self._session.commit()
         return True
 
+    async def upsert_for_project(
+        self,
+        *,
+        tenant_id: str,
+        project_id: str,
+        enabled: bool,
+        summarization_model_profile_id: str,
+        embedding_profile_id: str,
+        retention_days: int,
+        retrieval_top_k: int,
+        min_turns_to_summarize: int,
+        system_prompt: str,
+    ) -> "MemoryConfig":
+        result = await self._session.execute(
+            select(MemoryConfigRecord).where(
+                MemoryConfigRecord.tenant_id == tenant_id,
+                MemoryConfigRecord.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            row = MemoryConfigRecord(id=str(uuid4()), tenant_id=tenant_id, project_id=project_id, knowledge_base_id=None)
+            self._session.add(row)
+        row.enabled = enabled
+        row.summarization_model_profile_id = summarization_model_profile_id
+        row.embedding_profile_id = embedding_profile_id
+        row.retention_days = retention_days
+        row.retrieval_top_k = retrieval_top_k
+        row.min_turns_to_summarize = min_turns_to_summarize
+        row.system_prompt = system_prompt
+        await self._session.commit()
+        await self._session.refresh(row)
+        return _to_memory_config(row)
+
+    async def delete_for_project(self, *, tenant_id: str, project_id: str) -> bool:
+        result = await self._session.execute(
+            select(MemoryConfigRecord).where(
+                MemoryConfigRecord.tenant_id == tenant_id,
+                MemoryConfigRecord.project_id == project_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.commit()
+        return True
+
 
 class SqlAlchemyMemoryChunkRepository:
     def __init__(self, session: AsyncSession) -> None:
@@ -2105,8 +2526,11 @@ class SqlAlchemyMemoryChunkRepository:
 
     async def count_by_user_kb(self, *, tenant_id: str, knowledge_base_id: str, user_id: str) -> int:
         from sqlalchemy import func
+
         result = await self._session.execute(
-            select(func.count()).select_from(MemoryChunkRecord).where(
+            select(func.count())
+            .select_from(MemoryChunkRecord)
+            .where(
                 MemoryChunkRecord.tenant_id == tenant_id,
                 MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
                 MemoryChunkRecord.user_id == user_id,
@@ -2115,13 +2539,11 @@ class SqlAlchemyMemoryChunkRepository:
         return result.scalar_one()
 
     async def find_expired(self, *, limit: int = 500) -> list["MemoryChunk"]:
-        from datetime import UTC, datetime as dt
+        from datetime import UTC
+        from datetime import datetime as dt
+
         now = dt.now(UTC).replace(tzinfo=None)
-        result = await self._session.execute(
-            select(MemoryChunkRecord)
-            .where(MemoryChunkRecord.expires_at < now)
-            .limit(limit)
-        )
+        result = await self._session.execute(select(MemoryChunkRecord).where(MemoryChunkRecord.expires_at < now).limit(limit))
         return [_to_memory_chunk(row) for row in result.scalars().all()]
 
     async def create(
@@ -2171,41 +2593,50 @@ class SqlAlchemyMemoryChunkRepository:
 
     async def delete_by_user_kb(self, *, tenant_id: str, knowledge_base_id: str, user_id: str) -> int:
         from sqlalchemy import delete as sa_delete
-        result = await self._session.execute(
-            sa_delete(MemoryChunkRecord).where(
-                MemoryChunkRecord.tenant_id == tenant_id,
-                MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
-                MemoryChunkRecord.user_id == user_id,
-            )
+
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                sa_delete(MemoryChunkRecord).where(
+                    MemoryChunkRecord.tenant_id == tenant_id,
+                    MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
+                    MemoryChunkRecord.user_id == user_id,
+                )
+            ),
         )
         await self._session.commit()
-        return result.rowcount  # type: ignore[return-value]
+        return result.rowcount
 
     async def delete_by_knowledge_base(self, *, tenant_id: str, knowledge_base_id: str) -> int:
         from sqlalchemy import delete as sa_delete
-        result = await self._session.execute(
-            sa_delete(MemoryChunkRecord).where(
-                MemoryChunkRecord.tenant_id == tenant_id,
-                MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
-            )
+
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                sa_delete(MemoryChunkRecord).where(
+                    MemoryChunkRecord.tenant_id == tenant_id,
+                    MemoryChunkRecord.knowledge_base_id == knowledge_base_id,
+                )
+            ),
         )
         await self._session.commit()
-        return result.rowcount  # type: ignore[return-value]
+        return result.rowcount
 
     async def delete_many(self, *, chunk_ids: list[str]) -> None:
         from sqlalchemy import delete as sa_delete
+
         if not chunk_ids:
             return
-        await self._session.execute(
-            sa_delete(MemoryChunkRecord).where(MemoryChunkRecord.id.in_(chunk_ids))
-        )
+        await self._session.execute(sa_delete(MemoryChunkRecord).where(MemoryChunkRecord.id.in_(chunk_ids)))
         await self._session.commit()
 
     async def is_conversation_summarized(self, *, conversation_id: str) -> bool:
         result = await self._session.execute(
-            select(MemoryChunkRecord).where(
+            select(MemoryChunkRecord)
+            .where(
                 MemoryChunkRecord.conversation_id == conversation_id,
-            ).limit(1)
+            )
+            .limit(1)
         )
         return result.scalar_one_or_none() is not None
 
@@ -2218,6 +2649,19 @@ class SqlAlchemyMemoryChunkRepository:
         )
         row = result.scalar_one_or_none()
         return _to_memory_chunk(row) if row else None
+
+    async def find_by_ids(self, *, tenant_id: str, chunk_ids: list[str]) -> "list[MemoryChunk]":
+        """Batch lookup to avoid N+1 on hot paths. Preserves input order."""
+        if not chunk_ids:
+            return []
+        result = await self._session.execute(
+            select(MemoryChunkRecord).where(
+                MemoryChunkRecord.tenant_id == tenant_id,
+                MemoryChunkRecord.id.in_(chunk_ids),
+            )
+        )
+        by_id = {row.id: _to_memory_chunk(row) for row in result.scalars().all()}
+        return [by_id[cid] for cid in chunk_ids if cid in by_id]
 
 
 class SqlAlchemyMcpServerRepository:
@@ -2271,15 +2715,25 @@ class SqlAlchemyMcpToolRepository:
         for row in rows_by_name.values():
             row.is_stale = True
         for descriptor in tools:
-            row = rows_by_name.get(descriptor.name)
-            if row is None:
-                row = McpToolRecord(id=str(uuid4()), tenant_id=tenant_id, server_id=server_id, name=descriptor.name, description=descriptor.description, input_schema=descriptor.input_schema, allowed=False, is_stale=False, last_discovered_at=discovered_at)
-                self._session.add(row)
+            existing_row = rows_by_name.get(descriptor.name)
+            if existing_row is None:
+                new_row = McpToolRecord(
+                    id=str(uuid4()),
+                    tenant_id=tenant_id,
+                    server_id=server_id,
+                    name=descriptor.name,
+                    description=descriptor.description,
+                    input_schema=descriptor.input_schema,
+                    allowed=False,
+                    is_stale=False,
+                    last_discovered_at=discovered_at,
+                )
+                self._session.add(new_row)
             else:
-                row.description = descriptor.description
-                row.input_schema = descriptor.input_schema
-                row.is_stale = False
-                row.last_discovered_at = discovered_at
+                existing_row.description = descriptor.description
+                existing_row.input_schema = descriptor.input_schema
+                existing_row.is_stale = False
+                existing_row.last_discovered_at = discovered_at
         await self._session.commit()
         result = await self._session.execute(select(McpToolRecord).where(McpToolRecord.tenant_id == tenant_id, McpToolRecord.server_id == server_id))
         return [_to_mcp_tool(row) for row in result.scalars().all()]
@@ -2318,7 +2772,17 @@ class SqlAlchemyMcpInvocationRepository:
         await self._session.refresh(row)
         return _to_mcp_invocation(row)
 
-    async def list(self, *, tenant_id: str, server_id: str | None = None, status: McpInvocationStatus | None = None, user_id: str | None = None, created_after: datetime | None = None, created_before: datetime | None = None, limit: int = 100) -> list[McpInvocation]:
+    async def list(
+        self,
+        *,
+        tenant_id: str,
+        server_id: str | None = None,
+        status: McpInvocationStatus | None = None,
+        user_id: str | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
+        limit: int = 100,
+    ) -> list[McpInvocation]:
         statement = select(McpInvocationRecord).where(McpInvocationRecord.tenant_id == tenant_id)
         if server_id is not None:
             statement = statement.where(McpInvocationRecord.server_id == server_id)
@@ -2335,9 +2799,10 @@ class SqlAlchemyMcpInvocationRepository:
 
     async def prune(self, *, tenant_id: str, before: datetime) -> int:
         from sqlalchemy import delete as sa_delete
-        result = await self._session.execute(sa_delete(McpInvocationRecord).where(McpInvocationRecord.tenant_id == tenant_id, McpInvocationRecord.created_at < before))
+
+        result = cast(CursorResult[Any], await self._session.execute(sa_delete(McpInvocationRecord).where(McpInvocationRecord.tenant_id == tenant_id, McpInvocationRecord.created_at < before)))
         await self._session.commit()
-        return cast(int, result.rowcount or 0)
+        return result.rowcount or 0
 
 
 # --- RagQueryJob ORM + Repository --------------------------------------------
@@ -2350,8 +2815,8 @@ class RagQueryJobRecord(Base):
     tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
-    request: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    request: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(String, nullable=True)
     webhook_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
@@ -2365,6 +2830,7 @@ class RagQueryJobRecord(Base):
 
 def _to_rag_query_job(row: RagQueryJobRecord) -> "RagQueryJob":
     from app.domain.rag.query_job import RagQueryJob, RagQueryJobStatus
+
     return RagQueryJob(
         id=row.id,
         tenant_id=row.tenant_id,
@@ -2410,18 +2876,14 @@ class SqlAlchemyRagQueryJobRepository:
         return _to_rag_query_job(row) if row else None
 
     async def update_running(self, job_id: str) -> None:
-        result = await self._session.execute(
-            select(RagQueryJobRecord).where(RagQueryJobRecord.id == job_id)
-        )
+        result = await self._session.execute(select(RagQueryJobRecord).where(RagQueryJobRecord.id == job_id))
         row = result.scalar_one_or_none()
         if row is not None:
             row.status = "running"
             await self._session.commit()
 
-    async def update_completed(self, job_id: str, result_data: dict) -> None:
-        result = await self._session.execute(
-            select(RagQueryJobRecord).where(RagQueryJobRecord.id == job_id)
-        )
+    async def update_completed(self, job_id: str, result_data: dict[str, Any]) -> None:
+        result = await self._session.execute(select(RagQueryJobRecord).where(RagQueryJobRecord.id == job_id))
         row = result.scalar_one_or_none()
         if row is not None:
             row.status = "completed"
@@ -2430,9 +2892,7 @@ class SqlAlchemyRagQueryJobRepository:
             await self._session.commit()
 
     async def update_failed(self, job_id: str, error: str) -> None:
-        result = await self._session.execute(
-            select(RagQueryJobRecord).where(RagQueryJobRecord.id == job_id)
-        )
+        result = await self._session.execute(select(RagQueryJobRecord).where(RagQueryJobRecord.id == job_id))
         row = result.scalar_one_or_none()
         if row is not None:
             row.status = "failed"
@@ -2447,8 +2907,10 @@ class IngestionConfigRecord(Base):
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True)
     tenant_id: Mapped[str] = mapped_column("tenant_id", Uuid(as_uuid=False), _tenant_fk(), nullable=False)
     knowledge_base_id: Mapped[str] = mapped_column(
-        "knowledge_base_id", Uuid(as_uuid=False),
-        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"), nullable=False,
+        "knowledge_base_id",
+        Uuid(as_uuid=False),
+        ForeignKey("rag_knowledge_bases.id", ondelete="CASCADE"),
+        nullable=False,
     )
     min_text_coverage: Mapped[float] = mapped_column(nullable=False, default=0.3)
     max_invalid_char_ratio: Mapped[float] = mapped_column(nullable=False, default=0.1)

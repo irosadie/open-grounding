@@ -80,7 +80,7 @@ const clearSessionCookie = (response: NextResponse) => {
   })
 }
 
-const refreshAccessToken = async (refreshToken: string) => {
+const doRefreshAccessToken = async (refreshToken: string) => {
   try {
     const { data } = await axios.post<ProxyPayload<AuthTokensResponse>>(
       getTargetUrl(authConfig.backendRefreshPath.replace(/^\//, ""), ""),
@@ -96,6 +96,35 @@ const refreshAccessToken = async (refreshToken: string) => {
   } catch {
     return null
   }
+}
+
+// Singleflight: refresh serentak untuk token yang sama menunggu promise
+// yang sama alih-alih POST baru. Key = hash refreshToken + window 30s.
+// Entri hanya hidup selama request in-flight (<60s) dan dihapus saat settle.
+const refreshInFlight = new Map<string, Promise<AuthTokensResponse | null>>()
+
+const hashRefreshToken = (refreshToken: string) => {
+  let hash = 5381
+  for (let index = 0; index < refreshToken.length; index++) {
+    hash = ((hash << 5) + hash + refreshToken.charCodeAt(index)) | 0
+  }
+  return `${(hash >>> 0).toString(36)}:${refreshToken.length}`
+}
+
+const refreshAccessToken = (refreshToken: string) => {
+  const windowId = Math.floor(Date.now() / 30_000)
+  const key = `${hashRefreshToken(refreshToken)}:${windowId}`
+  const existing = refreshInFlight.get(key)
+  if (existing) {
+    return existing
+  }
+  const promise = doRefreshAccessToken(refreshToken).finally(() => {
+    if (refreshInFlight.get(key) === promise) {
+      refreshInFlight.delete(key)
+    }
+  })
+  refreshInFlight.set(key, promise)
+  return promise
 }
 
 const readRequestBody = async (request: NextRequest) => {

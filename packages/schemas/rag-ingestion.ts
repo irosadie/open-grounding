@@ -32,6 +32,8 @@ export const documentVersionLifecycleStates = [
   "READY",
   "FAILED",
   "DELETING",
+  "DELETED",
+  "SUPERSEDED",
 ] as const
 
 export const documentVersionLifecycleLabels = [
@@ -46,6 +48,8 @@ export const documentVersionLifecycleLabels = [
   { label: "Ready", value: "READY" },
   { label: "Failed", value: "FAILED" },
   { label: "Deleting", value: "DELETING" },
+  { label: "Deleted", value: "DELETED" },
+  { label: "Superseded", value: "SUPERSEDED" },
 ]
 
 export const getDocumentVersionLifecycleLabel = (

@@ -142,6 +142,12 @@ def test_pending_review_count_requires_auth(client: TestClient) -> None:
     assert response.status_code in (401, 403)
 
 
+def test_similar_documents_requires_auth(client: TestClient) -> None:
+    """Similarity lookup is protected by authentication and tenant scope."""
+    response = client.get(f"/rag/ingestion/{uuid4()}/similar-documents")
+    assert response.status_code in (401, 403)
+
+
 def test_rag_routes_registered() -> None:
     """The RAG router is registered and routes appear in the OpenAPI spec."""
     app = create_app()
@@ -150,3 +156,4 @@ def test_rag_routes_registered() -> None:
     assert "/rag/ingestion/complete" in paths
     assert "/rag/ingestion/status/{document_version_id}" in paths
     assert "/rag/ingestion/{document_version_id}" in paths
+    assert "/rag/ingestion/{version_id}/similar-documents" in paths

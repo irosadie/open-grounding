@@ -2,7 +2,7 @@ import { authConfig } from "$/configs/auth"
 import { serverAuthConfig } from "$/configs/auth-server"
 import type { AuthTokensResponse } from "@open-grounding/types"
 import axios from "axios"
-import { getToken } from "next-auth/jwt"
+import { encode, getToken } from "next-auth/jwt"
 import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 
@@ -16,6 +16,31 @@ type SessionToken = {
 }
 
 type ProxyPayload<T> = T | { data: T }
+
+const setSessionCookie = async (
+  response: NextResponse,
+  token: SessionToken,
+  tokens: AuthTokensResponse,
+) => {
+  const encodedToken = await encode({
+    token: {
+      ...token,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      accessTokenExpires: Date.now() + tokens.expiresIn * 1000,
+    },
+    secret: serverAuthConfig.secret,
+    maxAge: authConfig.sessionMaxAgeSeconds,
+  })
+
+  response.cookies.set(serverAuthConfig.sessionCookieName, encodedToken, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: serverAuthConfig.secureCookies,
+    path: "/",
+    maxAge: authConfig.sessionMaxAgeSeconds,
+  })
+}
 
 const unwrapData = <T>(payload: ProxyPayload<T>): T => {
   if (
@@ -58,7 +83,9 @@ const ensureValidStream = (
 
 // BUG-WEB-07: refresh access token the same way proxy/route.ts does so that
 // an expired token does not cause a silent 401 on the stream endpoint.
-const refreshAccessToken = async (refreshToken: string): Promise<AuthTokensResponse | null> => {
+const refreshAccessToken = async (
+  refreshToken: string,
+): Promise<AuthTokensResponse | null> => {
   try {
     const targetUrl = new URL(
       authConfig.backendRefreshPath.replace(/^\//, ""),
@@ -93,14 +120,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
   // Proactively refresh if token is within 60 s of expiry (mirrors proxy/route.ts).
   let accessToken = token?.accessToken
+  let refreshedTokens: AuthTokensResponse | null = null
   if (
     token?.refreshToken &&
     token.accessTokenExpires &&
     Date.now() >= token.accessTokenExpires - 60_000
   ) {
-    const refreshed = await refreshAccessToken(token.refreshToken)
-    if (refreshed) {
-      accessToken = refreshed.accessToken
+    refreshedTokens = await refreshAccessToken(token.refreshToken)
+    if (refreshedTokens) {
+      accessToken = refreshedTokens.accessToken
     }
   }
 
@@ -122,7 +150,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     upstream.body &&
     upstream.headers.get("content-type")?.includes("text/event-stream")
   ) {
-    return new NextResponse(ensureValidStream(upstream.body), {
+    const response = new NextResponse(ensureValidStream(upstream.body), {
       status: upstream.status,
       headers: {
         "Content-Type": "text/event-stream",
@@ -130,18 +158,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
         Connection: "keep-alive",
       },
     })
+
+    if (token && refreshedTokens) {
+      await setSessionCookie(response, token, refreshedTokens)
+    }
+
+    return response
   }
 
   const contentType = upstream.headers.get("content-type") ?? "application/json"
   const text = await upstream.text()
-  return new NextResponse(text, {
+  const response = new NextResponse(text, {
     status: upstream.status,
     headers: { "Content-Type": contentType },
   })
+
+  if (token && refreshedTokens) {
+    await setSessionCookie(response, token, refreshedTokens)
+  }
+
+  return response
 }
 
 export const runtime = "nodejs"
-
-export const config = {
-  matcher: [`${authConfig.proxyApiBasePath}/stream/:path*`],
-}

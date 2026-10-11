@@ -8,21 +8,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 import pytest
 
 from app.domain.rag.answer_trace import AnswerRun
 from app.domain.rag.confidence import (
+    CalibrationModelVersion,
     ConfidenceConfig,
     ConfidenceFeatureExtractor,
     ConfidenceScorer,
-    CalibrationModelVersion,
-    CalibrationSource,
-    ConfidenceLabel,
     override_route_for_confidence,
 )
-
 
 # ---------------------------------------------------------------------------
 # Stubs

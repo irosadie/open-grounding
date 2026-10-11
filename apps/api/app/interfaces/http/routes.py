@@ -1,20 +1,25 @@
+import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from datetime import datetime
 from typing import Annotated
+from uuid import uuid4
 
 from bullmq import Queue
-from fastapi import APIRouter, Depends, File, Header, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.project_service import ProjectResult
 from app.application.rag_query_service import RagQueryService
 from app.core.security import decode_refresh_token
 from app.core.settings import Settings, get_settings
 from app.domain.models import UserRole
+from app.domain.rag.catalog import DecompositionConfig, PlannerConfig
 from app.infrastructure.database import get_session
 from app.infrastructure.rag_catalog import SqlAlchemyRagQueryJobRepository
 from app.interfaces.http.dependencies import (
+    AnswerPolicyServiceDependency,
     AuthContextDependency,
     AuthServiceDependency,
     ConfidenceServiceDependency,
@@ -27,13 +32,20 @@ from app.interfaces.http.dependencies import (
     MemoryConfigServiceDependency,
     ModelProfileServiceDependency,
     PlannerConfigServiceDependency,
+    ProjectServiceDependency,
     ProviderCredentialServiceDependency,
     RagQueryServiceDependency,
     RagTraceServiceDependency,
     RetrievalConfigServiceDependency,
+    SimilarDocumentsServiceDependency,
     TenantContextDependency,
 )
 from app.interfaces.http.schemas import (
+    AnswerBehaviorProfileRequest,
+    AsyncRagQueryRequest,
+    AsyncRagQueryResponse,
+    BulkLabelRequest,
+    CalibrateRequest,
     CompleteIntakeRequest,
     ConfidenceConfigUpdateRequest,
     CreateDecompositionConfigRequest,
@@ -44,27 +56,28 @@ from app.interfaces.http.schemas import (
     CreateMemoryConfigRequest,
     CreateModelProfileRequest,
     CreatePlannerConfigRequest,
+    CreateProjectRequest,
+    GenerateSyntheticRequest,
+    GuardrailProfileRequest,
+    IngestionConfigSuccessResponse,
     IngestionConfigWriteRequest,
     InvokeToolRequest,
+    LabelRequest,
     LoginRequest,
-    ParsedTextResponse,
+    ProjectKnowledgeBaseAssignmentRequest,
+    PromoteRequest,
     RagAnswerFeedbackRequest,
+    RagQueryJobResponse,
     RagQueryRequest,
     RegisterRequest,
     RetrievalConfigRequest,
     RetrievalConfigResponse,
     SetProviderCredentialRequest,
+    SimilarDocumentsResponse,
     SuccessEnvelope,
     UpdateMcpToolRequest,
     UpdateParsedTextRequest,
-    LabelRequest,
-    BulkLabelRequest,
-    CalibrateRequest,
-    PromoteRequest,
-    GenerateSyntheticRequest,
-    AsyncRagQueryRequest,
-    AsyncRagQueryResponse,
-    RagQueryJobResponse,
+    UpdateProjectRequest,
 )
 
 system_router = APIRouter(tags=["System"])
@@ -72,6 +85,7 @@ auth_router = APIRouter(prefix="/auth", tags=["Authentication"])
 rag_router = APIRouter(prefix="/rag", tags=["RAG Ingestion"])
 rag_query_router = APIRouter(prefix="/rag/query", tags=["RAG Query"])
 kb_router = APIRouter(prefix="/rag/knowledge-bases", tags=["Knowledge Bases"])
+project_router = APIRouter(prefix="/rag/projects", tags=["Projects"])
 model_profile_router = APIRouter(prefix="/rag/model-profiles", tags=["Model Profiles"])
 index_profile_router = APIRouter(prefix="/rag/index-profiles", tags=["Index Profiles"])
 provider_credential_router = APIRouter(prefix="/rag/provider-credentials", tags=["Provider Credentials"])
@@ -87,6 +101,47 @@ def success(message: str, data: object | None = None, meta: object | None = None
     if meta is not None:
         response["meta"] = meta
     return response
+
+
+def _dict_list(value: object) -> list[dict[str, object]]:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _project_dto(project: ProjectResult) -> dict[str, object]:
+    return {
+        "id": project.id,
+        "tenantId": project.tenant_id,
+        "slug": project.slug,
+        "name": project.name,
+        "status": project.status,
+        "isDefault": project.is_default,
+        "knowledgeBases": [
+            {
+                "id": kb.id,
+                "slug": kb.slug,
+                "name": kb.name,
+                "status": kb.status,
+                "projectId": kb.project_id,
+                "createdAt": kb.created_at,
+                "updatedAt": kb.updated_at,
+            }
+            for kb in project.knowledge_bases
+        ],
+        "migrationReviews": [
+            {
+                "id": review.id,
+                "knowledgeBaseId": review.knowledge_base_id,
+                "configKind": review.config_kind,
+                "status": review.status,
+                "legacyCount": review.legacy_count,
+                "createdAt": review.created_at,
+                "updatedAt": review.updated_at,
+            }
+            for review in project.migration_reviews
+        ],
+        "createdAt": project.created_at,
+        "updatedAt": project.updated_at,
+    }
 
 
 @confidence_router.get(
@@ -154,8 +209,6 @@ async def import_calibration_fixture(
 ) -> dict[str, object]:
     from app.application.calibration_service import import_calibration_fixture as _import
     from app.infrastructure.rag_catalog import SqlCalibrationFixtureRepository
-    from app.infrastructure.rag_answer_trace import SqlAlchemyAnswerRunRepository
-    from app.domain.rag.repositories import ChunkRepository
 
     class _NullChunkRepo:
         async def find_by_ids(self, *, tenant_id: str, chunk_ids: tuple[str, ...]) -> list[object]:
@@ -396,6 +449,7 @@ def _validate_internal_secret(request: Request, settings: Annotated[Settings, De
     secret = request.headers.get("X-Internal-Secret", "")
     if not secret or secret != settings.internal_api_secret:
         from app.domain.errors import DomainError
+
         raise DomainError.forbidden("Invalid internal secret")
 
 
@@ -417,6 +471,7 @@ async def internal_run_calibration(
     fixture_id = str(body.get("fixture_id", ""))
     if not tenant_id or not profile_id or not fixture_id:
         from app.domain.errors import DomainError
+
         raise DomainError("VALIDATION", "tenant_id, profile_id, fixture_id required", 422)
 
     from app.application.calibration_service import CalibrationRunner, precision_recall_svg
@@ -433,12 +488,14 @@ async def internal_run_calibration(
 
         async def put(self, *, path: str, data: bytes) -> None:
             import pathlib
+
             if self._settings.object_store_local_path:
                 dest = pathlib.Path(self._settings.object_store_local_path) / path
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(data)
                 return
             import aioboto3  # type: ignore
+
             s3_session = aioboto3.Session()
             async with s3_session.client(
                 "s3",
@@ -487,6 +544,7 @@ async def internal_generate_synthetic(
     count = int(body.get("count", 50))
     if not tenant_id or not profile_id or not kb_id:
         from app.domain.errors import DomainError
+
         raise DomainError("VALIDATION", "tenant_id, profile_id, kb_id required", 422)
 
     from app.application.calibration_service import generate_synthetic_fixture
@@ -503,8 +561,8 @@ async def internal_generate_synthetic(
 
     fixture = await generate_synthetic_fixture(
         SqlCalibrationFixtureRepository(session),
-        _NullChunkSource(),  # type: ignore[arg-type]
-        _NullPairGenerator(),  # type: ignore[arg-type]
+        _NullChunkSource(),
+        _NullPairGenerator(),
         tenant_id=tenant_id,
         retrieval_profile_id=profile_id,
         knowledge_base_id=kb_id,
@@ -717,7 +775,7 @@ async def upload_document(
     file: UploadFile = File(...),
 ) -> dict[str, object]:
     """Upload document file to object store."""
-    import aioboto3  # type: ignore
+    import aioboto3
 
     version = await service.get_version_by_id(
         tenant=tenant,
@@ -821,6 +879,7 @@ async def get_parsed_text(
     version = await service.get_version_by_id(tenant=tenant, version_id=version_id)
     if version is None:
         from app.domain.errors import DomainError
+
         raise DomainError("NOT_FOUND", "Document version not found", 404)
     return success(
         "Parsed text loaded",
@@ -829,6 +888,23 @@ async def get_parsed_text(
             "parsedText": version.parsed_text,
             "lifecycleState": version.lifecycle_state.value,
         },
+    )
+
+
+@rag_router.get(
+    "/ingestion/{version_id}/similar-documents",
+    summary="Find similar indexed documents in the same knowledge base",
+    response_model=SimilarDocumentsResponse,
+)
+async def get_similar_documents(
+    version_id: str,
+    tenant: TenantContextDependency,
+    service: SimilarDocumentsServiceDependency,
+    limit: int = Query(default=5, ge=1, le=10),
+) -> dict[str, object]:
+    return success(
+        "Similar documents loaded",
+        await service.find_similar(tenant=tenant, version_id=version_id, limit=limit),
     )
 
 
@@ -851,9 +927,9 @@ async def update_parsed_text(
         raise DomainError("NOT_FOUND", "Document version not found", 404)
     if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
         raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
-    updated = await service.patch_parsed_text(
-        tenant=tenant, version_id=version_id, text=payload.text
-    )
+    updated = await service.patch_parsed_text(tenant=tenant, version_id=version_id, text=payload.text)
+    if updated is None:
+        raise DomainError("NOT_FOUND", "Document version could not be updated", 404)
     return success(
         "Parsed text updated",
         {
@@ -918,13 +994,21 @@ async def get_ingestion_status(
     return success("Ingestion status loaded", status_data)
 
 
-@rag_router.delete("/ingestion/{document_version_id}")
+@rag_router.delete(
+    "/ingestion/{document_version_id}",
+    response_model=SuccessEnvelope,
+    summary="Schedule document version deletion",
+    description=(
+        "Marks a document version as DELETING and enqueues an asynchronous cleanup "
+        "job for its vectors, raw object, and database records."
+    ),
+)
 async def delete_version(
     document_version_id: str,
     tenant: TenantContextDependency,
     service: IngestionServiceDependency,
 ) -> dict[str, object]:
-    """Soft-delete a document version (removes from active retrieval)."""
+    """Schedule the full asynchronous cleanup of a document version."""
     await service.soft_delete(tenant=tenant, document_version_id=document_version_id)
     return success("Document version scheduled for deletion")
 
@@ -932,7 +1016,11 @@ async def delete_version(
 @rag_query_router.post(
     "",
     summary="Query permitted RAG evidence",
-    description="Uses only server-derived tenant and authorization scope. Set stream=true for text/event-stream.",
+    description=(
+        "Uses only server-derived tenant and authorization scope. Set stream=false for the JSON response or "
+        "stream=true for text/event-stream: pipeline status and metadata remain structured events while "
+        "validated answer deltas are emitted as Markdown text."
+    ),
     response_model=None,
 )
 async def query_rag(
@@ -954,6 +1042,7 @@ async def query_rag(
                 tenant=tenant,
                 message=payload.message,
                 knowledge_base_ids=tuple(payload.knowledge_base_ids),
+                project_id=payload.project_id,
                 conversation_id=payload.conversation_id,
                 decomposition_enabled=decomposition_enabled,
                 decomposition_max_sub_queries=decomposition_max_sub_queries,
@@ -965,19 +1054,35 @@ async def query_rag(
             ),
             media_type="text/event-stream",
         )
-    result = await service.query(
-        tenant=tenant,
-        message=payload.message,
-        knowledge_base_ids=tuple(payload.knowledge_base_ids),
-        conversation_id=payload.conversation_id,
-        decomposition_enabled=decomposition_enabled,
-        decomposition_max_sub_queries=decomposition_max_sub_queries,
-        planner_enabled=planner_enabled,
-        planner_max_tasks=planner_max_tasks,
-        planner_task_types=planner_task_types,
-        memory_enabled=memory_enabled,
-        session=session,
-    )
+    if payload.project_id is not None:
+        result = await service.query(
+            tenant=tenant,
+            message=payload.message,
+            knowledge_base_ids=tuple(payload.knowledge_base_ids),
+            project_id=payload.project_id,
+            conversation_id=payload.conversation_id,
+            decomposition_enabled=decomposition_enabled,
+            decomposition_max_sub_queries=decomposition_max_sub_queries,
+            planner_enabled=planner_enabled,
+            planner_max_tasks=planner_max_tasks,
+            planner_task_types=planner_task_types,
+            memory_enabled=memory_enabled,
+            session=session,
+        )
+    else:
+        result = await service.query(
+            tenant=tenant,
+            message=payload.message,
+            knowledge_base_ids=tuple(payload.knowledge_base_ids),
+            conversation_id=payload.conversation_id,
+            decomposition_enabled=decomposition_enabled,
+            decomposition_max_sub_queries=decomposition_max_sub_queries,
+            planner_enabled=planner_enabled,
+            planner_max_tasks=planner_max_tasks,
+            planner_task_types=planner_task_types,
+            memory_enabled=memory_enabled,
+            session=session,
+        )
     return success("Query completed", result)
 
 
@@ -994,7 +1099,8 @@ async def async_query_rag(
     session: Annotated[AsyncSession, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
-    from datetime import UTC, datetime as dt
+    from datetime import UTC
+    from datetime import datetime as dt
     from uuid import uuid4
 
     from app.domain.rag.query_job import RagQueryJob, RagQueryJobStatus
@@ -1010,6 +1116,7 @@ async def async_query_rag(
         request={
             "message": payload.message,
             "knowledge_base_ids": payload.knowledge_base_ids,
+            "project_id": payload.project_id,
             "conversation_id": conversation_id,
             "webhook_url": payload.webhook_url,
             "mode": payload.mode,
@@ -1034,6 +1141,7 @@ async def async_query_rag(
         "user_id": tenant.user_id,
         "message": payload.message,
         "knowledge_base_ids": payload.knowledge_base_ids,
+        "project_id": payload.project_id,
         "conversation_id": conversation_id,
         "webhook_url": payload.webhook_url,
         "mode": payload.mode,
@@ -1117,6 +1225,7 @@ async def _stream_query(
     tenant: TenantContextDependency,
     message: str,
     knowledge_base_ids: tuple[str, ...],
+    project_id: str | None,
     conversation_id: str | None,
     decomposition_enabled: bool | None = None,
     decomposition_max_sub_queries: int | None = None,
@@ -1126,20 +1235,76 @@ async def _stream_query(
     memory_enabled: bool | None = None,
     session: AsyncSession,
 ) -> AsyncIterator[str]:
-    try:
-        result = await service.query(
-            tenant=tenant,
-            message=message,
-            knowledge_base_ids=knowledge_base_ids,
-            conversation_id=conversation_id,
-            decomposition_enabled=decomposition_enabled,
-            decomposition_max_sub_queries=decomposition_max_sub_queries,
-            planner_enabled=planner_enabled,
-            planner_max_tasks=planner_max_tasks,
-            planner_task_types=planner_task_types,
-            memory_enabled=memory_enabled,
-            session=session,
+    conversation_id = conversation_id or str(uuid4())
+    yield _sse_event(
+        "response.progress",
+        {
+            "stage": "processing",
+            "message": "Memproses pertanyaan...",
+            "conversationId": conversation_id,
+        },
+    )
+
+    progress_events: asyncio.Queue[str] = asyncio.Queue()
+
+    async def on_progress(stage: str, message: str) -> None:
+        await progress_events.put(_sse_event("response.progress", {"stage": stage, "message": message}))
+
+    if project_id is not None:
+        query_task = asyncio.create_task(
+            service.query(
+                tenant=tenant,
+                message=message,
+                knowledge_base_ids=knowledge_base_ids,
+                project_id=project_id,
+                conversation_id=conversation_id,
+                decomposition_enabled=decomposition_enabled,
+                decomposition_max_sub_queries=decomposition_max_sub_queries,
+                planner_enabled=planner_enabled,
+                planner_max_tasks=planner_max_tasks,
+                planner_task_types=planner_task_types,
+                memory_enabled=memory_enabled,
+                session=session,
+                on_progress=on_progress,
+            )
         )
+    else:
+        query_task = asyncio.create_task(
+            service.query(
+                tenant=tenant,
+                message=message,
+                knowledge_base_ids=knowledge_base_ids,
+                conversation_id=conversation_id,
+                decomposition_enabled=decomposition_enabled,
+                decomposition_max_sub_queries=decomposition_max_sub_queries,
+                planner_enabled=planner_enabled,
+                planner_max_tasks=planner_max_tasks,
+                planner_task_types=planner_task_types,
+                memory_enabled=memory_enabled,
+                session=session,
+                on_progress=on_progress,
+            )
+        )
+
+    try:
+        while not query_task.done():
+            try:
+                yield await asyncio.wait_for(progress_events.get(), timeout=0.25)
+            except TimeoutError:
+                continue
+    except asyncio.CancelledError:
+        query_task.cancel()
+        try:
+            await query_task
+        except asyncio.CancelledError:
+            pass
+        raise
+
+    while not progress_events.empty():
+        yield progress_events.get_nowait()
+
+    try:
+        result = query_task.result()
     except Exception:
         yield _sse_event("response.failed", {"code": "QUERY_FAILED"})
         return
@@ -1149,7 +1314,7 @@ async def _stream_query(
     yield _sse_event("response.route", {"route": result["route"]})
 
     # tool_call and tool_result events — emitted only when route is "tool"
-    for tool_event in result.get("toolCalls", []):
+    for tool_event in _dict_list(result.get("toolCalls")):
         yield _sse_event(
             "response.tool_call",
             {
@@ -1169,21 +1334,395 @@ async def _stream_query(
         )
 
     yield _sse_event("response.retrieval_summary", {"evidenceLevel": result["evidenceLevel"]})
-    if result["answer"] is not None:
-        yield _sse_event("response.delta", {"answer": result["answer"]})
+    answer = result.get("answer")
+    if isinstance(answer, str):
+        for delta in _iter_answer_deltas(_stream_markdown_answer(result)):
+            yield _sse_text_event("response.delta", delta)
     yield _sse_event("response.citations", {"citations": result["citations"]})
     yield _sse_event(
         "response.completed",
         {
             "traceId": trace_id,
+            "projectId": result.get("projectId"),
             "evidenceLevel": result["evidenceLevel"],
             "limitations": result["limitations"],
+            "answerBehaviorVersion": result.get("answerBehaviorVersion"),
+            "guardrailVersion": result.get("guardrailVersion"),
+            "sourcePolicy": result.get("sourcePolicy"),
+            "effectiveOutputTokens": result.get("effectiveOutputTokens"),
         },
     )
 
 
 def _sse_event(event: str, data: dict[str, object]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+
+
+def _sse_text_event(event: str, data: str) -> str:
+    """Encode text data without wrapping the answer in a JSON object."""
+    data_lines = data.split("\n") or [""]
+    return f"event: {event}\n" + "\n".join(f"data: {line}" for line in data_lines) + "\n\n"
+
+
+def _stream_markdown_answer(result: dict[str, object]) -> str:
+    """Return the validated answer in the Markdown presentation contract."""
+    answer = str(result.get("answer") or "")
+    for section in ("Inferences", "Conflicts", "Limitations"):
+        answer = answer.replace(f"\n\n{section}:\n", f"\n\n### {section}\n")
+
+    raw_limitations = result.get("limitations")
+    limitations = [str(item) for item in raw_limitations] if isinstance(raw_limitations, list) else []
+    if limitations and "### Limitations\n" not in answer:
+        answer = f"{answer}\n\n### Limitations\n" + "\n".join(f"- {item}" for item in limitations)
+    return answer
+
+
+_STREAM_DELTA_MAX_CHARS = 96
+
+
+def _iter_answer_deltas(answer: str, *, max_chars: int = _STREAM_DELTA_MAX_CHARS) -> Iterator[str]:
+    """Split only the already validated answer into ordered, lossless chunks."""
+    if not answer:
+        yield answer
+        return
+
+    start = 0
+    while start < len(answer):
+        end = min(start + max_chars, len(answer))
+        if end < len(answer):
+            boundary = answer.rfind(" ", start + 1, end)
+            if boundary > start:
+                end = boundary + 1
+        yield answer[start:end]
+        start = end
+
+
+# --- Project routes ----------------------------------------------------------
+
+
+@project_router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a Project workspace",
+    description="Creates a tenant-scoped Project and optionally assigns existing Knowledge Bases.",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 409: {"description": "Project or membership conflict"}},
+)
+async def create_project(
+    payload: CreateProjectRequest,
+    service: ProjectServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    project = await service.create(
+        tenant=tenant,
+        name=payload.name,
+        slug=payload.slug,
+        knowledge_base_ids=tuple(payload.knowledge_base_ids),
+    )
+    return success("Project created", _project_dto(project))
+
+
+@project_router.get(
+    "",
+    summary="List Project workspaces",
+    description="Lists Projects visible in the authenticated tenant.",
+    response_model=SuccessEnvelope,
+)
+async def list_projects(
+    service: ProjectServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    projects = await service.list_all(tenant=tenant)
+    return success("Projects loaded", [_project_dto(project) for project in projects])
+
+
+@project_router.get(
+    "/{project_id}",
+    summary="Get a Project workspace",
+    description="Returns a Project and its tenant-scoped Knowledge Base membership.",
+    response_model=SuccessEnvelope,
+    responses={404: {"description": "Project not found"}},
+)
+async def get_project(
+    project_id: str,
+    service: ProjectServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    return success("Project loaded", _project_dto(await service.get(tenant=tenant, project_id=project_id)))
+
+
+@project_router.patch(
+    "/{project_id}",
+    summary="Update a Project workspace",
+    description="Renames or changes the slug of a Project. Requires tenant ADMIN access.",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 404: {"description": "Project not found"}},
+)
+async def update_project(
+    project_id: str,
+    payload: UpdateProjectRequest,
+    service: ProjectServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    return success(
+        "Project updated",
+        _project_dto(await service.update(tenant=tenant, project_id=project_id, name=payload.name, slug=payload.slug)),
+    )
+
+
+@project_router.post(
+    "/{project_id}/knowledge-bases",
+    summary="Assign a Knowledge Base to a Project",
+    description="Moves one active Knowledge Base into an active Project in the same tenant.",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 404: {"description": "Project not found"}, 409: {"description": "Membership conflict"}},
+)
+async def assign_project_knowledge_base(
+    project_id: str,
+    payload: ProjectKnowledgeBaseAssignmentRequest,
+    service: ProjectServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    project = await service.move_knowledge_base(
+        tenant=tenant,
+        project_id=project_id,
+        knowledge_base_id=payload.knowledge_base_id,
+    )
+    return success("Knowledge base assigned", _project_dto(project))
+
+
+@project_router.delete(
+    "/{project_id}",
+    summary="Archive a Project workspace",
+    description="Archives a non-default Project. Historical records remain retained.",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 404: {"description": "Project not found"}, 422: {"description": "Default Project cannot be archived"}},
+)
+async def archive_project(
+    project_id: str,
+    service: ProjectServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    return success("Project archived", _project_dto(await service.archive(tenant=tenant, project_id=project_id)))
+
+
+@project_router.post(
+    "/{project_id}/decomposition",
+    summary="Save Project decomposition configuration",
+    description="Saves the evaluation-gated decomposition configuration shared by all Project Knowledge Bases.",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 404: {"description": "Project or model profile not found"}},
+)
+async def upsert_project_decomposition(
+    project_id: str,
+    payload: CreateDecompositionConfigRequest,
+    svc: DecompositionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.upsert_for_project(tenant=tenant, project_id=project_id, **payload.model_dump())
+    return success("Project decomposition config saved", _decomposition_config_dto(result))
+
+
+@project_router.get(
+    "/{project_id}/decomposition",
+    summary="Get Project decomposition configuration",
+    response_model=SuccessEnvelope,
+    responses={404: {"description": "Project or configuration not found"}},
+)
+async def get_project_decomposition(
+    project_id: str,
+    svc: DecompositionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.get_for_project(tenant=tenant, project_id=project_id)
+    if result is None:
+        from app.domain.errors import DomainError
+
+        raise DomainError.not_found("Project decomposition config not found")
+    return success("Project decomposition config loaded", _decomposition_config_dto(result))
+
+
+@project_router.get("/{project_id}/decomposition/defaults")
+async def get_project_decomposition_defaults(
+    project_id: str,
+    svc: DecompositionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    await svc.get_for_project(tenant=tenant, project_id=project_id)
+    return success("Project decomposition defaults loaded", svc.get_defaults())
+
+
+@project_router.delete(
+    "/{project_id}/decomposition",
+    summary="Delete Project decomposition configuration",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 404: {"description": "Configuration not found"}},
+)
+async def delete_project_decomposition(
+    project_id: str,
+    svc: DecompositionConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    if not await svc.delete_for_project(tenant=tenant, project_id=project_id):
+        from app.domain.errors import DomainError
+
+        raise DomainError.not_found("Project decomposition config not found")
+    return success("Project decomposition config deleted")
+
+
+@project_router.post(
+    "/{project_id}/planner",
+    summary="Save Project planner configuration",
+    description="Saves the typed task planner configuration shared by all Project Knowledge Bases.",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 404: {"description": "Project or model profile not found"}},
+)
+async def upsert_project_planner(
+    project_id: str,
+    payload: CreatePlannerConfigRequest,
+    svc: PlannerConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.upsert_for_project(tenant=tenant, project_id=project_id, **payload.model_dump())
+    return success("Project planner config saved", _planner_config_dto(result))
+
+
+@project_router.get(
+    "/{project_id}/planner",
+    summary="Get Project planner configuration",
+    response_model=SuccessEnvelope,
+    responses={404: {"description": "Project or configuration not found"}},
+)
+async def get_project_planner(
+    project_id: str,
+    svc: PlannerConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.get_for_project(tenant=tenant, project_id=project_id)
+    if result is None:
+        from app.domain.errors import DomainError
+
+        raise DomainError.not_found("Project planner config not found")
+    return success("Project planner config loaded", _planner_config_dto(result))
+
+
+@project_router.get("/{project_id}/planner/defaults")
+async def get_project_planner_defaults(
+    project_id: str,
+    svc: PlannerConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    await svc.get_for_project(tenant=tenant, project_id=project_id)
+    return success("Project planner defaults loaded", svc.get_defaults())
+
+
+@project_router.delete(
+    "/{project_id}/planner",
+    summary="Delete Project planner configuration",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 404: {"description": "Configuration not found"}},
+)
+async def delete_project_planner(
+    project_id: str,
+    svc: PlannerConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    if not await svc.delete_for_project(tenant=tenant, project_id=project_id):
+        from app.domain.errors import DomainError
+
+        raise DomainError.not_found("Project planner config not found")
+    return success("Project planner config deleted")
+
+
+@project_router.post(
+    "/{project_id}/memory-config",
+    summary="Save Project memory configuration",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 404: {"description": "Project or model profile not found"}},
+)
+async def upsert_project_memory(
+    project_id: str,
+    payload: CreateMemoryConfigRequest,
+    svc: MemoryConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.upsert_for_project(tenant=tenant, project_id=project_id, **payload.model_dump())
+    return success(
+        "Project memory config saved",
+        {
+            "id": result.id,
+            "projectId": result.project_id,
+            "knowledgeBaseId": result.knowledge_base_id,
+            "enabled": result.enabled,
+            "summarizationModelProfileId": result.summarization_model_profile_id,
+            "embeddingProfileId": result.embedding_profile_id,
+            "retentionDays": result.retention_days,
+            "retrievalTopK": result.retrieval_top_k,
+            "minTurnsToSummarize": result.min_turns_to_summarize,
+            "systemPrompt": result.system_prompt,
+            "createdAt": result.created_at.isoformat(),
+            "updatedAt": result.updated_at.isoformat(),
+        },
+    )
+
+
+@project_router.get(
+    "/{project_id}/memory-config",
+    summary="Get Project memory configuration",
+    response_model=SuccessEnvelope,
+    responses={404: {"description": "Project or configuration not found"}},
+)
+async def get_project_memory(
+    project_id: str,
+    svc: MemoryConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    result = await svc.get_for_project(tenant=tenant, project_id=project_id)
+    return success(
+        "Project memory config loaded",
+        {
+            "id": result.id,
+            "projectId": result.project_id,
+            "knowledgeBaseId": result.knowledge_base_id,
+            "enabled": result.enabled,
+            "summarizationModelProfileId": result.summarization_model_profile_id,
+            "embeddingProfileId": result.embedding_profile_id,
+            "retentionDays": result.retention_days,
+            "retrievalTopK": result.retrieval_top_k,
+            "minTurnsToSummarize": result.min_turns_to_summarize,
+            "systemPrompt": result.system_prompt,
+            "createdAt": result.created_at.isoformat(),
+            "updatedAt": result.updated_at.isoformat(),
+        },
+    )
+
+
+@project_router.get("/{project_id}/memory-config/defaults")
+async def get_project_memory_defaults(
+    project_id: str,
+    svc: MemoryConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    await svc.ensure_project(tenant=tenant, project_id=project_id)
+    return success("Project memory defaults loaded", svc.get_defaults())
+
+
+@project_router.delete(
+    "/{project_id}/memory-config",
+    summary="Delete Project memory configuration",
+    response_model=SuccessEnvelope,
+    responses={403: {"description": "ADMIN access required"}, 404: {"description": "Configuration not found"}},
+)
+async def delete_project_memory(
+    project_id: str,
+    svc: MemoryConfigServiceDependency,
+    tenant: TenantContextDependency,
+) -> dict[str, object]:
+    if not await svc.delete_for_project(tenant=tenant, project_id=project_id):
+        from app.domain.errors import DomainError
+
+        raise DomainError.not_found("Project memory config not found")
+    return success("Project memory config deleted")
 
 
 # --- Knowledge base routes ---------------------------------------------------
@@ -1200,6 +1739,7 @@ async def create_knowledge_base(
         tenant=tenant,
         name=payload.name,
         slug=payload.slug,
+        project_id=payload.project_id,
     )
     return success(
         "Knowledge base created",
@@ -1209,6 +1749,7 @@ async def create_knowledge_base(
             "slug": result.slug,
             "name": result.name,
             "status": result.status,
+            "projectId": result.project_id,
             "createdAt": result.created_at,
             "updatedAt": result.updated_at,
         },
@@ -1231,6 +1772,7 @@ async def list_knowledge_bases(
                 "slug": r.slug,
                 "name": r.name,
                 "status": r.status,
+                "projectId": r.project_id,
                 "createdAt": r.created_at,
                 "updatedAt": r.updated_at,
             }
@@ -1387,7 +1929,12 @@ async def get_planner_defaults(
 # --- Ingestion config routes -------------------------------------------------
 
 
-@kb_router.get("/{knowledge_base_id}/ingestion-config")
+@kb_router.get(
+    "/{knowledge_base_id}/ingestion-config",
+    response_model=IngestionConfigSuccessResponse,
+    summary="Get ingestion parser configuration",
+    description="Returns the per-knowledge-base parser and quality-gate configuration, including defaults when no override is stored.",
+)
 async def get_ingestion_config(
     knowledge_base_id: str,
     svc: IngestionConfigServiceDependency,
@@ -1395,24 +1942,33 @@ async def get_ingestion_config(
 ) -> dict[str, object]:
     """Get ingestion quality gate config for a knowledge base (returns defaults if not set)."""
     result = await svc.get_config(tenant=tenant, knowledge_base_id=knowledge_base_id)
-    return success("Ingestion config loaded", {
-        "id": result.id,
-        "knowledgeBaseId": result.knowledge_base_id,
-        "minTextCoverage": result.min_text_coverage,
-        "maxInvalidCharRatio": result.max_invalid_char_ratio,
-        "minAggregateConfidence": result.min_aggregate_confidence,
-        "minPageCoverage": result.min_page_coverage,
-        "autoReview": result.auto_review,
-        "parser": result.parser,
-        "doclingServeUrl": result.docling_serve_url,
-        "doclingServeApiKeySet": result.docling_serve_api_key_set,
-        "createdAt": result.created_at,
-        "updatedAt": result.updated_at,
-        "isDefault": result.is_default,
-    })
+    return success(
+        "Ingestion config loaded",
+        {
+            "id": result.id,
+            "knowledgeBaseId": result.knowledge_base_id,
+            "minTextCoverage": result.min_text_coverage,
+            "maxInvalidCharRatio": result.max_invalid_char_ratio,
+            "minAggregateConfidence": result.min_aggregate_confidence,
+            "minPageCoverage": result.min_page_coverage,
+            "autoReview": result.auto_review,
+            "parser": result.parser,
+            "doclingServeUrl": result.docling_serve_url,
+            "doclingServeApiKeySet": result.docling_serve_api_key_set,
+            "createdAt": result.created_at,
+            "updatedAt": result.updated_at,
+            "isDefault": result.is_default,
+        },
+    )
 
 
-@kb_router.put("/{knowledge_base_id}/ingestion-config", status_code=status.HTTP_200_OK)
+@kb_router.put(
+    "/{knowledge_base_id}/ingestion-config",
+    status_code=status.HTTP_200_OK,
+    response_model=IngestionConfigSuccessResponse,
+    summary="Save ingestion parser configuration",
+    description="Creates or updates the per-knowledge-base parser, optional docling-serve URL, and quality-gate configuration.",
+)
 async def upsert_ingestion_config(
     knowledge_base_id: str,
     payload: IngestionConfigWriteRequest,
@@ -1422,7 +1978,10 @@ async def upsert_ingestion_config(
 ) -> dict[str, object]:
     """Create or update ingestion quality gate config for a knowledge base."""
     from app.application.ingestion_config_service import _UNSET
-    api_key = payload.docling_serve_api_key if payload.docling_serve_api_key is not None else _UNSET
+
+    # Preserve the distinction between an omitted field (keep the existing key)
+    # and an explicit null (clear the existing key).
+    api_key = payload.docling_serve_api_key if "docling_serve_api_key" in payload.model_fields_set else _UNSET
     result = await svc.upsert_config(
         tenant=tenant,
         knowledge_base_id=knowledge_base_id,
@@ -1436,55 +1995,60 @@ async def upsert_ingestion_config(
         docling_serve_api_key=api_key,
         settings=settings,
     )
-    return success("Ingestion config saved", {
-        "id": result.id,
-        "knowledgeBaseId": result.knowledge_base_id,
-        "minTextCoverage": result.min_text_coverage,
-        "maxInvalidCharRatio": result.max_invalid_char_ratio,
-        "minAggregateConfidence": result.min_aggregate_confidence,
-        "minPageCoverage": result.min_page_coverage,
-        "autoReview": result.auto_review,
-        "parser": result.parser,
-        "doclingServeUrl": result.docling_serve_url,
-        "doclingServeApiKeySet": result.docling_serve_api_key_set,
-        "createdAt": result.created_at,
-        "updatedAt": result.updated_at,
-        "isDefault": result.is_default,
-    })
+    return success(
+        "Ingestion config saved",
+        {
+            "id": result.id,
+            "knowledgeBaseId": result.knowledge_base_id,
+            "minTextCoverage": result.min_text_coverage,
+            "maxInvalidCharRatio": result.max_invalid_char_ratio,
+            "minAggregateConfidence": result.min_aggregate_confidence,
+            "minPageCoverage": result.min_page_coverage,
+            "autoReview": result.auto_review,
+            "parser": result.parser,
+            "doclingServeUrl": result.docling_serve_url,
+            "doclingServeApiKeySet": result.docling_serve_api_key_set,
+            "createdAt": result.created_at,
+            "updatedAt": result.updated_at,
+            "isDefault": result.is_default,
+        },
+    )
 
 
-def _decomposition_config_dto(config: object) -> dict[str, object]:
+def _decomposition_config_dto(config: DecompositionConfig) -> dict[str, object]:
     return {
-        "id": config.id,  # type: ignore[union-attr]
-        "knowledgeBaseId": config.knowledge_base_id,  # type: ignore[union-attr]
-        "enabled": config.enabled,  # type: ignore[union-attr]
-        "modelProfileId": config.model_profile_id,  # type: ignore[union-attr]
-        "systemPrompt": config.system_prompt,  # type: ignore[union-attr]
-        "userPromptTemplate": config.user_prompt_template,  # type: ignore[union-attr]
-        "maxSubQueries": config.max_sub_queries,  # type: ignore[union-attr]
-        "maxDepth": config.max_depth,  # type: ignore[union-attr]
-        "minComplexityScore": config.min_complexity_score,  # type: ignore[union-attr]
-        "guardrails": config.guardrails,  # type: ignore[union-attr]
-        "createdAt": config.created_at.isoformat(),  # type: ignore[union-attr]
-        "updatedAt": config.updated_at.isoformat(),  # type: ignore[union-attr]
+        "id": config.id,
+        "projectId": config.project_id,
+        "knowledgeBaseId": config.knowledge_base_id,
+        "enabled": config.enabled,
+        "modelProfileId": config.model_profile_id,
+        "systemPrompt": config.system_prompt,
+        "userPromptTemplate": config.user_prompt_template,
+        "maxSubQueries": config.max_sub_queries,
+        "maxDepth": config.max_depth,
+        "minComplexityScore": config.min_complexity_score,
+        "guardrails": config.guardrails,
+        "createdAt": config.created_at.isoformat(),
+        "updatedAt": config.updated_at.isoformat(),
     }
 
 
-def _planner_config_dto(config: object) -> dict[str, object]:
+def _planner_config_dto(config: PlannerConfig) -> dict[str, object]:
     return {
-        "id": config.id,  # type: ignore[union-attr]
-        "knowledgeBaseId": config.knowledge_base_id,  # type: ignore[union-attr]
-        "enabled": config.enabled,  # type: ignore[union-attr]
-        "modelProfileId": config.model_profile_id,  # type: ignore[union-attr]
-        "systemPrompt": config.system_prompt,  # type: ignore[union-attr]
-        "userPromptTemplate": config.user_prompt_template,  # type: ignore[union-attr]
-        "maxTasks": config.max_tasks,  # type: ignore[union-attr]
-        "taskTimeoutSeconds": config.task_timeout_seconds,  # type: ignore[union-attr]
-        "taskTypes": list(config.task_types),  # type: ignore[union-attr]
-        "mcpEnabled": config.mcp_enabled,  # type: ignore[union-attr]
-        "guardrails": config.guardrails,  # type: ignore[union-attr]
-        "createdAt": config.created_at.isoformat(),  # type: ignore[union-attr]
-        "updatedAt": config.updated_at.isoformat(),  # type: ignore[union-attr]
+        "id": config.id,
+        "projectId": config.project_id,
+        "knowledgeBaseId": config.knowledge_base_id,
+        "enabled": config.enabled,
+        "modelProfileId": config.model_profile_id,
+        "systemPrompt": config.system_prompt,
+        "userPromptTemplate": config.user_prompt_template,
+        "maxTasks": config.max_tasks,
+        "taskTimeoutSeconds": config.task_timeout_seconds,
+        "taskTypes": list(config.task_types),
+        "mcpEnabled": config.mcp_enabled,
+        "guardrails": config.guardrails,
+        "createdAt": config.created_at.isoformat(),
+        "updatedAt": config.updated_at.isoformat(),
     }
 
 
@@ -1762,6 +2326,199 @@ async def revoke_provider_credential(
 
 memory_config_router = APIRouter(prefix="/rag/knowledge-bases", tags=["Memory Config"])
 memory_router = APIRouter(prefix="/rag/memory", tags=["User Memory"])
+answer_policy_router = APIRouter(prefix="/rag/knowledge-bases", tags=["Answer Policy"])
+
+
+@answer_policy_router.post("/{knowledge_base_id}/answer-behavior", status_code=status.HTTP_201_CREATED)
+async def save_answer_behavior(
+    knowledge_base_id: str,
+    payload: AnswerBehaviorProfileRequest,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    result = await svc.save_answer_behavior(
+        tenant=tenant,
+        knowledge_base_id=knowledge_base_id,
+        **payload.model_dump(),
+    )
+    return success("Answer behavior saved", result)
+
+
+@answer_policy_router.get("/{knowledge_base_id}/answer-behavior")
+async def get_answer_behavior(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    return success(
+        "Answer behavior loaded",
+        await svc.get_answer_behavior(tenant=tenant, knowledge_base_id=knowledge_base_id),
+    )
+
+
+@answer_policy_router.get("/{knowledge_base_id}/answer-behavior/defaults")
+async def get_answer_behavior_defaults(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    del knowledge_base_id, tenant
+    return success("Answer policy defaults loaded", svc.get_defaults())
+
+
+@answer_policy_router.delete("/{knowledge_base_id}/answer-behavior")
+async def delete_answer_behavior(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    await svc.delete_answer_behavior(tenant=tenant, knowledge_base_id=knowledge_base_id)
+    return success("Answer behavior override retired")
+
+
+@answer_policy_router.post("/{knowledge_base_id}/guardrails", status_code=status.HTTP_201_CREATED)
+async def save_guardrails(
+    knowledge_base_id: str,
+    payload: GuardrailProfileRequest,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    result = await svc.save_guardrails(
+        tenant=tenant,
+        knowledge_base_id=knowledge_base_id,
+        **payload.model_dump(),
+    )
+    return success("Guardrails saved", result)
+
+
+@answer_policy_router.get("/{knowledge_base_id}/guardrails")
+async def get_guardrails(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    return success(
+        "Guardrails loaded",
+        await svc.get_guardrails(tenant=tenant, knowledge_base_id=knowledge_base_id),
+    )
+
+
+@answer_policy_router.get("/{knowledge_base_id}/effective-answer-policy")
+async def get_effective_answer_policy(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    return success(
+        "Effective answer policy loaded",
+        await svc.get_effective(tenant=tenant, knowledge_base_id=knowledge_base_id),
+    )
+
+
+@answer_policy_router.delete("/{knowledge_base_id}/guardrails")
+async def delete_guardrails(
+    knowledge_base_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    await svc.delete_guardrails(tenant=tenant, knowledge_base_id=knowledge_base_id)
+    return success("Guardrail override retired")
+
+
+@project_router.post("/{project_id}/answer-behavior", status_code=status.HTTP_201_CREATED)
+async def save_project_answer_behavior(
+    project_id: str,
+    payload: AnswerBehaviorProfileRequest,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    result = await svc.save_answer_behavior_for_project(
+        tenant=tenant,
+        project_id=project_id,
+        **payload.model_dump(),
+    )
+    return success("Project answer behavior saved", result)
+
+
+@project_router.get("/{project_id}/answer-behavior")
+async def get_project_answer_behavior(
+    project_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    return success(
+        "Project answer behavior loaded",
+        await svc.get_answer_behavior_for_project(tenant=tenant, project_id=project_id),
+    )
+
+
+@project_router.get("/{project_id}/answer-behavior/defaults")
+async def get_project_answer_behavior_defaults(
+    project_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    await svc.ensure_project(tenant=tenant, project_id=project_id)
+    return success("Project answer policy defaults loaded", svc.get_defaults())
+
+
+@project_router.delete("/{project_id}/answer-behavior")
+async def delete_project_answer_behavior(
+    project_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    await svc.delete_answer_behavior_for_project(tenant=tenant, project_id=project_id)
+    return success("Project answer behavior override retired")
+
+
+@project_router.post("/{project_id}/guardrails", status_code=status.HTTP_201_CREATED)
+async def save_project_guardrails(
+    project_id: str,
+    payload: GuardrailProfileRequest,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    result = await svc.save_guardrails_for_project(
+        tenant=tenant,
+        project_id=project_id,
+        **payload.model_dump(),
+    )
+    return success("Project guardrails saved", result)
+
+
+@project_router.get("/{project_id}/guardrails")
+async def get_project_guardrails(
+    project_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    return success(
+        "Project guardrails loaded",
+        await svc.get_guardrails_for_project(tenant=tenant, project_id=project_id),
+    )
+
+
+@project_router.delete("/{project_id}/guardrails")
+async def delete_project_guardrails(
+    project_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    await svc.delete_guardrails_for_project(tenant=tenant, project_id=project_id)
+    return success("Project guardrail override retired")
+
+
+@project_router.get("/{project_id}/effective-answer-policy")
+async def get_project_effective_answer_policy(
+    project_id: str,
+    tenant: TenantContextDependency,
+    svc: AnswerPolicyServiceDependency,
+) -> dict[str, object]:
+    return success(
+        "Project effective answer policy loaded",
+        await svc.get_effective(tenant=tenant, project_id=project_id),
+    )
 
 
 @memory_config_router.post("/{knowledge_base_id}/memory-config", status_code=status.HTTP_200_OK)

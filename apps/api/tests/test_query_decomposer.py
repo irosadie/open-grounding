@@ -10,13 +10,11 @@ import pytest
 from app.application.query_decomposer import (
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_USER_PROMPT_TEMPLATE,
-    DecompositionResult,
     QueryDecomposer,
     _parse_sub_queries,
     _render,
     validate_template,
 )
-
 
 # --- validate_template ---
 

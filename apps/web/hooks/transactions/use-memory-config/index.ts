@@ -98,3 +98,81 @@ export const useMemoryConfigDefaults = (knowledgeBaseId: string | null) => {
     enabled: !!knowledgeBaseId,
   })
 }
+
+export const useProjectMemoryConfig = (projectId: string | null) =>
+  useQuery<MemoryConfigResponse, ErrorResponse<AxiosError>>({
+    queryKey: [queryKeys.rag.projects.memoryConfig, projectId],
+    queryFn: () =>
+      axios({
+        method: "GET",
+        url: pathVariable(apiRouters.rag.projects.memoryConfig, {
+          id: projectId as string,
+        }),
+      }),
+    enabled: !!projectId,
+    retry: false,
+  })
+
+export const useProjectMemoryConfigDefaults = (projectId: string | null) =>
+  useQuery<MemoryConfigDefaultsResponse, ErrorResponse<AxiosError>>({
+    queryKey: [queryKeys.rag.projects.memoryConfigDefaults, projectId],
+    queryFn: () =>
+      axios({
+        method: "GET",
+        url: pathVariable(apiRouters.rag.projects.memoryConfigDefaults, {
+          id: projectId as string,
+        }),
+      }),
+    enabled: !!projectId,
+  })
+
+export const useUpsertProjectMemoryConfig = (projectId: string) => {
+  const queryClient = useQueryClient()
+  return useMutation<
+    MemoryConfigResponse,
+    ErrorResponse<AxiosError>,
+    MemoryConfigInput
+  >({
+    mutationKey: [queryKeys.rag.projects.memoryConfig, projectId],
+    mutationFn: (data) =>
+      axios({
+        method: "POST",
+        url: pathVariable(apiRouters.rag.projects.memoryConfig, {
+          id: projectId,
+        }),
+        data: {
+          enabled: data.enabled,
+          summarization_model_profile_id: data.summarizationModelProfileId,
+          embedding_profile_id: data.embeddingProfileId,
+          retention_days: data.retentionDays,
+          retrieval_top_k: data.retrievalTopK,
+          min_turns_to_summarize: data.minTurnsToSummarize,
+          system_prompt: data.systemPrompt,
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: [queryKeys.rag.projects.memoryConfig, projectId],
+      })
+    },
+  })
+}
+
+export const useDeleteProjectMemoryConfig = (projectId: string) => {
+  const queryClient = useQueryClient()
+  return useMutation<void, ErrorResponse<AxiosError>, void>({
+    mutationKey: [queryKeys.rag.projects.memoryConfig, projectId, "delete"],
+    mutationFn: () =>
+      axios({
+        method: "DELETE",
+        url: pathVariable(apiRouters.rag.projects.memoryConfig, {
+          id: projectId,
+        }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: [queryKeys.rag.projects.memoryConfig, projectId],
+      })
+    },
+  })
+}

@@ -1,6 +1,6 @@
 import type {
-  CalibrationResultInput,
   CalibrationFixtureInput,
+  CalibrationResultInput,
   ConfidenceConfigInput,
   FixtureEntryInput,
   UnlabeledAnswerRunInput,

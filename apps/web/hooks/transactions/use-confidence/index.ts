@@ -232,6 +232,9 @@ export const useCalibrationStatus = (jobId: string | null) =>
         }),
       }),
     enabled: Boolean(jobId),
+    // Tidak ada poller permanen saat tab hidden (visibility bawaan react-query).
+    refetchIntervalInBackground: false,
+    staleTime: 2_000,
     refetchInterval: (query) => {
       const status = query.state.data?.status
       return status === "pending" || status === "running" ? 2000 : false

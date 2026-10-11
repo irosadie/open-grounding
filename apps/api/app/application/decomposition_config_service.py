@@ -17,6 +17,7 @@ from app.application.query_decomposer import (
 )
 from app.core.settings import Settings
 from app.domain.errors import DomainError
+from app.domain.models import UserRole
 from app.domain.rag.catalog import DecompositionConfig
 from app.domain.tenant_context import TenantContext
 from app.infrastructure.rag_catalog import (
@@ -24,6 +25,7 @@ from app.infrastructure.rag_catalog import (
     SqlAlchemyKnowledgeBaseRepository,
     SqlAlchemyModelProfileRepository,
 )
+from app.infrastructure.rag_projects import SqlAlchemyProjectRepository
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,7 @@ class DecompositionConfigService:
         self._repo = SqlAlchemyDecompositionConfigRepository(session)
         self._model_repo = SqlAlchemyModelProfileRepository(session)
         self._kb_repo = SqlAlchemyKnowledgeBaseRepository(session)
+        self._project_repo = SqlAlchemyProjectRepository(session)
 
     async def get(self, *, tenant: TenantContext, knowledge_base_id: str) -> DecompositionConfig | None:
         return await self._repo.find_by_knowledge_base(
@@ -59,6 +62,7 @@ class DecompositionConfigService:
         min_complexity_score: float,
         guardrails: dict[str, object],
     ) -> DecompositionConfig:
+        self._require_legacy_kb_writes_enabled()
         # Validate KB exists
         kb = await self._kb_repo.find_by_id(
             tenant_id=tenant.tenant_id,
@@ -114,10 +118,69 @@ class DecompositionConfigService:
         )
 
     async def delete(self, *, tenant: TenantContext, knowledge_base_id: str) -> bool:
+        self._require_legacy_kb_writes_enabled()
         return await self._repo.delete(
             tenant_id=tenant.tenant_id,
             knowledge_base_id=knowledge_base_id,
         )
+
+    async def get_for_project(self, *, tenant: TenantContext, project_id: str) -> DecompositionConfig | None:
+        project = await self._project_repo.find_by_id(tenant_id=tenant.tenant_id, project_id=project_id)
+        if project is None or str(project.status) != "ACTIVE":
+            raise DomainError.not_found("Project not found")
+        return await self._repo.find_by_project(tenant_id=tenant.tenant_id, project_id=project_id)
+
+    async def upsert_for_project(
+        self,
+        *,
+        tenant: TenantContext,
+        project_id: str,
+        enabled: bool,
+        model_profile_id: str,
+        system_prompt: str,
+        user_prompt_template: str,
+        max_sub_queries: int,
+        max_depth: int,
+        min_complexity_score: float,
+        guardrails: dict[str, object],
+    ) -> DecompositionConfig:
+        if tenant.role is not UserRole.ADMIN:
+            raise DomainError.forbidden("Project decomposition administration requires ADMIN access")
+        await self.get_for_project(tenant=tenant, project_id=project_id)
+        profile = await self._model_repo.find_by_id(tenant_id=tenant.tenant_id, profile_id=model_profile_id)
+        if profile is None:
+            raise DomainError("MODEL_PROFILE_NOT_FOUND", "Model profile not found", 404)
+        if profile.profile_kind not in _GENERATION_KINDS:
+            raise DomainError("INVALID_MODEL_PROFILE_KIND", "Model profile must be a generation model", 422)
+        for label, tmpl in (("system_prompt", system_prompt), ("user_prompt_template", user_prompt_template)):
+            try:
+                validate_template(tmpl)
+            except TemplateSyntaxError as exc:
+                raise DomainError("INVALID_PROMPT_TEMPLATE", f"Invalid Jinja2 template in {label}: {exc}", 422) from exc
+        if not 1 <= max_sub_queries <= 5:
+            raise DomainError.validation("max_sub_queries must be between 1 and 5")
+        if not 1 <= max_depth <= 3:
+            raise DomainError.validation("max_depth must be between 1 and 3")
+        if not 0.0 <= min_complexity_score <= 1.0:
+            raise DomainError.validation("min_complexity_score must be between 0.0 and 1.0")
+        return await self._repo.upsert_for_project(
+            tenant_id=tenant.tenant_id,
+            project_id=project_id,
+            enabled=enabled,
+            model_profile_id=model_profile_id,
+            system_prompt=system_prompt,
+            user_prompt_template=user_prompt_template,
+            max_sub_queries=max_sub_queries,
+            max_depth=max_depth,
+            min_complexity_score=min_complexity_score,
+            guardrails=guardrails,
+        )
+
+    async def delete_for_project(self, *, tenant: TenantContext, project_id: str) -> bool:
+        if tenant.role is not UserRole.ADMIN:
+            raise DomainError.forbidden("Project decomposition administration requires ADMIN access")
+        await self.get_for_project(tenant=tenant, project_id=project_id)
+        return await self._repo.delete_for_project(tenant_id=tenant.tenant_id, project_id=project_id)
 
     def get_defaults(self) -> dict[str, object]:
         return {
@@ -128,3 +191,11 @@ class DecompositionConfigService:
             "minComplexityScore": 0.6,
             "guardrails": {},
         }
+
+    def _require_legacy_kb_writes_enabled(self) -> None:
+        if not self._settings.rag_project_legacy_kb_writes_enabled:
+            raise DomainError(
+                "PROJECT_SCOPE_REQUIRED",
+                "Project-scoped settings are required; Knowledge Base configuration writes are disabled",
+                409,
+            )

@@ -157,6 +157,7 @@ class ConfidenceService:
 
     async def enqueue_calibration(self, *, tenant: TenantContext, profile_id: str, fixture_id: str, trace_id: str, redis_url: str) -> str:
         from uuid import uuid4
+
         from bullmq import Queue
 
         from app.application.calibration_service import validate_calibration_ready
@@ -184,10 +185,11 @@ class ConfidenceService:
 
     async def get_calibration_status(self, *, job_id: str, redis_url: str) -> dict[str, object]:
         import json
+        from typing import Any, cast
 
         import redis.asyncio as aioredis
 
-        r = aioredis.from_url(redis_url)
+        r = cast(Any, aioredis.from_url(redis_url))
         try:
             raw = await r.hget(f"bull:calibration:{job_id}", "returnvalue")
             state_raw = await r.hget(f"bull:calibration:{job_id}", "processedOn")
@@ -211,7 +213,6 @@ class ConfidenceService:
         return {"jobId": job_id, "status": "pending", "modelVersionId": None, "prCurveSvg": None, "f1OptimalThreshold": None}
 
     async def evaluate_threshold(self, *, tenant: TenantContext, model_version_id: str, threshold: float) -> dict[str, object]:
-        from app.application.calibration_service import ThresholdValidator
 
         model = await self._models.get(tenant_id=tenant.tenant_id, model_id=model_version_id)
         if model is None:
@@ -219,8 +220,8 @@ class ConfidenceService:
         entries = await self._fixtures.get_entries(tenant_id=tenant.tenant_id, fixture_id=model.fixture_id)
         if self._answer_runs is None or not entries:
             return {"threshold": threshold, "precision": 0.0, "recall": 0.0, "f1": 0.0}
-        from app.application.calibration_service import LABEL_VALUES, MonotonicCalibrator, _vector_score
-        import pickle
+
+        from app.application.calibration_service import LABEL_VALUES, _vector_score
         from app.application.calibration_service import evaluate_threshold as _eval
 
         scores: list[float] = []
@@ -241,7 +242,6 @@ class ConfidenceService:
     async def promote_model(self, *, tenant: TenantContext, model_version_id: str, promoted_by: str, redis_url: str) -> dict[str, object]:
         from app.application.calibration_service import CalibrationPromoter
         from app.domain.rag.confidence import ConfidenceScorer
-        from app.infrastructure.rag_catalog import SqlCalibrationModelRepository
 
         class _NullArtifactLoader:
             async def load(self, path: str) -> object:
@@ -258,6 +258,7 @@ class ConfidenceService:
 
     async def enqueue_synthetic(self, *, tenant: TenantContext, profile_id: str, knowledge_base_id: str, count: int, trace_id: str, redis_url: str) -> str:
         from uuid import uuid4
+
         from bullmq import Queue
 
         job_id = str(uuid4())

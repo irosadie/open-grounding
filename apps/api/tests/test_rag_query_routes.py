@@ -1,3 +1,4 @@
+import json
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -19,6 +20,7 @@ class QueryServiceStub:
         tenant: TenantContext,
         message: str,
         knowledge_base_ids: tuple[str, ...],
+        project_id: str | None = None,
         conversation_id: str | None,
         decomposition_enabled: bool | None = None,
         decomposition_max_sub_queries: int | None = None,
@@ -27,15 +29,19 @@ class QueryServiceStub:
         planner_task_types: tuple[str, ...] | None = None,
         memory_enabled: bool | None = None,
         session: object = None,
+        on_progress: object = None,
     ) -> dict[str, object]:
         self.calls.append(
             {
                 "tenantId": tenant.tenant_id,
                 "message": message,
                 "knowledgeBaseIds": knowledge_base_ids,
+                "projectId": project_id,
                 "conversationId": conversation_id,
             }
         )
+        if callable(on_progress):
+            await on_progress("retrieving", "Mengambil referensi dari knowledge base...")
         return self.result or {
             "answer": None,
             "route": "abstain",
@@ -43,6 +49,7 @@ class QueryServiceStub:
             "citations": [],
             "limitations": ["No requested knowledge base is available to this tenant."],
             "traceId": str(uuid4()),
+            "conversationId": conversation_id or str(uuid4()),
             "decomposition": None,
             "memory": None,
         }
@@ -84,8 +91,21 @@ def test_query_route_returns_safe_policy_denial_without_filter_details() -> None
     data = response.json()["data"]
     assert data["route"] == "abstain"
     assert data["citations"] == []
+    assert data["conversationId"]
     assert "filter" not in str(data).lower()
     assert service.calls[0]["knowledgeBaseIds"] == ("kb-1",)
+
+
+def test_query_route_propagates_explicit_project_scope() -> None:
+    client, service = _query_client()
+
+    response = client.post(
+        "/rag/query",
+        json={"message": "question", "project_id": "project-1", "knowledge_base_ids": ["kb-1"]},
+    )
+
+    assert response.status_code == 200
+    assert service.calls[0]["projectId"] == "project-1"
 
 
 def test_query_route_requires_auth_without_dependency_override() -> None:
@@ -105,6 +125,8 @@ def test_stream_query_emits_only_final_safe_events_in_order() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert [line.removeprefix("event: ") for line in response.text.splitlines() if line.startswith("event: ")] == [
+        "response.progress",
+        "response.progress",
         "response.started",
         "response.route",
         "response.retrieval_summary",
@@ -115,10 +137,10 @@ def test_stream_query_emits_only_final_safe_events_in_order() -> None:
     assert "filter" not in response.text.lower()
 
 
-def test_stream_query_emits_answer_delta_only_as_final_response_content() -> None:
+def test_stream_query_emits_progress_before_final_answer_events() -> None:
     client, service = _query_client()
     service.result = {
-        "answer": {"facts": [{"text": "Supported fact", "citationIds": ["S1"], "isInference": False}]},
+        "answer": "Validated answer.",
         "route": "grounded",
         "evidenceLevel": "high",
         "citations": [{"citationId": "S1", "title": "Title"}],
@@ -129,15 +151,46 @@ def test_stream_query_emits_answer_delta_only_as_final_response_content() -> Non
     response = client.post("/rag/query", json={"message": "question", "knowledge_base_ids": ["kb-1"], "stream": True})
 
     events = [line.removeprefix("event: ") for line in response.text.splitlines() if line.startswith("event: ")]
-    assert events == [
+    assert events[:2] == ["response.progress", "response.progress"]
+    assert events[-3:] == ["response.delta", "response.citations", "response.completed"]
+    assert '"stage":"retrieving"' in response.text
+    assert '"answer":"Validated answer."' not in response.text.split("event: response.delta", 1)[0]
+    first_progress = json.loads(response.text.split("\n\n", 1)[0].split("data: ", 1)[1])
+    assert first_progress["conversationId"]
+    assert service.calls[0]["conversationId"] == first_progress["conversationId"]
+
+
+def test_stream_query_emits_ordered_answer_deltas_from_final_response_content() -> None:
+    client, service = _query_client()
+    answer = "Supported fact. " * 20
+    service.result = {
+        "answer": answer,
+        "route": "grounded",
+        "evidenceLevel": "high",
+        "citations": [{"citationId": "S1", "title": "Title"}],
+        "limitations": [],
+        "traceId": str(uuid4()),
+    }
+
+    response = client.post("/rag/query", json={"message": "question", "knowledge_base_ids": ["kb-1"], "stream": True})
+
+    events = [line.removeprefix("event: ") for line in response.text.splitlines() if line.startswith("event: ")]
+    assert events[:5] == [
+        "response.progress",
+        "response.progress",
         "response.started",
         "response.route",
         "response.retrieval_summary",
-        "response.delta",
-        "response.citations",
-        "response.completed",
     ]
-    assert "Supported fact" in response.text
+    assert events[-2:] == ["response.citations", "response.completed"]
+    assert events.count("response.delta") > 1
+
+    answer_deltas = [
+        "\n".join(line.removeprefix("data: ") for line in block.splitlines()[1:])
+        for block in response.text.split("\n\n")
+        if block.startswith("event: response.delta\n")
+    ]
+    assert "".join(answer_deltas) == answer
 
 
 def test_stream_query_emits_a_non_grounded_llm_answer_as_a_normal_answer() -> None:
@@ -155,8 +208,27 @@ def test_stream_query_emits_a_non_grounded_llm_answer_as_a_normal_answer() -> No
 
     assert response.status_code == 200
     assert '"route":"answered"' in response.text
-    assert '"answer":"Hello from the LLM."' in response.text
+    assert "data: Hello from the LLM." in response.text
+    assert '"answer":"Hello from the LLM."' not in response.text
     assert "response.failed" not in response.text
+
+
+def test_stream_query_emits_markdown_sections_and_appends_metadata_limitations() -> None:
+    client, service = _query_client()
+    service.result = {
+        "answer": "- Main fact.\n\nInferences:\n- Derived conclusion.",
+        "route": "answered",
+        "evidenceLevel": "none",
+        "citations": [],
+        "limitations": ["The answer is not grounded in the selected knowledge bases."],
+        "traceId": str(uuid4()),
+    }
+
+    response = client.post("/rag/query", json={"message": "question", "knowledge_base_ids": ["kb-1"], "stream": True})
+
+    assert "data: ### Inferences" in response.text
+    assert "data: ### Limitations" in response.text
+    assert '"answer":' not in response.text
 
 
 def test_stream_query_emits_refusal_without_answer_content() -> None:

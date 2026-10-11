@@ -54,7 +54,13 @@ def build_token_pair(*, user_id: str, email: str, role: UserRole, status: UserSt
         "status": status.value,
         "sessionId": session_id,
     }
-    refresh_claims = {"id": user_id, "email": email, "type": role.value.lower(), "sessionId": session_id}
+    refresh_claims = {
+        "id": user_id,
+        "email": email,
+        "type": role.value.lower(),
+        "sessionId": session_id,
+        "jti": str(uuid4()),
+    }
     return {
         "accessToken": _encode(access_claims, settings.jwt_secret, ACCESS_TOKEN_EXPIRY_SECONDS),
         "refreshToken": _encode(refresh_claims, settings.refresh_secret, REFRESH_TOKEN_EXPIRY_SECONDS),

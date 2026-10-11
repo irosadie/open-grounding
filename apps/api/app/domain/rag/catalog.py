@@ -81,6 +81,7 @@ class KnowledgeBase:
     slug: str
     name: str
     status: KnowledgeBaseStatus
+    project_id: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -106,6 +107,7 @@ class Document:
     title: str | None
     created_at: datetime
     updated_at: datetime
+    deleted_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -135,7 +137,7 @@ class DocumentVersion:
 class IndexGeneration:
     id: str
     tenant_id: str
-    document_version_id: str
+    document_version_id: str | None
     index_profile_id: str
     status: IndexGenerationStatus
     created_at: datetime
@@ -226,11 +228,12 @@ class StageCheckpoint:
 
 @dataclass(frozen=True)
 class DecompositionConfig:
-    """Per-KB configuration for hybrid query decomposition."""
+    """Project-owned configuration for hybrid query decomposition."""
 
     id: str
     tenant_id: str
-    knowledge_base_id: str
+    project_id: str | None
+    knowledge_base_id: str | None
     enabled: bool
     model_profile_id: str
     system_prompt: str
@@ -245,11 +248,12 @@ class DecompositionConfig:
 
 @dataclass(frozen=True)
 class PlannerConfig:
-    """Per-KB configuration for typed query planning."""
+    """Project-owned configuration for typed query planning."""
 
     id: str
     tenant_id: str
-    knowledge_base_id: str
+    project_id: str | None
+    knowledge_base_id: str | None
     enabled: bool
     model_profile_id: str
     system_prompt: str

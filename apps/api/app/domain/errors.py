@@ -33,6 +33,14 @@ class DomainError(Exception):
     def user_not_found(cls) -> "DomainError":
         return cls("USER_NOT_FOUND", "User not found", 404)
 
+    @classmethod
+    def not_found(cls, message: str = "Resource not found") -> "DomainError":
+        return cls("NOT_FOUND", message, 404)
+
+    @classmethod
+    def validation(cls, message: str, details: Any | None = None) -> "DomainError":
+        return cls("VALIDATION_ERROR", message, 422, details)
+
     # --- Tenant errors --------------------------------------------------------
 
     @classmethod

@@ -32,9 +32,7 @@ async def index_chunks(
     generation_repo = SqlAlchemyIndexGenerationRepository(session)
     document_repo = SqlAlchemyDocumentRepository(session)
 
-    await repo.update_lifecycle_state(
-        tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="INDEXING"
-    )
+    await repo.update_lifecycle_state(tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="INDEXING")
 
     chunks = _chunks_cache.get(document_version_id)
     vectors = _vectors_cache.get(document_version_id)
@@ -124,14 +122,6 @@ async def index_chunks(
             )
         )
 
-    # Upsert in batches
-    batch_size = 100
-    for i in range(0, len(points), batch_size):
-        batch = points[i : i + batch_size]
-        await client.upsert(collection_name=index_profile.collection, points=batch)
-
-    await client.close()
-
     tracer = get_tracer()
     async with tracer.op(
         "ingestion.index",
@@ -140,7 +130,13 @@ async def index_chunks(
         collection=index_profile.collection,
         verbose_meta={"generation_id": generation_id},
     ):
-        pass  # timing wraps the already-completed upsert — emits event with ms≈0 overhead
+        # Upsert in batches; the span covers the actual vector writes.
+        batch_size = 100
+        for i in range(0, len(points), batch_size):
+            batch = points[i : i + batch_size]
+            await client.upsert(collection_name=index_profile.collection, points=batch)
+
+        await client.close()
 
     logger.info("[index] upserted %d vectors to collection %s (generation=%s)", len(points), index_profile.collection, generation_id)
 

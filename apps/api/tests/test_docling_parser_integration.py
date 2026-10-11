@@ -20,7 +20,6 @@ from app.workers.stages.parse import (
     _serialize_parsed_document,
 )
 
-
 # ---------------------------------------------------------------------------
 # 3.4 — _DEFAULT_PARSER_PROFILE fields
 # ---------------------------------------------------------------------------

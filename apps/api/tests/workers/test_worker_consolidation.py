@@ -8,20 +8,19 @@ Covers:
 - confidence_service: enqueue_calibration and enqueue_synthetic use bullmq.Queue
 """
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import uuid4
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # ingestion_worker tests
 # ---------------------------------------------------------------------------
 
 
-def test_create_ingestion_workers_returns_7_workers() -> None:
-    from app.workers.ingestion_worker import create_ingestion_workers
+def test_create_ingestion_workers_returns_8_workers() -> None:
     from app.core.settings import Settings
+    from app.workers.ingestion_worker import create_ingestion_workers
 
     mock_session_factory = MagicMock()
 
@@ -31,20 +30,21 @@ def test_create_ingestion_workers_returns_7_workers() -> None:
             Settings(_env_file=None), mock_session_factory, "redis://localhost:6379"
         )
 
-    assert len(workers) == 7
+    assert len(workers) == 8
     queue_names = [call.args[0] for call in mock_worker_cls.call_args_list]
     assert "ingestion.parse" in queue_names
     assert "ingestion.chunk" in queue_names
     assert "ingestion.embed" in queue_names
     assert "ingestion.index" in queue_names
     assert "ingestion.validate" in queue_names
+    assert "ingestion.delete" in queue_names
     assert "memory.summarize" in queue_names
     assert "memory.prune" in queue_names
 
 
 def test_create_ingestion_workers_concurrency() -> None:
-    from app.workers.ingestion_worker import create_ingestion_workers
     from app.core.settings import Settings
+    from app.workers.ingestion_worker import create_ingestion_workers
 
     mock_session_factory = MagicMock()
     created: list[tuple[str, int]] = []
@@ -64,17 +64,78 @@ def test_create_ingestion_workers_concurrency() -> None:
     assert concurrency_map["ingestion.parse"] == 4
     assert concurrency_map["memory.summarize"] == 3
     assert concurrency_map["memory.prune"] == 1
+    assert concurrency_map["ingestion.delete"] == 2
 
 
 @pytest.mark.asyncio
-async def test_handle_parse_calls_parse_document_and_enqueues_chunk() -> None:
-    from app.workers.ingestion_worker import create_ingestion_workers
+async def test_handle_delete_calls_delete_stage() -> None:
     from app.core.settings import Settings
+    from app.workers.ingestion_worker import create_ingestion_workers
 
     mock_session = AsyncMock()
     mock_session_factory = MagicMock()
     mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    captured_handlers: dict[str, object] = {}
+
+    def fake_worker(queue_name: str, handler: object, opts: dict) -> MagicMock:
+        captured_handlers[queue_name] = handler
+        worker = MagicMock()
+        worker.on = MagicMock()
+        return worker
+
+    with patch("app.workers.ingestion_worker.Worker", side_effect=fake_worker):
+        create_ingestion_workers(
+            Settings(_env_file=None), mock_session_factory, "redis://localhost:6379"
+        )
+
+    job = MagicMock()
+    job.data = {"documentVersionId": "ver-1", "tenantId": "tenant-1"}
+    with patch(
+        "app.workers.ingestion_worker.delete_document_version",
+        new_callable=AsyncMock,
+    ) as delete_stage:
+        await captured_handlers["ingestion.delete"](job, "token")  # type: ignore[operator]
+
+    delete_stage.assert_awaited_once_with(
+        "ver-1", "tenant-1", mock_session, Settings(_env_file=None)
+    )
+
+
+@pytest.mark.asyncio
+async def test_handle_parse_calls_parse_document_and_enqueues_chunk() -> None:
+    from app.core.settings import Settings
+    from app.domain.rag.catalog import DocumentVersionLifecycleState
+    from app.domain.rag.policy import Classification
+    from app.workers.ingestion_worker import create_ingestion_workers
+
+    mock_session = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    mock_row = MagicMock()
+    mock_row.id = "ver-1"
+    mock_row.tenant_id = "tenant-1"
+    mock_row.document_id = "doc-1"
+    mock_row.version_number = 1
+    mock_row.lifecycle_state = DocumentVersionLifecycleState.READY
+    mock_row.content_checksum = "checksum"
+    mock_row.source_revision = None
+    mock_row.pipeline_fingerprint = None
+    mock_row.parsed_text = "parsed"
+    mock_row.metadata_json = None
+    mock_row.object_key_raw = "uploads/ver-1"
+    mock_row.size_bytes = 10
+    mock_row.mime_type = "text/plain"
+    mock_row.classification = Classification.INTERNAL
+    mock_row.acl_principals = []
+    mock_row.effective_from = None
+    mock_row.effective_to = None
+    mock_row.created_at = datetime.now(UTC).replace(tzinfo=None)
+    mock_row.updated_at = mock_row.created_at
+    mock_result = MagicMock()
+    mock_result.scalar_one_or_none.return_value = mock_row
+    mock_session.execute.return_value = mock_result
 
     captured_handlers: dict[str, object] = {}
 
@@ -111,8 +172,8 @@ async def test_handle_parse_calls_parse_document_and_enqueues_chunk() -> None:
 
 @pytest.mark.asyncio
 async def test_handle_parse_does_not_enqueue_on_failure() -> None:
-    from app.workers.ingestion_worker import create_ingestion_workers
     from app.core.settings import Settings
+    from app.workers.ingestion_worker import create_ingestion_workers
 
     mock_session = AsyncMock()
     mock_session_factory = MagicMock()
@@ -156,8 +217,8 @@ async def test_handle_parse_does_not_enqueue_on_failure() -> None:
 @pytest.mark.asyncio
 async def test_handle_tool_execution_passes_correct_arguments() -> None:
     """tool_worker creates Worker with correct queue name and concurrency."""
-    from app.workers.tool_worker import create_tool_worker
     from app.core.settings import Settings
+    from app.workers.tool_worker import create_tool_worker
 
     mock_session_factory = MagicMock()
     created: list[tuple[str, int]] = []
@@ -184,8 +245,8 @@ async def test_handle_tool_execution_passes_correct_arguments() -> None:
 @pytest.mark.asyncio
 async def test_handle_calibration_passes_correct_arguments() -> None:
     """calibration_worker creates 2 workers with correct queue names and concurrency."""
-    from app.workers.calibration_worker import create_calibration_workers
     from app.core.settings import Settings
+    from app.workers.calibration_worker import create_calibration_workers
 
     mock_session_factory = MagicMock()
     created: list[tuple[str, int]] = []
@@ -217,7 +278,6 @@ async def test_handle_calibration_passes_correct_arguments() -> None:
 @pytest.mark.asyncio
 async def test_enqueue_calibration_uses_bullmq_queue() -> None:
     from app.application.confidence_service import ConfidenceService
-    from app.core.settings import Settings
     from app.domain.models import UserRole
     from app.domain.tenant_context import TenantContext
 

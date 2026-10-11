@@ -16,13 +16,10 @@ export function ConsoleGuard({ children }: { children: React.ReactNode }) {
     setSidebarOpen(false)
   }, [])
 
-  if (status === "loading") {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <LoadingSpinner />
-      </div>
-    )
-  }
+  // Progressive shell: sidebar + topbar tetap render saat session loading,
+  // hanya area konten yang menampilkan spinner. Proteksi redirect
+  // (guest -> login) tetap berjalan via useConsoleGuard.
+  const isSessionLoading = status === "loading"
 
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -64,7 +61,15 @@ export function ConsoleGuard({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <ConsoleTopbar onMenuClick={() => setSidebarOpen((v) => !v)} />
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-6xl px-6 py-8">{children}</div>
+          <div className="mx-auto w-full max-w-6xl px-6 py-8">
+            {isSessionLoading ? (
+              <div className="flex min-h-64 items-center justify-center">
+                <LoadingSpinner />
+              </div>
+            ) : (
+              children
+            )}
+          </div>
         </main>
       </div>
     </div>

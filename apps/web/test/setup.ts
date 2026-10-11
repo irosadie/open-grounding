@@ -53,7 +53,6 @@ vi.mock("next-auth/react", () => ({
         id: "test-user-id",
         email: "test@example.com",
         name: "Test User",
-        companyId: 123,
       },
       accessToken: "mock-access-token",
       refreshToken: "mock-refresh-token",
@@ -85,4 +84,5 @@ global.MutationObserver = vi.fn().mockImplementation(() => ({
   observe: vi.fn(),
   unobserve: vi.fn(),
   disconnect: vi.fn(),
+  takeRecords: vi.fn(() => []),
 }))
