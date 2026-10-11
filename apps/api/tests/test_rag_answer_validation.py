@@ -1,6 +1,9 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from app.application.rag_answer_validation import RagAnswerValidationService
+from app.domain.models import ProvenanceKind
 from app.domain.rag.answer import AnswerClaim, GroundedAnswer
 from app.domain.rag.answer_validation import validate_answer
 from app.domain.rag.evidence import Citation, EvidenceContext
@@ -20,6 +23,35 @@ def test_validator_requires_valid_citations_and_material_claim_coverage() -> Non
 
     assert validation.is_valid is False
     assert validation.errors == ("Material claim lacks a citation",)
+
+
+def test_validator_rejects_cross_trace_and_stale_mcp_provenance() -> None:
+    citation = Citation(
+        "M1",
+        "",
+        "",
+        "MCP server/tool",
+        "invocation-1",
+        "live result",
+        source_kind=ProvenanceKind.MCP,
+        tenant_id="tenant-1",
+        server_id="server-1",
+        tool_id="tool-1",
+        invocation_id="invocation-1",
+        trace_id="trace-other",
+        produced_at=datetime.now(UTC) - timedelta(minutes=2),
+        expires_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    validation = validate_answer(
+        answer=_answer("M1"),
+        evidence=EvidenceContext("mcp", (citation,), 1),
+        tenant_id="tenant-1",
+        trace_id="trace-current",
+    )
+
+    assert validation.is_valid is False
+    assert "MCP citation belongs to another trace" in validation.errors
+    assert "MCP citation is stale" in validation.errors
 
 
 @pytest.mark.asyncio

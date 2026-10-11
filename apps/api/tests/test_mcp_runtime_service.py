@@ -1,4 +1,5 @@
 import asyncio
+import json
 import socket
 import sys
 from dataclasses import replace
@@ -9,6 +10,7 @@ from uuid import uuid4
 import pytest
 
 from app.application.mcp_runtime_service import McpRuntimeService
+from app.core.llm_rollout_trace import rollout_context
 from app.core.settings import Settings
 from app.domain.errors import DomainError
 from app.domain.mcp.entities import McpInvocation, McpServer, McpTool, McpToolDescriptor
@@ -164,7 +166,7 @@ async def _stop(process: asyncio.subprocess.Process | None) -> None:
 
 
 @pytest.mark.asyncio
-async def test_stdio_register_discover_allow_invoke_and_audit() -> None:
+async def test_stdio_register_discover_allow_invoke_and_audit(tmp_path: Path) -> None:
     service, tools, invocations, connections = _service()
     try:
         registered = await service.register_server(tenant=_tenant(), name="stdio", transport="stdio", command=sys.executable, args=[str(SERVER_SCRIPT)])
@@ -172,11 +174,20 @@ async def test_stdio_register_discover_allow_invoke_and_audit() -> None:
         assert discovered[0]["name"] == "echo"
         allowed = await service.set_tool_allowed(tenant=_tenant(), tool_id=discovered[0]["id"], allowed=True)
         assert allowed["allowed"] is True
-        result = await service.invoke_tool(tenant=_tenant(), tool_id=discovered[0]["id"], arguments={"message": "hello"})
+        async with rollout_context(trace_id="mcp-trace", source="test", trace_dir=tmp_path, enabled=True):
+            result = await service.invoke_tool(tenant=_tenant(), tool_id=discovered[0]["id"], arguments={"message": "hello"})
         assert "echo:hello" in str(result["result"])
+        # TASK 1.3: success audit is fire-and-forget — flush background tasks before assert.
+        if service._audit_tasks:
+            await asyncio.gather(*list(service._audit_tasks))
         assert invocations.rows[-1].status is McpInvocationStatus.SUCCESS
         assert invocations.rows[-1].args_json == {}
         assert len(tools.rows) == 1
+        path = next(tmp_path.rglob("rollout-mcp-trace.jsonl"))
+        events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        names = [event["event"] for event in events]
+        assert names.index("tool_call_requested") < names.index("tool_execution_started") < names.index("tool_result")
+        assert next(event for event in events if event["event"] == "tool_result")["payload"]["result"]
     finally:
         await connections.close_all()
 
@@ -198,6 +209,9 @@ async def test_http_register_test_connection_and_invoke() -> None:
         await service.set_tool_allowed(tenant=_tenant(), tool_id=discovered[0]["id"], allowed=True)
         result = await service.invoke_tool(tenant=_tenant(), tool_id=discovered[0]["id"], arguments={"message": "local"})
         assert "echo:local" in str(result["result"])
+        # TASK 1.3: success audit is fire-and-forget — flush background tasks before assert.
+        if service._audit_tasks:
+            await asyncio.gather(*list(service._audit_tasks))
         assert invocations.rows[-1].status is McpInvocationStatus.SUCCESS
     finally:
         await connections.close_all()
@@ -205,15 +219,39 @@ async def test_http_register_test_connection_and_invoke() -> None:
 
 
 @pytest.mark.asyncio
-async def test_denied_tool_is_audited() -> None:
+async def test_denied_tool_is_audited(tmp_path: Path) -> None:
     service, _, invocations, connections = _service()
     try:
         registered = await service.register_server(tenant=_tenant(), name="stdio", transport="stdio", command=sys.executable, args=[str(SERVER_SCRIPT)])
         discovered = await service.discover_tools(tenant=_tenant(), server_id=registered["id"])
         with pytest.raises(DomainError, match="MCP tool is not allowed") as error:
-            await service.invoke_tool(tenant=_tenant(), tool_id=discovered[0]["id"], arguments={"message": "secret"})
+            async with rollout_context(trace_id="mcp-denied", source="test", trace_dir=tmp_path, enabled=True):
+                await service.invoke_tool(tenant=_tenant(), tool_id=discovered[0]["id"], arguments={"message": "secret"})
         assert error.value.code == "TOOL_DENIED"
         assert invocations.rows[-1].status is McpInvocationStatus.DENIED
         assert invocations.rows[-1].args_json == {}
+        path = next(tmp_path.rglob("rollout-mcp-denied.jsonl"))
+        events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        assert any(event["event"] == "policy_decision" and event["payload"]["decision"] == "denied" for event in events)
+        assert any(event["event"] == "tool_error" and event["payload"]["status"] == "denied" for event in events)
+    finally:
+        await connections.close_all()
+
+
+@pytest.mark.asyncio
+async def test_invalid_tool_arguments_are_traced(tmp_path: Path) -> None:
+    service, _, invocations, connections = _service()
+    try:
+        registered = await service.register_server(tenant=_tenant(), name="stdio", transport="stdio", command=sys.executable, args=[str(SERVER_SCRIPT)])
+        discovered = await service.discover_tools(tenant=_tenant(), server_id=registered["id"])
+        await service.set_tool_allowed(tenant=_tenant(), tool_id=discovered[0]["id"], allowed=True)
+        with pytest.raises(DomainError, match="arguments") as error:
+            async with rollout_context(trace_id="mcp-invalid", source="test", trace_dir=tmp_path, enabled=True):
+                await service.invoke_tool(tenant=_tenant(), tool_id=discovered[0]["id"], arguments={})
+        assert error.value.code == "INVALID_TOOL_ARGS"
+        assert invocations.rows[-1].status is McpInvocationStatus.ERROR
+        path = next(tmp_path.rglob("rollout-mcp-invalid.jsonl"))
+        events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        assert any(event["event"] == "tool_error" and event["payload"]["status"] == "invalid_arguments" for event in events)
     finally:
         await connections.close_all()

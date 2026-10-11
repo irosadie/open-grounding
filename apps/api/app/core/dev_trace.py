@@ -20,8 +20,11 @@ import contextlib
 import json
 import sys
 import time
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, TypeAlias
+
+DevTraceMode: TypeAlias = Literal["off", "summary", "verbose"]
 
 
 def _tail(text: str, n: int = 300) -> str:
@@ -34,7 +37,7 @@ def _tail(text: str, n: int = 300) -> str:
 class DevTracer:
     """Structured dev trace emitter. Thread-safe for CPython (GIL ensures atomic print)."""
 
-    def __init__(self, mode: str) -> None:
+    def __init__(self, mode: DevTraceMode) -> None:
         self._mode = mode
         self._enabled = mode != "off"
 
@@ -47,7 +50,12 @@ class DevTracer:
         return self._mode
 
     @contextlib.asynccontextmanager
-    async def op(self, event: str, verbose_meta: dict[str, Any] | None = None, **meta: Any):
+    async def op(
+        self,
+        event: str,
+        verbose_meta: dict[str, Any] | None = None,
+        **meta: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
         """Async context manager that times the wrapped block and emits a trace event on exit.
 
         Args:
@@ -56,13 +64,20 @@ class DevTracer:
             **meta: fields included in both summary and verbose output
         """
         if not self._enabled:
-            yield
+            yield meta
             return
 
         t0 = time.monotonic()
-        yield
-        ms = round((time.monotonic() - t0) * 1000, 1)
-        self._emit(event, ms, meta, verbose_meta or {})
+        try:
+            yield meta
+        except BaseException as error:
+            # Keep the original exception semantics while ensuring failures are
+            # visible in dev traces without serializing exception contents.
+            meta.setdefault("error_type", type(error).__name__)
+            raise
+        finally:
+            ms = round((time.monotonic() - t0) * 1000, 1)
+            self._emit(event, ms, meta, verbose_meta or {})
 
     def emit(self, event: str, verbose_meta: dict[str, Any] | None = None, **meta: Any) -> None:
         """Emit a trace event without timing (for point-in-time observations)."""
@@ -81,9 +96,12 @@ class DevTracer:
     def _format_summary(self, event: str, ms: float | None, meta: dict[str, Any]) -> str:
         parts = [f"[DEV] {event}"]
         for k, v in meta.items():
-            # Truncate long string values inline for readability
-            if isinstance(v, str) and len(v) > 120:
+            if isinstance(v, str) and k in {"system_prompt", "user_prompt", "system_tail", "user_tail"}:
+                v = _tail(v)
+            elif isinstance(v, str) and len(v) > 120:
                 v = v[:120] + "…"
+            elif isinstance(v, (list, tuple, set)) and all(isinstance(item, str) for item in v):
+                v = ",".join(v)
             parts.append(f"{k}={v}")
         if ms is not None:
             parts.append(f"ms={ms}")
@@ -96,12 +114,18 @@ class DevTracer:
         meta: dict[str, Any],
         verbose_meta: dict[str, Any],
     ) -> str:
+        combined_meta = {**meta, **verbose_meta}
         payload: dict[str, Any] = {
             "event": event,
             "ts": datetime.now(UTC).isoformat(),
         }
-        payload.update(meta)
-        payload.update(verbose_meta)
+        for key, value in combined_meta.items():
+            if key in {"system_prompt", "user_prompt"}:
+                key = key.removesuffix("_prompt") + "_tail"
+                value = _tail(str(value))
+            elif key in {"system_tail", "user_tail"}:
+                value = _tail(str(value))
+            payload[key] = value
         if ms is not None:
             payload["ms"] = ms
         return json.dumps(payload, default=str)
@@ -114,8 +138,13 @@ class _NoopTracer(DevTracer):
         super().__init__("off")
 
     @contextlib.asynccontextmanager
-    async def op(self, event: str, verbose_meta: dict[str, Any] | None = None, **meta: Any):
-        yield
+    async def op(
+        self,
+        event: str,
+        verbose_meta: dict[str, Any] | None = None,
+        **meta: Any,
+    ) -> AsyncIterator[dict[str, Any]]:
+        yield meta
 
     def emit(self, event: str, verbose_meta: dict[str, Any] | None = None, **meta: Any) -> None:
         return
@@ -133,6 +162,7 @@ def get_tracer() -> DevTracer:
     global _tracer
     if _tracer is None:
         from app.core.settings import get_settings
+
         mode = get_settings().rag_dev_trace
         _tracer = _NoopTracer() if mode == "off" else DevTracer(mode)
     return _tracer

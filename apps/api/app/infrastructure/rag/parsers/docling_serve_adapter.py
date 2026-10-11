@@ -16,8 +16,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import random
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -80,7 +81,7 @@ class DoclingServeAdapter:
 
     def _auth_headers(self) -> dict[str, str]:
         """Return X-Api-Key header dict when api_key is set, else empty."""
-        if self._api_key:
+        if self._api_key is not None:
             return {"X-Api-Key": self._api_key}
         return {}
 
@@ -91,6 +92,7 @@ class DoclingServeAdapter:
         source: bytes,
         mime_type: str,
         parser_profile_id: str,
+        cancel: asyncio.Event | None = None,
     ) -> ParsedDocument:
         """Parse source bytes via docling-serve. Returns canonical ParsedDocument."""
         # 1. Tenant scope guard — before any I/O
@@ -114,7 +116,7 @@ class DoclingServeAdapter:
 
         # 4. Submit → poll → fetch → map
         task_id = await self._submit(source, mime_type)
-        await self._poll(task_id)
+        await self._poll(task_id, cancel=cancel)
         result = await self._fetch_result(task_id)
         return self._map_to_parsed_document(result)
 
@@ -153,15 +155,37 @@ class DoclingServeAdapter:
         logger.debug("[docling-serve] submitted task_id=%s mime=%s bytes=%d", task_id, mime_type, len(source))
         return task_id
 
-    async def _poll(self, task_id: str) -> None:
-        """Poll /v1/status/poll/{task_id} until terminal status or timeout."""
+    async def _poll(self, task_id: str, cancel: asyncio.Event | None = None) -> None:
+        """Poll /v1/status/poll/{task_id} until terminal status or timeout.
+
+        Exponential backoff + jitter: fast docs return quickly, slow docs
+        do not flood the parser with fixed-interval polls.
+
+        Cooperative cancellation: an ``asyncio.CancelledError`` (client
+        disconnect) is never swallowed — it is logged then re-raised. An
+        optional ``cancel`` event stops polling with a TIMEOUT DomainError.
+        """
         url = f"{self._base_url}/v1/status/poll/{task_id}"
         deadline = time.monotonic() + self._timeout
         first = True
+        interval = min(self._poll_interval, 1.0)
 
         while True:
+            if cancel is not None and cancel.is_set():
+                raise DomainError(
+                    "DOCLING_SERVE_TIMEOUT",
+                    f"docling-serve task {task_id!r} cancelled",
+                    504,
+                    {"task_id": task_id, "reason": "cancelled", "timeout_seconds": self._timeout},
+                )
             if not first:
-                await asyncio.sleep(self._poll_interval)
+                jitter = random.uniform(0, interval * 0.2)
+                try:
+                    await asyncio.sleep(interval + jitter)
+                except asyncio.CancelledError:
+                    logger.debug("[docling-serve] poll cancelled task_id=%s", task_id)
+                    raise
+                interval = min(interval * 2, 8.0)
             first = False
 
             elapsed = time.monotonic() - (deadline - self._timeout)
@@ -175,6 +199,9 @@ class DoclingServeAdapter:
 
             try:
                 response = await self._client.get(url, headers=self._auth_headers())
+            except asyncio.CancelledError:
+                logger.debug("[docling-serve] poll request cancelled task_id=%s", task_id)
+                raise
             except httpx.RequestError as exc:
                 raise DomainError(
                     "DOCLING_SERVE_POLL_ERROR",
@@ -227,7 +254,7 @@ class DoclingServeAdapter:
                 {"task_id": task_id, "status": response.status_code, "body": response.text[:500]},
             )
 
-        return response.json()  # type: ignore[return-value]
+        return cast(dict[str, Any], response.json())
 
     def _map_to_parsed_document(self, result: dict[str, Any]) -> ParsedDocument:
         """Map docling-serve result JSON to canonical ParsedDocument."""

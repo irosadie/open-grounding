@@ -22,7 +22,6 @@ from app.domain.errors import DomainError
 from app.domain.rag.catalog import INGESTION_CONFIG_DEFAULTS, IngestionConfig
 from app.domain.rag.elements import ParsedDocument
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -93,6 +92,99 @@ async def test_upsert_config_docling_serve_valid() -> None:
     assert result.parser == "docling_serve"
     assert result.docling_serve_url == "http://serve:5001"
     svc._repo.upsert.assert_awaited_once()
+    assert svc._repo.upsert.await_args.kwargs["parser"] == "docling_serve"
+    assert svc._repo.upsert.await_args.kwargs["docling_serve_url"] == "http://serve:5001"
+
+
+@pytest.mark.asyncio
+async def test_upsert_config_normalizes_docling_serve_url() -> None:
+    from app.application.ingestion_config_service import IngestionConfigService
+    from app.core.settings import Settings
+    from app.domain.tenant_context import TenantContext
+
+    mock_session = AsyncMock()
+    svc = IngestionConfigService(mock_session)
+    svc._kb_repo = MagicMock()
+    svc._kb_repo.find_by_id = AsyncMock(return_value=MagicMock())
+    expected_cfg = _make_cfg(parser="docling_serve", docling_serve_url="http://serve:5001")
+    svc._repo = MagicMock()
+    svc._repo.get_by_kb = AsyncMock(return_value=None)
+    svc._repo.upsert = AsyncMock(return_value=expected_cfg)
+
+    result = await svc.upsert_config(
+        tenant=TenantContext(tenant_id="t1", membership_id="t1", user_id="t1"),
+        knowledge_base_id="kb-1",
+        min_text_coverage=0.3,
+        max_invalid_char_ratio=0.1,
+        min_aggregate_confidence=0.5,
+        min_page_coverage=0.5,
+        auto_review=False,
+        parser="docling_serve",
+        docling_serve_url="  http://serve:5001  ",
+        settings=Settings(),
+    )
+
+    assert result.docling_serve_url == "http://serve:5001"
+    assert svc._repo.upsert.await_args.kwargs["docling_serve_url"] == "http://serve:5001"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["http://", "http:///path", "https://?query=1", "http://" + "a" * 2042])
+async def test_upsert_config_rejects_invalid_docling_serve_url(url: str) -> None:
+    from app.application.ingestion_config_service import IngestionConfigService
+    from app.domain.tenant_context import TenantContext
+
+    mock_session = AsyncMock()
+    svc = IngestionConfigService(mock_session)
+    svc._kb_repo = MagicMock()
+    svc._kb_repo.find_by_id = AsyncMock(return_value=MagicMock())
+    svc._repo = MagicMock()
+    svc._repo.upsert = AsyncMock()
+
+    with pytest.raises(DomainError) as exc_info:
+        await svc.upsert_config(
+            tenant=TenantContext(tenant_id="t1", membership_id="t1", user_id="t1"),
+            knowledge_base_id="kb-1",
+            min_text_coverage=0.3,
+            max_invalid_char_ratio=0.1,
+            min_aggregate_confidence=0.5,
+            min_page_coverage=0.5,
+            auto_review=False,
+            parser="docling_serve",
+            docling_serve_url=url,
+        )
+
+    assert exc_info.value.code == "VALIDATION_ERROR"
+    svc._repo.upsert.assert_not_awaited()
+
+
+def test_ingestion_config_response_accepts_wire_shape() -> None:
+    from app.interfaces.http.schemas import IngestionConfigSuccessResponse
+
+    response = IngestionConfigSuccessResponse.model_validate(
+        {
+            "success": True,
+            "message": "Ingestion config loaded",
+            "data": {
+                "id": None,
+                "knowledgeBaseId": "kb-1",
+                "minTextCoverage": 0.3,
+                "maxInvalidCharRatio": 0.1,
+                "minAggregateConfidence": 0.5,
+                "minPageCoverage": 0.5,
+                "autoReview": False,
+                "parser": "auto",
+                "doclingServeUrl": None,
+                "doclingServeApiKeySet": False,
+                "createdAt": None,
+                "updatedAt": None,
+                "isDefault": True,
+            },
+        }
+    )
+
+    assert response.data.knowledge_base_id == "kb-1"
+    assert response.data.parser == "auto"
 
 
 # ---------------------------------------------------------------------------

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import io
 import logging
-import time
+from typing import cast
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dev_trace import get_tracer
+from app.core.dev_trace import DevTracer, get_tracer
 from app.core.settings import Settings
 from app.domain.rag.catalog import INGESTION_CONFIG_DEFAULTS, IngestionConfig
 from app.domain.rag.elements import ParsedDocument, ParserProfile
@@ -76,83 +76,88 @@ async def parse_document(
         )
     cfg = kb_config or INGESTION_CONFIG_DEFAULTS
 
-    # Decrypt docling-serve API key if configured — worker use only, never logged
+    # Resolve the docling-serve API key through the application service.
+    # The decrypted value is worker-only and is never logged.
     docling_api_key: str | None = None
-    if cfg.docling_serve_api_key_enc:
-        from app.infrastructure.crypto import decrypt, get_encryption_key
-        docling_api_key = decrypt(cfg.docling_serve_api_key_enc, get_encryption_key(settings))
+    if document is not None:
+        from app.application.ingestion_config_service import IngestionConfigService
 
-    await version_repo.update_lifecycle_state(
-        tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="PARSING"
-    )
-
-    # Read raw file from object store
-    raw_content = await _read_raw_object(version.object_key_raw, settings)
-
-    # Parse based on MIME type — adapter selected from KB config
-    mime_type = version.mime_type or "text/plain"
-    parsed_doc = await _parse_with_docling_or_fallback(
-        raw_content=raw_content,
-        mime_type=mime_type,
-        filename=version.object_key_raw,
-        tenant_id=tenant_id,
-        settings=settings,
-        cfg=cfg,
-        docling_api_key=docling_api_key,
-    )
-
-    # Normalize and compute quality
-    if isinstance(parsed_doc, ParsedDocument):
-        normalized = normalize_document(parsed_doc)
-        is_pdf = mime_type == "application/pdf"
-        quality = compute_quality(normalized.elements, is_pdf=is_pdf)
-        invalid_ratio = compute_invalid_char_ratio(normalized.elements)
-        text = _serialize_parsed_document(normalized)
-    else:
-        # fallback path returned plain str
-        text = parsed_doc
-        quality = None
-        invalid_ratio = 0.0
-
-    # Apply quality gate with per-KB thresholds
-    if cfg.auto_review:
-        next_state = "NEEDS_REVIEW"
-    elif quality is not None:
-        gate = QualityGate(
-            min_text_coverage=cfg.min_text_coverage,
-            max_invalid_char_ratio=cfg.max_invalid_char_ratio,
-            min_aggregate_confidence=cfg.min_aggregate_confidence,
-            min_page_coverage=cfg.min_page_coverage,
+        docling_api_key = await IngestionConfigService(session).get_api_key_decrypted(
+            tenant=TenantContext(
+                tenant_id=tenant_id,
+                membership_id=tenant_id,
+                user_id=tenant_id,
+            ),
+            knowledge_base_id=document.knowledge_base_id,
+            settings=settings,
         )
-        gate_result = gate.evaluate(quality, invalid_char_ratio=invalid_ratio)
-        next_state = gate_result if gate_result in ("NEEDS_REVIEW", "FAILED") else "NEEDS_REVIEW"
-        # Only skip review (go to next stage) if gate returns READY
-        if gate_result == "READY":
-            next_state = "NORMALIZING"
-        elif gate_result == "FAILED":
-            next_state = "FAILED"
-        else:
-            next_state = "NEEDS_REVIEW"
-    else:
-        next_state = "NEEDS_REVIEW"
 
-    # Store parsed text and set lifecycle state
+    await version_repo.update_lifecycle_state(tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="PARSING")
+
+    mime_type = version.mime_type or "text/plain"
     tracer = get_tracer()
     async with tracer.op(
         "ingestion.parse",
         version_id=document_version_id,
-        chars=len(text),
-        next_state=next_state,
         verbose_meta={"mime_type": mime_type},
-    ):
-        await version_repo.update_parsed_text(
+    ) as trace_meta:
+        # Read raw file from object store.
+        raw_content = await _read_raw_object(version.object_key_raw, settings)
+
+        # Parse based on MIME type — adapter selected from KB config.
+        parsed_doc = await _parse_with_docling_or_fallback(
+            raw_content=raw_content,
+            mime_type=mime_type,
+            filename=version.object_key_raw,
             tenant_id=tenant_id,
-            version_id=document_version_id,
-            parsed_text=text,
+            settings=settings,
+            cfg=cfg,
+            docling_api_key=docling_api_key,
         )
-        await version_repo.update_lifecycle_state(
-            tenant_id=tenant_id, version_id=document_version_id, lifecycle_state=next_state
-        )
+
+        # Normalize and compute quality.
+        if isinstance(parsed_doc, ParsedDocument):
+            normalized = normalize_document(parsed_doc)
+            is_pdf = mime_type == "application/pdf"
+            quality = compute_quality(normalized.elements, is_pdf=is_pdf)
+            invalid_ratio = compute_invalid_char_ratio(normalized.elements)
+            text = _serialize_parsed_document(normalized)
+        else:
+            # Fallback path returned plain str.
+            text = parsed_doc
+            quality = None
+            invalid_ratio = 0.0
+
+        # Apply quality gate with per-KB thresholds.
+        if cfg.auto_review:
+            next_state = "NEEDS_REVIEW"
+        elif quality is not None:
+            gate = QualityGate(
+                min_text_coverage=cfg.min_text_coverage,
+                max_invalid_char_ratio=cfg.max_invalid_char_ratio,
+                min_aggregate_confidence=cfg.min_aggregate_confidence,
+                min_page_coverage=cfg.min_page_coverage,
+            )
+            gate_result = gate.evaluate(quality, invalid_char_ratio=invalid_ratio)
+            next_state = gate_result if gate_result in ("NEEDS_REVIEW", "FAILED") else "NEEDS_REVIEW"
+            if gate_result == "READY":
+                next_state = "NORMALIZING"
+            elif gate_result == "FAILED":
+                next_state = "FAILED"
+            else:
+                next_state = "NEEDS_REVIEW"
+        else:
+            next_state = "NEEDS_REVIEW"
+
+        trace_meta.update(chars=len(text), next_state=next_state)
+
+    # Store parsed text and set lifecycle state
+    await version_repo.update_parsed_text(
+        tenant_id=tenant_id,
+        version_id=document_version_id,
+        parsed_text=text,
+    )
+    await version_repo.update_lifecycle_state(tenant_id=tenant_id, version_id=document_version_id, lifecycle_state=next_state)
 
     logger.info("[parse] %s chars, state=%s for %s", len(text), next_state, document_version_id)
     return text
@@ -261,7 +266,7 @@ async def _run_serve_adapter(
     filename: str,
     tenant: TenantContext,
     settings: Settings,
-    tracer: object,
+    tracer: DevTracer,
     api_key: str | None = None,
 ) -> ParsedDocument:
     """Run DoclingServeAdapter and emit a dev_trace span."""
@@ -277,23 +282,19 @@ async def _run_serve_adapter(
         timeout=settings.docling_serve_timeout_seconds,
         api_key=api_key,
     )
-    t0 = time.monotonic()
-    result = await adapter.parse(
-        tenant=tenant,
-        source=raw_content,
-        mime_type=mime_type,
-        parser_profile_id=_DEFAULT_PARSER_PROFILE.id,
-    )
-    elapsed = time.monotonic() - t0
-    serialized = _serialize_parsed_document(result)
-    async with tracer.op(  # type: ignore[union-attr]
+    async with tracer.op(
         "ingestion.parse.docling_serve",
         version_id=filename,
-        chars=len(serialized),
-        elapsed_seconds=round(elapsed, 2),
-        verbose_meta={"mime_type": mime_type, "elements": len(result.elements)},
-    ):
-        pass
+        verbose_meta={"mime_type": mime_type},
+    ) as trace_meta:
+        result = await adapter.parse(
+            tenant=tenant,
+            source=raw_content,
+            mime_type=mime_type,
+            parser_profile_id=_DEFAULT_PARSER_PROFILE.id,
+        )
+        serialized = _serialize_parsed_document(result)
+        trace_meta.update(chars=len(serialized), elements=len(result.elements))
     return result
 
 
@@ -313,6 +314,7 @@ async def _read_raw_object(object_key: str, settings: Settings) -> bytes:
     local_path = getattr(settings, "rag_object_store_local_path", None)
     if local_path:
         import os
+
         file_path = os.path.join(local_path, object_key)
         with open(file_path, "rb") as f:
             return f.read()
@@ -320,6 +322,7 @@ async def _read_raw_object(object_key: str, settings: Settings) -> bytes:
     endpoint = getattr(settings, "object_store_endpoint", None)
     if endpoint:
         import aioboto3  # type: ignore
+
         bucket = getattr(settings, "object_store_bucket", "rag-artifacts")
         access_key = getattr(settings, "object_store_access_key", "")
         secret_key = getattr(settings, "object_store_secret_key", "")
@@ -332,7 +335,7 @@ async def _read_raw_object(object_key: str, settings: Settings) -> bytes:
             region_name="us-east-1",
         ) as s3:
             response = await s3.get_object(Bucket=bucket, Key=object_key)
-            return await response["Body"].read()
+            return cast(bytes, await response["Body"].read())
     raise RuntimeError("No object store configured. Set RAG_OBJECT_STORE_LOCAL_PATH or OBJECT_STORE_ENDPOINT.")
 
 

@@ -30,8 +30,13 @@ type Props = {
   uploadedAt?: string
 }
 
-export function DocumentMetaCard({ filename, lifecycleState, uploadedAt }: Props) {
-  const badgeClass = lifecycleBadgeClass[lifecycleState] ?? "bg-gray-100 text-gray-700"
+export function DocumentMetaCard({
+  filename,
+  lifecycleState,
+  uploadedAt,
+}: Props) {
+  const badgeClass =
+    lifecycleBadgeClass[lifecycleState] ?? "bg-gray-100 text-gray-700"
   const label = lifecycleLabel[lifecycleState] ?? lifecycleState
   const formattedDate = uploadedAt
     ? new Intl.DateTimeFormat("en-US", {
@@ -48,8 +53,12 @@ export function DocumentMetaCard({ filename, lifecycleState, uploadedAt }: Props
         </div>
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <p className="truncate text-sm font-medium text-gray-900">{filename}</p>
-            <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${badgeClass}`}>
+            <p className="truncate text-sm font-medium text-gray-900">
+              {filename}
+            </p>
+            <span
+              className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${badgeClass}`}
+            >
               {label}
             </span>
           </div>

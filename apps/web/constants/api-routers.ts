@@ -14,6 +14,22 @@ export const apiRouters = {
     health: "/health",
   },
   rag: {
+    projects: {
+      list: "/rag/projects",
+      create: "/rag/projects",
+      detail: "/rag/projects/:id",
+      assignKnowledgeBase: "/rag/projects/:id/knowledge-bases",
+      planner: "/rag/projects/:id/planner",
+      plannerDefaults: "/rag/projects/:id/planner/defaults",
+      decomposition: "/rag/projects/:id/decomposition",
+      decompositionDefaults: "/rag/projects/:id/decomposition/defaults",
+      memoryConfig: "/rag/projects/:id/memory-config",
+      memoryConfigDefaults: "/rag/projects/:id/memory-config/defaults",
+      answerBehavior: "/rag/projects/:id/answer-behavior",
+      answerBehaviorDefaults: "/rag/projects/:id/answer-behavior/defaults",
+      guardrails: "/rag/projects/:id/guardrails",
+      effectiveAnswerPolicy: "/rag/projects/:id/effective-answer-policy",
+    },
     knowledgeBases: {
       list: "/rag/knowledge-bases",
       create: "/rag/knowledge-bases",
@@ -25,6 +41,11 @@ export const apiRouters = {
       memoryConfig: "/rag/knowledge-bases/:id/memory-config",
       memoryConfigDefaults: "/rag/knowledge-bases/:id/memory-config/defaults",
       ingestionConfig: "/rag/knowledge-bases/:id/ingestion-config",
+      answerBehavior: "/rag/knowledge-bases/:id/answer-behavior",
+      answerBehaviorDefaults:
+        "/rag/knowledge-bases/:id/answer-behavior/defaults",
+      guardrails: "/rag/knowledge-bases/:id/guardrails",
+      effectiveAnswerPolicy: "/rag/knowledge-bases/:id/effective-answer-policy",
     },
     memory: {
       list: "/rag/memory",
@@ -68,6 +89,7 @@ export const apiRouters = {
       delete: "/rag/ingestion/:documentVersionId",
       documents: "/rag/ingestion/documents",
       parsedText: "/rag/ingestion/:versionId/parsed-text",
+      similarDocuments: "/rag/ingestion/:versionId/similar-documents",
       approve: "/rag/ingestion/:versionId/approve",
       reject: "/rag/ingestion/:versionId/reject",
       pendingReviewCount: "/rag/ingestion/pending-review/count",

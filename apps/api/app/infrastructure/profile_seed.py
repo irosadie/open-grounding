@@ -11,16 +11,14 @@ Default profiles:
 
 from uuid import uuid4
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
 from app.infrastructure.rag_catalog import (
     IndexProfileRecord,
     ModelProfileRecord,
-    SqlAlchemyIndexGenerationRepository,
 )
-from app.infrastructure.database import utc_now
-from sqlalchemy import select
 
 
 async def seed_default_profiles(session: AsyncSession, settings: Settings) -> None:

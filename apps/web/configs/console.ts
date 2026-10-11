@@ -1,4 +1,5 @@
 import {
+  Boxes,
   Brain,
   ChartNoAxesColumnIncreasing,
   Cpu,
@@ -27,6 +28,13 @@ export const consoleNavItems: ConsoleNavItem[] = [
     href: "/console",
     icon: LayoutDashboard,
     description: "Platform summary",
+  },
+  {
+    label: "Projects",
+    href: "/console/projects",
+    icon: Boxes,
+    description: "Manage project workspaces and KB membership",
+    group: "WORKSPACE",
   },
   {
     label: "Knowledge Bases",

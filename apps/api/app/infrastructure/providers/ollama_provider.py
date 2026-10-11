@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+_EMBED_CONCURRENCY = 4
 
 
 class OllamaEmbeddingProvider:
@@ -18,16 +21,24 @@ class OllamaEmbeddingProvider:
         self._dims = 768  # default for nomic-embed-text
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        async with httpx.AsyncClient(timeout=30) as client:
-            results = []
-            for text in texts:
+        # Bounded parallel batch: latency ~= slowest item, not sum.
+        # One shared client. Failure semantics preserved: any item error
+        # still fails the batch (same as the old serial loop).
+        semaphore = asyncio.Semaphore(_EMBED_CONCURRENCY)
+
+        async def _embed_one(client: httpx.AsyncClient, text: str) -> list[float]:
+            async with semaphore:
                 response = await client.post(
                     f"{self._base_url}/api/embeddings",
                     json={"model": self._model_name, "prompt": text},
                 )
                 response.raise_for_status()
-                results.append(response.json()["embedding"])
-            return results
+                data = response.json()
+                embedding = data["embedding"]
+                return [float(v) for v in embedding]
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            return list(await asyncio.gather(*(_embed_one(client, text) for text in texts)))
 
     async def health(self) -> bool:
         try:

@@ -13,18 +13,6 @@ type Props = {
 
 const TABS = [
   {
-    label: "Planner",
-    href: (id: string) => `/console/knowledge-bases/${id}/planner`,
-  },
-  {
-    label: "Memory",
-    href: (id: string) => `/console/knowledge-bases/${id}/memory`,
-  },
-  {
-    label: "Decomposition",
-    href: (id: string) => `/console/knowledge-bases/${id}/decomposition`,
-  },
-  {
     label: "Ingestion Settings",
     href: (id: string) => `/console/knowledge-bases/${id}/ingestion`,
   },
@@ -51,6 +39,14 @@ export default function KbDetailLayoutContent({
           </h1>
           {kb ? (
             <p className="mt-0.5 text-xs text-gray-500 font-mono">{kb.slug}</p>
+          ) : null}
+          {kb?.projectId ? (
+            <Link
+              href={`/console/projects/${kb.projectId}`}
+              className="mt-1 inline-block text-xs text-primary-600 hover:underline"
+            >
+              Open owning Project
+            </Link>
           ) : null}
         </div>
         {kb ? (

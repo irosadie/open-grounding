@@ -33,9 +33,7 @@ async def embed_chunks(
     index_repo = SqlAlchemyIndexProfileRepository(session)
     model_repo = SqlAlchemyModelProfileRepository(session)
 
-    await repo.update_lifecycle_state(
-        tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="EMBEDDING"
-    )
+    await repo.update_lifecycle_state(tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="EMBEDDING")
 
     chunks = _chunks_cache.get(document_version_id)
     if not chunks:
@@ -45,31 +43,27 @@ async def embed_chunks(
     if index_profile is None:
         raise ValueError("No active index profile found.")
 
-    emb_profile = await model_repo.find_by_id(
-        tenant_id=tenant_id, profile_id=index_profile.embedding_profile_id
-    )
+    emb_profile = await model_repo.find_by_id(tenant_id=tenant_id, profile_id=index_profile.embedding_profile_id)
     if emb_profile is None:
         raise ValueError(f"Embedding profile {index_profile.embedding_profile_id} not found.")
 
     registry = ProviderRegistry(settings)
-    vectors = await registry.embed_with_fallback(
-        texts=chunks,
-        primary_provider=emb_profile.provider,
-        primary_model=emb_profile.model,
-        tenant_id=tenant_id,
-        session=session,
-    )
-
-    dim = len(vectors[0]) if vectors else 0
     tracer = get_tracer()
     async with tracer.op(
         "ingestion.embed",
         version_id=document_version_id,
-        vectors=len(vectors),
-        dim=dim,
         verbose_meta={"provider": emb_profile.provider, "model": emb_profile.model},
-    ):
+    ) as trace_meta:
+        vectors = await registry.embed_with_fallback(
+            texts=chunks,
+            primary_provider=emb_profile.provider,
+            primary_model=emb_profile.model,
+            tenant_id=tenant_id,
+            session=session,
+        )
+        dim = len(vectors[0]) if vectors else 0
         _vectors_cache[document_version_id] = vectors
+        trace_meta.update(vectors=len(vectors), dim=dim)
 
     logger.info("[embed] %d vectors (dim=%d) for %s", len(vectors), dim, document_version_id)
     return vectors

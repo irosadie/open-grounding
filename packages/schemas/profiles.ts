@@ -44,9 +44,7 @@ export const indexProfileCreateSchema = z.object({
   collection: z.string().min(1, "Collection is required").max(255),
   dimensions: z.number().int().positive("Dimensions must be positive"),
   distanceMetric: z.enum(indexProfileDistanceMetrics).default("cosine"),
-  chunkingStrategy: z
-    .enum(indexProfileChunkingStrategies)
-    .default("RECURSIVE"),
+  chunkingStrategy: z.enum(indexProfileChunkingStrategies).default("RECURSIVE"),
   chunkSizeTokens: z.number().int().min(50).max(2000).default(400),
   chunkOverlapTokens: z.number().int().min(0).max(500).default(50),
   parentChunkSize: z.number().int().min(100).max(5000).default(1500),

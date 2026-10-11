@@ -1,7 +1,7 @@
 """Unified Python BullMQ worker entrypoint.
 
 Starts all workers:
-- ingestion.parse, ingestion.chunk, ingestion.embed, ingestion.index, ingestion.validate
+- ingestion.parse, ingestion.chunk, ingestion.embed, ingestion.index, ingestion.validate, ingestion.delete
 - memory.summarize, memory.prune
 - tool-execution
 - calibration, synthetic-fixture
@@ -35,6 +35,7 @@ ALL_QUEUES = [
     "ingestion.embed",
     "ingestion.index",
     "ingestion.validate",
+    "ingestion.delete",
     "memory.summarize",
     "memory.prune",
     "tool-execution",

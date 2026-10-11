@@ -7,7 +7,7 @@ Documents uploaded to a knowledge base have no clean delete path. The existing `
 - **New BullMQ worker stage** `ingestion.delete` — handles the full cascade: delete Qdrant vectors by `document_version_id` filter, delete raw file from object store (`object_key_raw`), null out `parsed_text` in DB, transition `rag_index_generations` to `DELETED`, transition `rag_document_versions` to `DELETED`, soft-delete `rag_documents` if all versions are deleted
 - **Existing `soft_delete`** in `IngestionIntakeService` updated to enqueue an `ingestion.delete` job instead of only setting state to `DELETING`
 - **New `ObjectStoreAdapter.delete_object`** concrete implementation in `S3ObjectStoreAdapter` (protocol already declared, no implementation exists)
-- **`rag_answer_evidence` FK handling** — evidence rows referencing the version are nulled/soft-deleted before hard-delete to avoid RESTRICT constraint
+- **Answer-trace FK handling** — `rag_answer_citations.document_version_id` and chunk references are nulled before hard-delete to avoid RESTRICT constraints while preserving answer history
 - **Frontend delete button** added to the "Documents in KB" list (`ingestion-content.tsx`) for all terminal-state documents (`READY`, `FAILED`, `NEEDS_REVIEW`), with confirmation dialog
 - **Frontend lifecycle badge** in document list updated to handle `DELETING` and `DELETED` states
 
@@ -31,5 +31,5 @@ Documents uploaded to a knowledge base have no clean delete path. The existing `
 - **Modified:** `apps/api/app/infrastructure/object_store.py` (or equivalent) — implement `delete_object`
 - **Modified:** `apps/web/app/console/document/ingestion-content.tsx` — add delete button + confirm dialog
 - **No new API endpoints** — reuses existing `DELETE /rag/ingestion/{document_version_id}`
-- **No DB migration needed** — `DELETED` state already in enum, no new tables
-- **Risk:** `rag_answer_evidence` RESTRICT FK — must null/delete evidence rows before version hard-delete
+- **DB migration:** make answer-trace source references nullable, retain `rag_index_generations` as `DELETED` with a detached version reference, and add `rag_documents.deleted_at` for the parent soft-delete
+- **Risk:** answer-trace RESTRICT FKs — must null source references before version hard-delete

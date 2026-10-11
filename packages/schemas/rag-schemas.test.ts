@@ -1,6 +1,9 @@
 import {
+  answerBehaviorConfigSchema,
+  answerBehaviorProfileSchema,
   completeIntakeSchema,
   createIntakeSchema,
+  guardrailConfigSchema,
   ingestionMimeTypes,
   ragAnswerFeedbackSchema,
   ragQuerySchema,
@@ -79,5 +82,56 @@ describe("RAG schemas", () => {
     expect(ingestionMimeTypes).toContain("application/pdf")
     expect(ingestionMimeTypes).toContain("text/markdown")
     expect(ingestionMimeTypes).toContain("text/plain")
+  })
+
+  it("rejects an unsafe answer behavior combination", () => {
+    const result = answerBehaviorProfileSchema.safeParse({
+      version: "v1",
+      scope: "KNOWLEDGE_BASE",
+      sourcePolicy: "DOCUMENT_ONLY",
+      noEvidenceAction: "ANSWER_UNGROUNDED",
+      allowMcpSources: false,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it("accepts a bounded production answer behavior profile", () => {
+    const result = answerBehaviorProfileSchema.safeParse({
+      version: "v1",
+      scope: "KNOWLEDGE_BASE",
+      persona: "Be concise and clear.",
+      responseStyle: "BALANCED",
+      maxOutputTokens: 1024,
+      sourcePolicy: "DOCUMENT_MCP_GENERAL",
+      greetingPolicy: "ALLOW_UNGROUNDED",
+      noEvidenceAction: "ANSWER_UNGROUNDED",
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it("validates policy form contracts without allowing unsafe fallback", () => {
+    expect(
+      answerBehaviorConfigSchema.safeParse({
+        version: "kb-v1",
+        sourcePolicy: "DOCUMENT_ONLY",
+        noEvidenceAction: "ABSTAIN",
+        allowMcpSources: false,
+      }).success,
+    ).toBe(true)
+    expect(
+      answerBehaviorConfigSchema.safeParse({
+        version: "kb-v1",
+        sourcePolicy: "DOCUMENT_ONLY",
+        noEvidenceAction: "ANSWER_UNGROUNDED",
+        allowMcpSources: false,
+      }).success,
+    ).toBe(false)
+    expect(
+      guardrailConfigSchema.safeParse({
+        version: "guardrails-v1",
+        maxToolCalls: 4,
+        maxMcpFreshnessSeconds: 900,
+      }).success,
+    ).toBe(true)
   })
 })

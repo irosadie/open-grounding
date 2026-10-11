@@ -1,4 +1,4 @@
-import MemoryConfigContent from "./memory-config-content"
+import LegacyProjectRedirect from "../legacy-project-redirect"
 
 type Props = {
   params: Promise<{ id: string }>
@@ -6,5 +6,5 @@ type Props = {
 
 export default async function MemoryConfigPage({ params }: Props) {
   const { id } = await params
-  return <MemoryConfigContent knowledgeBaseId={id} />
+  return <LegacyProjectRedirect knowledgeBaseId={id} section="memory" />
 }

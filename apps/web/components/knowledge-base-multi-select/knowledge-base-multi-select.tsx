@@ -13,6 +13,7 @@ type KnowledgeBaseMultiSelectProps = {
   label?: string
   hint?: string
   error?: string
+  projectId?: string | null
 }
 
 export function KnowledgeBaseMultiSelect({
@@ -23,9 +24,12 @@ export function KnowledgeBaseMultiSelect({
   label = "Knowledge Bases",
   hint,
   error,
+  projectId,
 }: KnowledgeBaseMultiSelectProps) {
   const { data, isLoading } = useKnowledgeBases()
-  const kbs = data ?? []
+  const kbs = (data ?? []).filter(
+    (kb) => !projectId || kb.projectId === projectId,
+  )
   const selectedIds = new Set(value.map((kb) => kb.id))
   const available = kbs.filter((kb) => !selectedIds.has(kb.id))
 

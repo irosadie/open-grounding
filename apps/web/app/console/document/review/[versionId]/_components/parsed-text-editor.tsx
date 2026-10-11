@@ -10,8 +10,6 @@ import {
   useRef,
   useState,
 } from "react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
 
 type Props = {
   content: string
@@ -101,14 +99,35 @@ export function ParsedTextEditor({ content, editable, onChange }: Props) {
     },
   })
 
+  // The split-view preview is a separate, read-only editor so it uses the
+  // same markdown parser and Tiptap schema as the single-pane editor.
+  const previewEditor = useEditor({
+    extensions: [StarterKit, Markdown],
+    content: normalizeMarkdown(content),
+    editable: false,
+    immediatelyRender: false,
+    contentType: "markdown",
+  })
+
   // Sync main editor content when localContent changes
   useEffect(() => {
-    if (editor && localContent) {
-      editor.commands.setContent(normalizeMarkdown(localContent), {
-        contentType: "markdown",
-      })
-    }
+    if (!editor) return
+
+    editor.commands.setContent(normalizeMarkdown(localContent), {
+      contentType: "markdown",
+      emitUpdate: false,
+    })
   }, [localContent, editor])
+
+  // Keep the read-only split-view preview in sync with the raw markdown.
+  useEffect(() => {
+    if (!previewEditor) return
+
+    previewEditor.commands.setContent(normalizeMarkdown(localContent), {
+      contentType: "markdown",
+      emitUpdate: false,
+    })
+  }, [localContent, previewEditor])
 
   // Sync editable state on main editor
   useEffect(() => {
@@ -124,6 +143,18 @@ export function ParsedTextEditor({ content, editable, onChange }: Props) {
     }
     document.addEventListener("keydown", handleKey)
     return () => document.removeEventListener("keydown", handleKey)
+  }, [isFullscreen])
+
+  // Prevent the page behind the fixed fullscreen editor from scrolling.
+  useEffect(() => {
+    if (!isFullscreen) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
   }, [isFullscreen])
 
   const handleTextareaChange = (value: string) => {
@@ -179,6 +210,8 @@ export function ParsedTextEditor({ content, editable, onChange }: Props) {
           <button
             type="button"
             onClick={() => setIsSplit((v) => !v)}
+            aria-label={isSplit ? "Exit split view" : "Enable split view"}
+            aria-pressed={isSplit}
             className={`flex items-center gap-1.5 rounded px-2 py-1 text-xs transition-colors ${isSplit ? "bg-primary-50 text-primary-600" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}
             title={isSplit ? "Exit split view" : "Split view"}
           >
@@ -194,6 +227,8 @@ export function ParsedTextEditor({ content, editable, onChange }: Props) {
           <button
             type="button"
             onClick={() => setIsFullscreen((v) => !v)}
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enable fullscreen"}
+            aria-pressed={isFullscreen}
             className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
             title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
           >
@@ -235,11 +270,10 @@ export function ParsedTextEditor({ content, editable, onChange }: Props) {
             <div
               className={`flex-1 overflow-auto p-4 ${isFullscreen ? "" : "min-h-64"}`}
             >
-              <div className="prose prose-sm prose-headings:text-main-800 prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-a:text-primary-600 prose-code:rounded prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:text-primary-700 prose-pre:bg-main-800 prose-pre:text-gray-100 max-w-none focus:outline-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                  {normalizeMarkdown(localContent)}
-                </ReactMarkdown>
-              </div>
+              <EditorContent
+                editor={previewEditor}
+                className="prose prose-sm prose-headings:text-main-800 prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-a:text-primary-600 prose-code:rounded prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:text-primary-700 prose-pre:bg-main-800 prose-pre:text-gray-100 max-w-none focus:outline-none"
+              />
             </div>
           </div>
         </div>

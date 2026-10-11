@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -94,15 +95,29 @@ class Settings(BaseSettings):
     rag_context_max_chunks: int = 12
     rag_context_token_budget: int = 8_000
     rag_generation_max_output_tokens: int = 1_024
+    rag_generation_deployment_max_output_tokens: int = 8_192
     rag_query_trace_retention_days: int = 30
     rag_query_max_retrieval_retries: int = 1
     rag_query_max_validation_repairs: int = 1
+
+    # Project configuration compatibility window. Reads may fall back to
+    # legacy KB records while a tenant is being migrated; write compatibility
+    # can be disabled independently once Project settings are adopted.
+    rag_project_legacy_fallback_enabled: bool = True
+    rag_project_legacy_kb_writes_enabled: bool = True
+    rag_project_compatibility_end_date: str = ""
 
     # --- Dev trace configuration ----------------------------------------------
     # Structured dev observability for ingestion and query pipelines.
     # "off" (default) = no overhead. "summary" = human-readable one-liners.
     # "verbose" = NDJSON per event with full meta including prompt tails.
-    rag_dev_trace: str = "off"
+    rag_dev_trace: Literal["off", "summary", "verbose"] = "off"
+
+    # Persistent Codex-like rollout trace for full LLM/tool debugging.
+    # Disabled by default because prompts, tool payloads, and model responses
+    # may contain sensitive application data.
+    rag_llm_trace_enabled: bool = False
+    rag_llm_trace_dir: str = ".runtime/llm-traces"
 
     # --- Docling serve configuration ------------------------------------------
     # When set, the parse stage delegates document conversion to a remote
@@ -165,10 +180,18 @@ class Settings(BaseSettings):
 
     @field_validator("rag_dev_trace")
     @classmethod
-    def validate_rag_dev_trace(cls, value: str) -> str:
+    def validate_rag_dev_trace(cls, value: Literal["off", "summary", "verbose"]) -> Literal["off", "summary", "verbose"]:
         if value not in ("off", "summary", "verbose"):
             raise ValueError(f"Unsupported RAG_DEV_TRACE value '{value}'. Only 'off', 'summary', or 'verbose' is supported.")
         return value
+
+    @field_validator("rag_llm_trace_dir")
+    @classmethod
+    def validate_rag_llm_trace_dir(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("RAG_LLM_TRACE_DIR must not be empty")
+        return stripped
 
     @field_validator("docling_serve_url")
     @classmethod
@@ -179,6 +202,7 @@ class Settings(BaseSettings):
         if not stripped:
             return None
         import httpx
+
         try:
             parsed = httpx.URL(stripped)
         except Exception as error:
@@ -204,10 +228,19 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "rag_query_max_message_chars", "rag_query_max_payload_bytes", "rag_query_recent_messages",
-        "rag_query_requests_per_minute", "rag_query_max_concurrency", "rag_retrieval_dense_candidates",
-        "rag_retrieval_sparse_candidates", "rag_retrieval_fused_candidates", "rag_retrieval_reranker_candidates",
-        "rag_context_max_chunks", "rag_context_token_budget", "rag_generation_max_output_tokens",
+        "rag_query_max_message_chars",
+        "rag_query_max_payload_bytes",
+        "rag_query_recent_messages",
+        "rag_query_requests_per_minute",
+        "rag_query_max_concurrency",
+        "rag_retrieval_dense_candidates",
+        "rag_retrieval_sparse_candidates",
+        "rag_retrieval_fused_candidates",
+        "rag_retrieval_reranker_candidates",
+        "rag_context_max_chunks",
+        "rag_context_token_budget",
+        "rag_generation_max_output_tokens",
+        "rag_generation_deployment_max_output_tokens",
         "rag_query_trace_retention_days",
     )
     @classmethod
@@ -261,11 +294,9 @@ class Settings(BaseSettings):
         # the same secret — a leak of one compromises both. Log a warning in
         # non-development environments so operators notice the misconfiguration.
         import logging as _logging
+
         if not self.jwt_refresh_secret and self.environment != "development":
-            _logging.getLogger(__name__).warning(
-                "JWT_REFRESH_SECRET is not set; falling back to JWT_SECRET. "
-                "Set JWT_REFRESH_SECRET to a separate secret in production."
-            )
+            _logging.getLogger(__name__).warning("JWT_REFRESH_SECRET is not set; falling back to JWT_SECRET. Set JWT_REFRESH_SECRET to a separate secret in production.")
         return self.jwt_refresh_secret or self.jwt_secret
 
 

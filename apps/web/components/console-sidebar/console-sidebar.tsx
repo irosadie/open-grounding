@@ -22,7 +22,7 @@ export function ConsoleSidebar({ onNavClick }: ConsoleSidebarProps) {
       aria-label="Console navigation"
       className="flex h-full flex-col gap-0.5 p-3"
     >
-      {consoleNavItems.map((item) => {
+      {consoleNavItems.map((item, index) => {
         const isActive =
           item.href === "/console"
             ? pathname === item.href
@@ -32,6 +32,8 @@ export function ConsoleSidebar({ onNavClick }: ConsoleSidebarProps) {
         const isSubItem = item.indent
         const isIngestion = item.href === "/console/document"
         const badge = isIngestion && pendingReviewCount ? pendingReviewCount : 0
+        const showGroup =
+          item.group && consoleNavItems[index - 1]?.group !== item.group
 
         if (isSubItem && !settingsOpen) {
           return null
@@ -39,7 +41,7 @@ export function ConsoleSidebar({ onNavClick }: ConsoleSidebarProps) {
 
         return (
           <div key={item.href}>
-            {item.group && (
+            {showGroup && (
               <p className="mb-1 mt-3 px-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
                 {item.group}
               </p>

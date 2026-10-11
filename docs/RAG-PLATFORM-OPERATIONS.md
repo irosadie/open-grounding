@@ -310,15 +310,16 @@ events appear in this order:
 1. `response.started` with `traceId`
 2. `response.route` with `route`
 3. `response.retrieval_summary` with `evidenceLevel`
-4. `response.delta` with the final answer, only when there is a validated answer
+4. One or more `response.delta` events containing ordered chunks of the final
+   validated answer, only when there is a validated answer
 5. `response.citations` with final citations
 6. `response.completed` with `traceId`, `evidenceLevel`, and `limitations`
 
 An execution failure produces only `response.failed` with `QUERY_FAILED`.
 Events never expose raw vectors, mandatory filters, provider errors, prompts,
 hidden reasoning, provider secrets, or cross-tenant metadata. The release
-model validates final output before emitting `response.delta`; it does not
-stream provisional model tokens.
+model validates final output before emitting any `response.delta`; the client
+concatenates ordered deltas, and the service never streams provisional model tokens.
 
 ### Evidence Levels And Abstention
 

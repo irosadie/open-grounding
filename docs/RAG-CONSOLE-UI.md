@@ -47,10 +47,12 @@ authenticated users on `/login` to `/console`.
 
 ## Retrieval Flow
 
-- Compose a question with one or more knowledge base ids and submit.
-- The UI streams SSE events in emitted order: `started`, `route`, `retrieval_summary`,
-  `delta`, `citations`, `completed` (or `failed`). Answer deltas appear progressively;
-  citations and limitations render after the completion event.
+- Compose a question with one or more knowledge base ids and submit. The Stream checkbox
+  is enabled by default and can be cleared for the blocking JSON response.
+- With streaming enabled, the UI consumes SSE events in emitted order: `started`, `route`, `retrieval_summary`,
+  one or more ordered `delta` events, `citations`, `completed` (or `failed`). The UI
+  appends validated answer deltas progressively; citations and limitations render after
+  the completion event.
 - `clarify` and `abstain` routes and low/none evidence levels are surfaced distinctly
   from a grounded answer.
 - After completion, you can submit 1-5 rating and optional comment feedback against the

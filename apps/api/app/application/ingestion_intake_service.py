@@ -9,13 +9,14 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass
+from typing import Any, TypedDict, cast
 
 import redis.asyncio as aioredis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings import Settings
 from app.domain.errors import DomainError
-from app.domain.rag.catalog import DocumentVersionLifecycleState
+from app.domain.rag.catalog import DocumentVersion, DocumentVersionLifecycleState
 from app.domain.tenant_context import TenantContext
 from app.infrastructure.rag_catalog import (
     SqlAlchemyDocumentRepository,
@@ -40,6 +41,11 @@ class CompletionResult:
     document_version_id: str
     lifecycle_state: str
     content_checksum: str
+    enqueued: bool
+
+
+class ApprovalResult(TypedDict):
+    version: DocumentVersion
     enqueued: bool
 
 
@@ -183,7 +189,7 @@ class IngestionIntakeService:
             "documentVersionId": document_version_id,
             "tenantId": tenant_id,
         })
-        client = aioredis.from_url(redis_url, decode_responses=True)
+        client = cast(Any, aioredis.from_url(redis_url, decode_responses=True))
         try:
             await client.hset(job_key, mapping={
                 "id": job_id,
@@ -202,14 +208,53 @@ class IngestionIntakeService:
         finally:
             await client.aclose()
 
-    async def _enqueue_chunking(self, *, tenant: TenantContext, version: object) -> bool:
+    async def _enqueue_delete(self, document_version_id: str, tenant_id: str) -> None:
+        """Enqueue the idempotent BullMQ ingestion.delete job."""
+        redis_url = getattr(self._settings, "redis_url", "redis://127.0.0.1:6379")
+        import time as _time
+
+        queue_name = "ingestion.delete"
+        job_id = f"delete:{document_version_id}"
+        job_key = f"bull:{queue_name}:{job_id}"
+        timestamp = int(_time.time() * 1000)
+        data = json.dumps(
+            {
+                "documentVersionId": document_version_id,
+                "tenantId": tenant_id,
+            }
+        )
+        client = cast(Any, aioredis.from_url(redis_url, decode_responses=True))
+        try:
+            if await client.exists(job_key):
+                return
+            await client.hset(
+                job_key,
+                mapping={
+                    "id": job_id,
+                    "name": "delete",
+                    "data": data,
+                    "opts": json.dumps({"attempts": 3, "backoff": {"type": "exponential", "delay": 5000}}),
+                    "timestamp": str(timestamp),
+                    "delay": "0",
+                    "priority": "0",
+                    "stacktrace": "[]",
+                    "returnvalue": "null",
+                    "attemptsMade": "0",
+                },
+            )
+            await client.lpush(f"bull:{queue_name}:wait", job_id)
+            logger.info("Enqueued delete job for %s", document_version_id)
+        finally:
+            await client.aclose()
+
+    async def _enqueue_chunking(self, *, tenant: TenantContext, version: DocumentVersion | None) -> bool:
         """Enqueue chunk job to BullMQ ingestion.chunk queue after approval.
 
         Uses the BullMQ v4/v5 wire format (same as _enqueue_parse).
         """
-        version_id = getattr(version, "id", None)
-        if version_id is None:
+        if version is None:
             return False
+        version_id = version.id
         redis_url = getattr(self._settings, "redis_url", "redis://127.0.0.1:6379")
         import time as _time
         job_id = f"auto:{version_id}"
@@ -220,7 +265,7 @@ class IngestionIntakeService:
             "documentVersionId": version_id,
             "tenantId": tenant.tenant_id,
         })
-        client = aioredis.from_url(redis_url, decode_responses=True)
+        client = cast(Any, aioredis.from_url(redis_url, decode_responses=True))
         try:
             await client.hset(job_key, mapping={
                 "id": job_id,
@@ -273,6 +318,10 @@ class IngestionIntakeService:
             version_id=document_version_id,
             lifecycle_state=DocumentVersionLifecycleState.DELETING.value,
         )
+        await self._enqueue_delete(
+            document_version_id=document_version_id,
+            tenant_id=tenant.tenant_id,
+        )
 
     @staticmethod
     def compute_checksum(data: bytes) -> str:
@@ -281,24 +330,24 @@ class IngestionIntakeService:
 
     # --- BUG-API-08: public facade methods so routers never touch private attrs ---
 
-    async def get_version_by_id(self, *, tenant: TenantContext, version_id: str) -> object | None:
+    async def get_version_by_id(self, *, tenant: TenantContext, version_id: str) -> DocumentVersion | None:
         """Return a DocumentVersion or None — public wrapper over _version_repo."""
         return await self._version_repo.find_by_id(tenant_id=tenant.tenant_id, version_id=version_id)
 
-    async def list_versions_by_knowledge_base(self, *, tenant: TenantContext, knowledge_base_id: str) -> list[object]:
+    async def list_versions_by_knowledge_base(self, *, tenant: TenantContext, knowledge_base_id: str) -> list[tuple[DocumentVersion, str, str]]:
         """Return (version, title, doc_id) rows — public wrapper over _version_repo."""
         return await self._version_repo.list_by_knowledge_base(
             tenant_id=tenant.tenant_id,
             knowledge_base_id=knowledge_base_id,
         )
 
-    async def patch_parsed_text(self, *, tenant: TenantContext, version_id: str, text: str) -> object:
+    async def patch_parsed_text(self, *, tenant: TenantContext, version_id: str, text: str) -> DocumentVersion | None:
         """Patch parsed text on a version — public wrapper over _version_repo."""
         return await self._version_repo.patch_parsed_text(
             tenant_id=tenant.tenant_id, version_id=version_id, text=text
         )
 
-    async def update_lifecycle_state(self, *, tenant: TenantContext, version_id: str, lifecycle_state: str) -> object:
+    async def update_lifecycle_state(self, *, tenant: TenantContext, version_id: str, lifecycle_state: str) -> DocumentVersion | None:
         """Update lifecycle state — public wrapper over _version_repo."""
         return await self._version_repo.update_lifecycle_state(
             tenant_id=tenant.tenant_id,
@@ -306,7 +355,7 @@ class IngestionIntakeService:
             lifecycle_state=lifecycle_state,
         )
 
-    async def approve_version(self, *, tenant: TenantContext, version_id: str) -> dict[str, object]:
+    async def approve_version(self, *, tenant: TenantContext, version_id: str) -> ApprovalResult:
         """Approve parsed text: transition to NORMALIZING and enqueue chunking."""
         from app.domain.errors import DomainError
         from app.domain.rag.catalog import DocumentVersionLifecycleState
@@ -321,10 +370,12 @@ class IngestionIntakeService:
             version_id=version_id,
             lifecycle_state="NORMALIZING",
         )
+        if updated is None:
+            raise DomainError("NOT_FOUND", "Document version could not be updated", 404)
         enqueued = await self._enqueue_chunking(tenant=tenant, version=updated)
         return {"version": updated, "enqueued": enqueued}
 
-    async def reject_version(self, *, tenant: TenantContext, version_id: str) -> object:
+    async def reject_version(self, *, tenant: TenantContext, version_id: str) -> DocumentVersion:
         """Reject parsed text: transition to FAILED."""
         from app.domain.errors import DomainError
         from app.domain.rag.catalog import DocumentVersionLifecycleState
@@ -334,8 +385,11 @@ class IngestionIntakeService:
             raise DomainError("NOT_FOUND", "Document version not found", 404)
         if version.lifecycle_state != DocumentVersionLifecycleState.NEEDS_REVIEW:
             raise DomainError("CONFLICT", "Version is not in NEEDS_REVIEW state", 409)
-        return await self._version_repo.update_lifecycle_state(
+        updated = await self._version_repo.update_lifecycle_state(
             tenant_id=tenant.tenant_id,
             version_id=version_id,
             lifecycle_state="FAILED",
         )
+        if updated is None:
+            raise DomainError("NOT_FOUND", "Document version could not be updated", 404)
+        return updated

@@ -1,6 +1,7 @@
 export type DecompositionConfigResponse = {
   id: string
-  knowledgeBaseId: string
+  knowledgeBaseId: string | null
+  projectId?: string | null
   enabled: boolean
   modelProfileId: string
   systemPrompt: string

@@ -5,12 +5,21 @@ import { EmptyState } from "$/components/empty-state"
 import { KnowledgeBaseSelect } from "$/components/knowledge-base-select"
 import { PanelCard } from "$/components/panel-card"
 import { useRagIngestionComplete } from "$/hooks/transactions/use-rag-ingestion"
+import { useRagIngestionDelete } from "$/hooks/transactions/use-rag-ingestion"
 import { useRagIngestionIntake } from "$/hooks/transactions/use-rag-ingestion"
 import { useRagDocuments } from "$/hooks/transactions/use-rag-ingestion"
 import type { DocumentVersionItem } from "$/hooks/transactions/use-rag-ingestion"
+import { useIngestionStatuses } from "$/hooks/transactions/use-rag-ingestion/use-ingestion-statuses"
 import { ingestionMimeTypes } from "@open-grounding/schemas"
 import type { KnowledgeBaseResponseProps } from "@open-grounding/types"
-import { ClipboardCheck, FileUp, RefreshCw, Upload, X } from "lucide-react"
+import {
+  ClipboardCheck,
+  FileUp,
+  RefreshCw,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react"
 import Link from "next/link"
 import {
   type ChangeEvent,
@@ -53,17 +62,29 @@ const lifecycleLabel: Record<string, string> = {
   READY: "Ready",
   FAILED: "Failed",
   DELETING: "Deleting",
+  DELETED: "Deleted",
+  NEEDS_REVIEW: "Needs Review",
+  SUPERSEDED: "Superseded",
 }
 
 const lifecycleBadgeClass: Record<string, string> = {
   READY: "bg-green-100 text-green-700",
   FAILED: "bg-red-100 text-red-700",
   DELETING: "bg-gray-100 text-gray-500",
+  DELETED: "bg-gray-100 text-gray-400",
+  NEEDS_REVIEW: "bg-amber-100 text-amber-700",
+  SUPERSEDED: "bg-gray-100 text-gray-500",
 }
+
+const deletableLifecycleStates = new Set(["READY", "FAILED", "NEEDS_REVIEW"])
+
+// Windowing client-side: render batch awal, tambah progresif via tombol.
+const INITIAL_VISIBLE_DOCUMENTS = 50
 
 export function IngestionContent() {
   const intake = useRagIngestionIntake()
   const complete = useRagIngestionComplete()
+  const deleteVersion = useRagIngestionDelete()
   const sourceFileInputId = useId()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [selectedKb, setSelectedKb] =
@@ -72,12 +93,25 @@ export function IngestionContent() {
   const [formError, setFormError] = useState("")
   const [versions, setVersions] = useState<UploadedVersion[]>([])
   const [isDragging, setIsDragging] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null)
+  const [visibleDocCount, setVisibleDocCount] = useState(
+    INITIAL_VISIBLE_DOCUMENTS,
+  )
 
   const {
     data: kbDocuments,
     isLoading: isLoadingDocs,
     refetch: refetchDocs,
   } = useRagDocuments(selectedKb?.id ?? null)
+
+  // Agregasi polling N -> 1: satu query untuk semua kartu status.
+  const versionIds = versions.map((version) => version.documentVersionId)
+  const { data: ingestionStatuses, isLoading: isLoadingStatuses } =
+    useIngestionStatuses({ versionIds })
+
+  const totalDocs = kbDocuments?.length ?? 0
+  const visibleDocs = (kbDocuments ?? []).slice(0, visibleDocCount)
+  const remainingDocs = totalDocs - visibleDocs.length
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null
@@ -176,6 +210,15 @@ export function IngestionContent() {
     refetchDocs()
   }
 
+  const handleDocumentDelete = (documentVersionId: string) => {
+    deleteVersion.mutate(documentVersionId, {
+      onSuccess: () => {
+        setConfirmingDelete(null)
+        void refetchDocs()
+      },
+    })
+  }
+
   const isBusy = intake.isPending || complete.isPending
 
   return (
@@ -195,7 +238,10 @@ export function IngestionContent() {
         <div className="flex flex-col gap-4">
           <KnowledgeBaseSelect
             value={selectedKb}
-            onChange={setSelectedKb}
+            onChange={(kb) => {
+              setSelectedKb(kb)
+              setVisibleDocCount(INITIAL_VISIBLE_DOCUMENTS)
+            }}
             label="Knowledge Base"
             hint="Select the destination knowledge base for this document."
             required
@@ -313,39 +359,100 @@ export function IngestionContent() {
               description="Upload a document above to start the ingestion pipeline."
             />
           ) : (
-            <div className="flex flex-col divide-y divide-gray-100">
-              {kbDocuments.map((doc: DocumentVersionItem) => (
-                <div
-                  key={doc.documentVersionId}
-                  className="flex items-center gap-3 py-2.5"
-                >
-                  <FileUp className="h-4 w-4 shrink-0 text-gray-400" />
-                  <span className="min-w-0 flex-1 truncate text-sm text-gray-700">
-                    {doc.title}
-                  </span>
-                  <span className="shrink-0 text-xs text-gray-400">
-                    {doc.sizeBytes
-                      ? `${(doc.sizeBytes / 1024).toFixed(1)} KB`
-                      : "—"}
-                  </span>
-                  {doc.lifecycleState === "NEEDS_REVIEW" ? (
-                    <Link
-                      href={`/console/document/review/${doc.documentVersionId}`}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200"
-                    >
-                      <ClipboardCheck className="h-3 w-3" />
-                      Needs Review
-                    </Link>
-                  ) : (
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${lifecycleBadgeClass[doc.lifecycleState] ?? "bg-blue-100 text-blue-700"}`}
-                    >
-                      {lifecycleLabel[doc.lifecycleState] ?? doc.lifecycleState}
+            <>
+              <div className="flex flex-col divide-y divide-gray-100">
+                {visibleDocs.map((doc: DocumentVersionItem) => (
+                  <div
+                    key={doc.documentVersionId}
+                    className={`flex items-center gap-3 py-2.5 ${doc.lifecycleState === "DELETED" ? "opacity-50" : ""}`}
+                  >
+                    <FileUp className="h-4 w-4 shrink-0 text-gray-400" />
+                    <span className="min-w-0 flex-1 truncate text-sm text-gray-700">
+                      {doc.title}
                     </span>
-                  )}
-                </div>
-              ))}
-            </div>
+                    <span className="shrink-0 text-xs text-gray-400">
+                      {doc.sizeBytes
+                        ? `${(doc.sizeBytes / 1024).toFixed(1)} KB`
+                        : "—"}
+                    </span>
+                    {doc.lifecycleState === "NEEDS_REVIEW" ? (
+                      <Link
+                        href={`/console/document/review/${doc.documentVersionId}`}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200"
+                      >
+                        <ClipboardCheck className="h-3 w-3" />
+                        Needs Review
+                      </Link>
+                    ) : (
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${lifecycleBadgeClass[doc.lifecycleState] ?? "bg-blue-100 text-blue-700"}`}
+                      >
+                        {lifecycleLabel[doc.lifecycleState] ??
+                          doc.lifecycleState}
+                      </span>
+                    )}
+                    {deletableLifecycleStates.has(doc.lifecycleState) ? (
+                      confirmingDelete === doc.documentVersionId ? (
+                        <div
+                          className="flex shrink-0 items-center gap-1 rounded-lg border border-danger-100 bg-danger-50 px-2 py-1"
+                          role="alertdialog"
+                          aria-label={`Confirm deletion of ${doc.title}`}
+                        >
+                          <span className="mr-1 text-xs text-danger-700">
+                            Delete?
+                          </span>
+                          <Button
+                            intent="danger"
+                            size="small"
+                            onClick={() =>
+                              handleDocumentDelete(doc.documentVersionId)
+                            }
+                            loading={
+                              deleteVersion.isPending &&
+                              deleteVersion.variables === doc.documentVersionId
+                            }
+                          >
+                            Confirm
+                          </Button>
+                          <Button
+                            intent="secondary"
+                            size="small"
+                            onClick={() => setConfirmingDelete(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          intent="secondary"
+                          size="small"
+                          bordered
+                          onClick={() =>
+                            setConfirmingDelete(doc.documentVersionId)
+                          }
+                          leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                        >
+                          Delete
+                        </Button>
+                      )
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              {remainingDocs > 0 ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVisibleDocCount(
+                      (count) => count + INITIAL_VISIBLE_DOCUMENTS,
+                    )
+                  }
+                  className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Muat lebih banyak ({remainingDocs} lagi)
+                </button>
+              ) : null}
+            </>
           )}
         </PanelCard>
       ) : null}
@@ -368,6 +475,8 @@ export function IngestionContent() {
                 documentVersionId={version.documentVersionId}
                 filename={version.filename}
                 onDeleted={handleDeleted}
+                status={ingestionStatuses?.[version.documentVersionId]}
+                isLoadingStatus={isLoadingStatuses}
               />
             ))}
           </div>

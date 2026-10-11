@@ -61,7 +61,20 @@ target-version = "py311"
 select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
+# Keep static checking aligned with the supported runtime floor. The local
+# NumPy stub prevents an optional Qdrant import from parsing NumPy 2.5's
+# Python 3.12-only type aliases.
 python_version = "3.11"
 strict = true
 files = ["app"]
 exclude = ["alembic"]
+mypy_path = "stubs"
+
+[[tool.mypy.overrides]]
+module = ["bullmq", "jsonschema"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+ignore_missing_imports = true

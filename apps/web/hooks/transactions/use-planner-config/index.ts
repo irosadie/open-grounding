@@ -26,6 +26,33 @@ export const usePlannerConfig = (knowledgeBaseId: string | null) =>
     retry: false,
   })
 
+export const useProjectPlannerConfig = (projectId: string | null) =>
+  useQuery<PlannerConfigResponse, ErrorResponse<AxiosError>>({
+    queryKey: [queryKeys.rag.projects.planner, projectId],
+    queryFn: () =>
+      axios({
+        method: "GET",
+        url: pathVariable(apiRouters.rag.projects.planner, {
+          id: projectId as string,
+        }),
+      }),
+    enabled: !!projectId,
+    retry: false,
+  })
+
+export const useProjectPlannerDefaults = (projectId: string | null) =>
+  useQuery<PlannerDefaultsResponse, ErrorResponse<AxiosError>>({
+    queryKey: [queryKeys.rag.projects.plannerDefaults, projectId],
+    queryFn: () =>
+      axios({
+        method: "GET",
+        url: pathVariable(apiRouters.rag.projects.plannerDefaults, {
+          id: projectId as string,
+        }),
+      }),
+    enabled: !!projectId,
+  })
+
 export const usePlannerDefaults = (knowledgeBaseId: string | null) =>
   useQuery<PlannerDefaultsResponse, ErrorResponse<AxiosError>>({
     queryKey: [queryKeys.rag.knowledgeBases.plannerDefaults, knowledgeBaseId],
@@ -73,6 +100,38 @@ export const useUpsertPlannerConfig = (knowledgeBaseId: string) => {
   })
 }
 
+export const useUpsertProjectPlannerConfig = (projectId: string) => {
+  const queryClient = useQueryClient()
+  return useMutation<
+    PlannerConfigResponse,
+    ErrorResponse<AxiosError>,
+    PlannerConfigInput
+  >({
+    mutationKey: [queryKeys.rag.projects.planner, projectId],
+    mutationFn: (data) =>
+      axios({
+        method: "POST",
+        url: pathVariable(apiRouters.rag.projects.planner, { id: projectId }),
+        data: {
+          enabled: data.enabled,
+          model_profile_id: data.modelProfileId,
+          system_prompt: data.systemPrompt,
+          user_prompt_template: data.userPromptTemplate,
+          max_tasks: data.maxTasks,
+          task_timeout_seconds: data.taskTimeoutSeconds,
+          task_types: data.taskTypes,
+          mcp_enabled: data.mcpEnabled,
+          guardrails: data.guardrails,
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: [queryKeys.rag.projects.planner, projectId],
+      })
+    },
+  })
+}
+
 export const useDeletePlannerConfig = (knowledgeBaseId: string) => {
   const queryClient = useQueryClient()
   return useMutation<void, ErrorResponse<AxiosError>, void>({
@@ -91,6 +150,23 @@ export const useDeletePlannerConfig = (knowledgeBaseId: string) => {
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: [queryKeys.rag.knowledgeBases.planner, knowledgeBaseId],
+      })
+    },
+  })
+}
+
+export const useDeleteProjectPlannerConfig = (projectId: string) => {
+  const queryClient = useQueryClient()
+  return useMutation<void, ErrorResponse<AxiosError>, void>({
+    mutationKey: [queryKeys.rag.projects.planner, projectId, "delete"],
+    mutationFn: () =>
+      axios({
+        method: "DELETE",
+        url: pathVariable(apiRouters.rag.projects.planner, { id: projectId }),
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: [queryKeys.rag.projects.planner, projectId],
       })
     },
   })

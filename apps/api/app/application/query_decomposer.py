@@ -11,18 +11,20 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
-from app.core.dev_trace import get_tracer
-from jinja2 import BaseLoader, Environment, TemplateSyntaxError
+from jinja2 import BaseLoader, Environment
 from jinja2.sandbox import SandboxedEnvironment
+
+from app.core.dev_trace import _tail, get_tracer
+from app.core.llm_rollout_trace import get_rollout_trace
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.core.settings import Settings
     from app.domain.rag.catalog import DecompositionConfig
-    from app.infrastructure.rag_catalog import ModelProfileRecord
+    from app.domain.rag.profiles import ModelProfile
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +35,10 @@ DEFAULT_SYSTEM_PROMPT = (
     "Given a complex user query, break it into {{ max_sub_queries }} or fewer "
     "atomic sub-queries that can each be answered independently from a document "
     "retrieval system. Return ONLY a JSON array of strings. No explanation, no "
-    "markdown, no code block. Example: [\"sub-query 1\", \"sub-query 2\"]"
+    'markdown, no code block. Example: ["sub-query 1", "sub-query 2"]'
 )
 
-DEFAULT_USER_PROMPT_TEMPLATE = (
-    "Query: {{ query }}\n"
-    "Knowledge base: {{ knowledge_base_name }}\n"
-    "Sub-queries (max {{ max_sub_queries }}):"
-)
+DEFAULT_USER_PROMPT_TEMPLATE = "Query: {{ query }}\nKnowledge base: {{ knowledge_base_name }}\nSub-queries (max {{ max_sub_queries }}):"
 
 LLM_TIMEOUT_SECONDS = 10
 
@@ -68,21 +66,47 @@ async def _call_openai(
     model: str,
     api_key: str,
     timeout: float = LLM_TIMEOUT_SECONDS,
+    operation: str = "query.decompose",
 ) -> str:
     from openai import AsyncOpenAI
-    client = AsyncOpenAI(api_key=api_key)
-    response = await asyncio.wait_for(
-        client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_completion_tokens=512,
-        ),
-        timeout=timeout,
+
+    request_body: dict[str, object] = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_completion_tokens": 512,
+    }
+    trace = get_rollout_trace()
+    request_seq = trace.record(
+        "llm_request",
+        {"provider": "openai", "operation": operation, "model": model, "request": request_body, "attempt": 1},
     )
-    return response.choices[0].message.content or ""
+    client = cast(Any, AsyncOpenAI(api_key=api_key))
+    try:
+        response = await asyncio.wait_for(client.chat.completions.create(**request_body), timeout=timeout)
+        content = cast(str, response.choices[0].message.content or "")
+        trace.record(
+            "llm_response",
+            {"provider": "openai", "operation": operation, "request_seq": request_seq, "response": response, "content": content},
+            parent_seq=request_seq,
+        )
+        return content
+    except asyncio.CancelledError:
+        trace.record(
+            "llm_error",
+            {"provider": "openai", "operation": operation, "request_seq": request_seq, "error": "cancelled"},
+            parent_seq=request_seq,
+        )
+        raise
+    except Exception as error:
+        trace.record(
+            "llm_error",
+            {"provider": "openai", "operation": operation, "request_seq": request_seq, "error_type": type(error).__name__, "error": str(error)},
+            parent_seq=request_seq,
+        )
+        raise
 
 
 async def _call_ollama(
@@ -91,8 +115,10 @@ async def _call_ollama(
     model: str,
     base_url: str,
     timeout: float = LLM_TIMEOUT_SECONDS,
+    operation: str = "query.decompose",
 ) -> str:
     import httpx
+
     payload = {
         "model": model,
         "messages": [
@@ -101,11 +127,52 @@ async def _call_ollama(
         ],
         "stream": False,
     }
+    trace = get_rollout_trace()
+    request_seq = trace.record(
+        "llm_request",
+        {
+            "provider": "ollama",
+            "operation": operation,
+            "model": model,
+            "endpoint": f"{base_url.rstrip('/')}/api/chat",
+            "request": payload,
+            "attempt": 1,
+        },
+    )
     async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
-        response = await client.post("/api/chat", json=payload)
-        response.raise_for_status()
-        data = response.json()
-        return data.get("message", {}).get("content", "")
+        try:
+            response = await client.post("/api/chat", json=payload)
+            data = response.json()
+            status_code = getattr(response, "status_code", None)
+            response.raise_for_status()
+            content = cast(str, data.get("message", {}).get("content", ""))
+            trace.record(
+                "llm_response",
+                {"provider": "ollama", "operation": operation, "request_seq": request_seq, "status_code": status_code, "response": data, "content": content},
+                parent_seq=request_seq,
+            )
+            return content
+        except asyncio.CancelledError:
+            trace.record(
+                "llm_error",
+                {"provider": "ollama", "operation": operation, "request_seq": request_seq, "error": "cancelled"},
+                parent_seq=request_seq,
+            )
+            raise
+        except Exception as error:
+            trace.record(
+                "llm_error",
+                {
+                    "provider": "ollama",
+                    "operation": operation,
+                    "request_seq": request_seq,
+                    "error_type": type(error).__name__,
+                    "error": str(error),
+                    "status_code": getattr(response, "status_code", None) if "response" in locals() else None,
+                },
+                parent_seq=request_seq,
+            )
+            raise
 
 
 def _parse_sub_queries(raw: str, max_sub_queries: int) -> list[str]:
@@ -125,17 +192,17 @@ def _parse_sub_queries(raw: str, max_sub_queries: int) -> list[str]:
 class QueryDecomposer:
     """Decomposes a complex query into sub-queries via LLM."""
 
-    def __init__(self, settings: "Settings") -> None:
+    def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
     async def decompose(
         self,
         *,
         query: str,
-        config: "DecompositionConfig",
+        config: DecompositionConfig,
         knowledge_base_name: str,
-        model_profile: "ModelProfileRecord",
-        session: "AsyncSession | None" = None,
+        model_profile: ModelProfile,
+        session: AsyncSession | None = None,
     ) -> DecompositionResult:
         """Decompose query into sub-queries. Returns fallback on any failure."""
         context = {
@@ -155,35 +222,41 @@ class QueryDecomposer:
                 fallback_reason=f"template_render_error: {e}",
             )
 
+        raw: str | None = None
+        trace = get_rollout_trace()
         try:
-            raw = await self._call_llm(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                model_profile=model_profile,
-                tenant_id=config.tenant_id,
-                session=session,
-            )
-            sub_queries = _parse_sub_queries(raw, config.max_sub_queries)
-            if not sub_queries:
-                return DecompositionResult(
-                    sub_queries=[query],
-                    fallback=True,
-                    fallback_reason="empty_sub_queries",
-                )
-            result = DecompositionResult(sub_queries=sub_queries, fallback=False)
             tracer = get_tracer()
+            verbose_meta: dict[str, Any] = {}
             async with tracer.op(
                 "query.decompose",
-                count=len(sub_queries),
+                count=0,
                 fallback=False,
-                system_tail=tracer._tail(system_prompt) if tracer.enabled else "",
-                user_tail=tracer._tail(user_prompt) if tracer.enabled else "",
-                verbose_meta={"sub_queries": sub_queries},
-            ):
-                pass
-            return result
-        except asyncio.TimeoutError:
+                system_tail=_tail(system_prompt) if tracer.enabled else "",
+                user_tail=_tail(user_prompt) if tracer.enabled else "",
+                verbose_meta=verbose_meta,
+            ) as trace_meta:
+                raw = await self._call_llm(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    model_profile=model_profile,
+                    tenant_id=config.tenant_id,
+                    session=session,
+                )
+                sub_queries = _parse_sub_queries(raw, config.max_sub_queries)
+                if not sub_queries:
+                    trace_meta.update(count=0, fallback=True)
+                    return DecompositionResult(
+                        sub_queries=[query],
+                        fallback=True,
+                        fallback_reason="empty_sub_queries",
+                    )
+                trace_meta.update(count=len(sub_queries), fallback=False)
+                verbose_meta["sub_queries"] = sub_queries
+                return DecompositionResult(sub_queries=sub_queries, fallback=False)
+        except TimeoutError:
             logger.warning("LLM decomposition timed out for query: %.80s", query)
+            trace.record("llm_error", {"operation": "query.decompose", "error": "timeout"})
+            trace.record("llm_fallback", {"operation": "query.decompose", "reason": "timeout", "query": query})
             return DecompositionResult(
                 sub_queries=[query],
                 fallback=True,
@@ -191,6 +264,12 @@ class QueryDecomposer:
             )
         except Exception as e:
             logger.warning("LLM decomposition failed: %s", e)
+            if raw is not None:
+                trace.record(
+                    "llm_parse_error",
+                    {"operation": "query.decompose", "raw_response": raw, "error_type": type(e).__name__, "error": str(e)},
+                )
+            trace.record("llm_fallback", {"operation": "query.decompose", "reason": f"llm_error: {type(e).__name__}", "query": query})
             return DecompositionResult(
                 sub_queries=[query],
                 fallback=True,
@@ -202,9 +281,9 @@ class QueryDecomposer:
         *,
         system_prompt: str,
         user_prompt: str,
-        model_profile: "ModelProfileRecord",
+        model_profile: ModelProfile,
         tenant_id: str,
-        session: "AsyncSession | None",
+        session: AsyncSession | None,
     ) -> str:
         from app.infrastructure.providers.registry import get_provider_api_key
 
@@ -221,17 +300,21 @@ class QueryDecomposer:
             )
             if not api_key:
                 raise ValueError("OpenAI API key not configured")
-            return await _call_openai(system_prompt, user_prompt, model, api_key)
+            return await _call_openai(system_prompt, user_prompt, model, api_key, operation="query.decompose")
 
         elif provider == "ollama":
-            base_url = await get_provider_api_key(
-                provider="ollama",
-                key_name="base_url",
-                tenant_id=tenant_id,
-                session=session,
-                settings=self._settings,
-            ) or getattr(self._settings, "ollama_base_url", "http://localhost:11434") or "http://localhost:11434"
-            return await _call_ollama(system_prompt, user_prompt, model, base_url)
+            base_url = (
+                await get_provider_api_key(
+                    provider="ollama",
+                    key_name="base_url",
+                    tenant_id=tenant_id,
+                    session=session,
+                    settings=self._settings,
+                )
+                or getattr(self._settings, "ollama_base_url", "http://localhost:11434")
+                or "http://localhost:11434"
+            )
+            return await _call_ollama(system_prompt, user_prompt, model, base_url, operation="query.decompose")
 
         else:
             raise ValueError(f"Unsupported LLM provider for decomposition: {provider}")

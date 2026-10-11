@@ -6,11 +6,12 @@ from datetime import datetime
 
 @dataclass(frozen=True)
 class MemoryConfig:
-    """Per-KB memory configuration. Controls opt-in, summarization, and retrieval."""
+    """Project-owned memory configuration. Controls opt-in, summarization, and retrieval."""
 
     id: str
     tenant_id: str
-    knowledge_base_id: str
+    project_id: str | None
+    knowledge_base_id: str | None
     enabled: bool
     summarization_model_profile_id: str
     embedding_profile_id: str
@@ -40,9 +41,10 @@ class MemoryChunk:
 
 
 DEFAULT_SYSTEM_PROMPT = """\
-You are a memory summarizer. Given the following conversation messages from a knowledge base session, \
-produce a concise summary capturing the user's key questions, findings, preferences, and any important \
-context that would be useful in a future session.
+You are a memory eligibility and summarization assistant. Given the following conversation messages from \
+a knowledge base session, identify only durable user-stated facts, preferences, or context that would be \
+useful in a future session. Do not retain transient questions, assistant-only claims, retrieved document \
+facts that the user did not adopt, secrets, or unsupported assumptions.
 
 Knowledge base: {{ knowledge_base_name }}
 Turn count: {{ turn_count }}
@@ -50,4 +52,4 @@ Turn count: {{ turn_count }}
 Conversation:
 {{ conversation_messages }}
 
-Summary:"""
+Return the memory decision as the required JSON object described by the runtime contract."""

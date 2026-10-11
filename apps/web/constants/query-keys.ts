@@ -14,6 +14,19 @@ export const queryKeys = {
     health: "systemHealth",
   },
   rag: {
+    projects: {
+      list: "ragProjectsList",
+      detail: "ragProjectDetail",
+      planner: "ragProjectsPlanner",
+      plannerDefaults: "ragProjectsPlannerDefaults",
+      decomposition: "ragProjectsDecomposition",
+      decompositionDefaults: "ragProjectsDecompositionDefaults",
+      memoryConfig: "ragProjectsMemoryConfig",
+      memoryConfigDefaults: "ragProjectsMemoryConfigDefaults",
+      answerBehavior: "ragProjectsAnswerBehavior",
+      guardrails: "ragProjectsGuardrails",
+      effectiveAnswerPolicy: "ragProjectsEffectiveAnswerPolicy",
+    },
     knowledgeBases: {
       list: "ragKnowledgeBasesList",
       create: "ragKnowledgeBasesCreate",
@@ -25,6 +38,10 @@ export const queryKeys = {
       memoryConfig: "ragKnowledgeBasesMemoryConfig",
       memoryConfigDefaults: "ragKnowledgeBasesMemoryConfigDefaults",
       ingestionConfig: "ragKnowledgeBasesIngestionConfig",
+      answerBehavior: "ragKnowledgeBasesAnswerBehavior",
+      answerBehaviorDefaults: "ragKnowledgeBasesAnswerBehaviorDefaults",
+      guardrails: "ragKnowledgeBasesGuardrails",
+      effectiveAnswerPolicy: "ragKnowledgeBasesEffectiveAnswerPolicy",
     },
     memory: {
       list: "ragMemoryList",
@@ -62,6 +79,7 @@ export const queryKeys = {
       delete: "ragIngestionDelete",
       documents: "ragIngestionDocuments",
       parsedText: "ragIngestionParsedText",
+      similarDocuments: "ragIngestionSimilarDocuments",
       approve: "ragIngestionApprove",
       reject: "ragIngestionReject",
       pendingReviewCount: "ragIngestionPendingReviewCount",

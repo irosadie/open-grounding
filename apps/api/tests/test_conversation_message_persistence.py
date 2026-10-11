@@ -9,7 +9,7 @@ Covers:
 - conversationId present in response dict
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -19,7 +19,6 @@ from app.core.settings import Settings
 from app.domain.models import UserRole
 from app.domain.rag.conversation import ConversationMessage, ConversationSpeaker
 from app.domain.tenant_context import TenantContext
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -166,8 +165,9 @@ async def test_save_turn_silent_on_db_failure() -> None:
 @pytest.mark.asyncio
 async def test_record_and_return_includes_conversation_id() -> None:
     """_record_and_return includes conversationId in the result."""
-    from app.domain.rag.answer_trace import AnswerRun
     from datetime import datetime
+
+    from app.domain.rag.answer_trace import AnswerRun
 
     service = RagQueryService.__new__(RagQueryService)
     service._settings = Settings(_env_file=None)

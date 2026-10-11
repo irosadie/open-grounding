@@ -137,7 +137,7 @@ async def test_retrieve_returns_summaries_and_context() -> None:
     existing_chunk = MagicMock()
     existing_chunk.summary = "memory summary"
     existing_chunk.created_at = datetime.now(UTC).replace(tzinfo=None)
-    chunk_repo.find_by_id.return_value = existing_chunk
+    chunk_repo.find_by_ids.return_value = [existing_chunk]
 
     registry = MagicMock()
     registry.embed_with_fallback = AsyncMock(return_value=[[0.1]])

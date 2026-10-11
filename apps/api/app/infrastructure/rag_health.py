@@ -13,6 +13,7 @@ restart the API for an external dependency outage.
 """
 
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 from app.core.settings import RAG_RUNTIME_PRODUCTION, Settings
 
@@ -55,10 +56,10 @@ def _redact_error(error: BaseException) -> str:
 async def _check_postgres(settings: Settings) -> ComponentHealth:
     from sqlalchemy import text as sa_text
 
-    from app.infrastructure.database import create_session_factory
+    from app.infrastructure.database import get_session_factory
 
     try:
-        session_factory = create_session_factory(settings)
+        session_factory = get_session_factory()
         async with session_factory() as session:
             await session.execute(sa_text("SELECT 1"))
         return ComponentHealth(name="postgresql", available=True)
@@ -74,9 +75,9 @@ async def _check_redis(_settings: Settings) -> ComponentHealth:
     unavailable without raising.
     """
     try:
-        import redis.asyncio as redis  # type: ignore[import-not-found]
+        import redis.asyncio as redis
 
-        client = redis.from_url("redis://127.0.0.1:6379/0")
+        client = cast(Any, redis.from_url("redis://127.0.0.1:6379/0"))
         await client.ping()
         await client.aclose()
         return ComponentHealth(name="redis", available=True)

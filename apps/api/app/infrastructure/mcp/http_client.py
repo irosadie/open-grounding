@@ -1,4 +1,3 @@
-import asyncio
 from contextlib import AsyncExitStack
 from urllib.parse import urlparse
 
@@ -23,14 +22,17 @@ class HttpMcpClient(McpClientAdapter):
         self._session: ClientSession | None = None
 
     async def connect(self) -> None:
+        # NOTE: no asyncio.wait_for here — timeout is owned by McpRuntimeService
+        # (_connect wraps get_or_connect in a single wait_for). Underlying
+        # streamablehttp_client still gets timeout/sse_read_timeout for its own I/O.
         if self._session is not None:
             return
         stack = AsyncExitStack()
         try:
-            streams = await asyncio.wait_for(stack.enter_async_context(streamablehttp_client(self._url, headers=self._headers, timeout=self._timeout, sse_read_timeout=self._timeout)), self._timeout)
+            streams = await stack.enter_async_context(streamablehttp_client(self._url, headers=self._headers, timeout=self._timeout, sse_read_timeout=self._timeout))
             read_stream, write_stream, _ = streams
-            session = await asyncio.wait_for(stack.enter_async_context(ClientSession(read_stream, write_stream)), self._timeout)
-            await asyncio.wait_for(session.initialize(), self._timeout)
+            session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+            await session.initialize()
         except BaseException:
             await stack.aclose()
             raise
@@ -40,13 +42,13 @@ class HttpMcpClient(McpClientAdapter):
     async def list_tools(self) -> list[McpToolDescriptor]:
         if self._session is None:
             raise RuntimeError("MCP client is not connected")
-        result = await asyncio.wait_for(self._session.list_tools(), self._timeout)
+        result = await self._session.list_tools()
         return [McpToolDescriptor(name=tool.name, description=tool.description or "", input_schema=dict(tool.inputSchema)) for tool in result.tools]
 
     async def call_tool(self, name: str, arguments: dict[str, object]) -> McpCallResult:
         if self._session is None:
             raise RuntimeError("MCP client is not connected")
-        result = await asyncio.wait_for(self._session.call_tool(name, arguments), self._timeout)
+        result = await self._session.call_tool(name, arguments)
         return McpCallResult(result=result, is_error=result.isError)
 
     async def close(self) -> None:

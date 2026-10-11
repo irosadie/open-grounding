@@ -29,6 +29,21 @@ export type ParsedTextResponse = {
   lifecycleState: string
 }
 
+export type SimilarDocument = {
+  documentVersionId: string
+  documentId: string
+  title: string
+  lifecycleState: string
+  score: number
+  preview: string
+}
+
+export type SimilarDocumentsResponse = {
+  versionId: string
+  knowledgeBaseId?: string
+  documents: SimilarDocument[]
+}
+
 export type ApproveIngestionResponse = {
   versionId: string
   lifecycleState: string
@@ -39,4 +54,3 @@ export type RejectIngestionResponse = {
   versionId: string
   lifecycleState: string
 }
-

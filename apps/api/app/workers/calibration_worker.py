@@ -14,14 +14,14 @@ from bullmq import Job, Worker
 from app.core.settings import Settings
 
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 logger = logging.getLogger(__name__)
 
 
 def create_calibration_workers(
     settings: Settings,
-    session_factory: "async_sessionmaker",
+    session_factory: async_sessionmaker[AsyncSession],
     redis_url: str,
 ) -> list[Worker]:
     """Create BullMQ Workers for calibration and synthetic-fixture queues."""
@@ -109,8 +109,8 @@ def create_calibration_workers(
         async with session_factory() as session:
             fixture = await generate_synthetic_fixture(
                 SqlCalibrationFixtureRepository(session),
-                _NullChunkSource(),  # type: ignore[arg-type]
-                _NullPairGenerator(),  # type: ignore[arg-type]
+                _NullChunkSource(),
+                _NullPairGenerator(),
                 tenant_id=tenant_id,
                 retrieval_profile_id=profile_id,
                 knowledge_base_id=kb_id,

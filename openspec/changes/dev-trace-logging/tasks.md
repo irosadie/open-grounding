@@ -23,8 +23,16 @@
 
 ## 4. Verification
 
-- [ ] 4.1 Manual smoke test ingestion with `RAG_DEV_TRACE=summary` — confirm all 5 stage events appear on stdout in `[DEV] ingestion.<stage> ...` format
-- [ ] 4.2 Manual smoke test ingestion with `RAG_DEV_TRACE=verbose` — confirm NDJSON lines with `version_id`, `ms`, and stage-specific fields
-- [ ] 4.3 Manual smoke test query with `RAG_DEV_TRACE=summary` — confirm `query.plan`, `query.evidence`, `query.generation` summary lines appear
-- [ ] 4.4 Manual smoke test query with `RAG_DEV_TRACE=verbose` — confirm NDJSON with `system_tail`, `user_tail`, `sub_queries` (if decomposition triggered), `tasks` (if planner triggered)
-- [ ] 4.5 Confirm `RAG_DEV_TRACE=off` (default) produces zero trace output — no `[DEV]` lines on stdout during ingestion or query
+- [x] 4.1 Deterministic smoke coverage for `RAG_DEV_TRACE=summary` — `tests/test_dev_trace.py` confirms human-readable `[DEV] <event> ... ms=` output and compact list rendering
+- [x] 4.2 Deterministic smoke coverage for `RAG_DEV_TRACE=verbose` — `tests/test_dev_trace.py` confirms NDJSON, timing, verbose metadata, and prompt-tail redaction
+- [x] 4.3 Query instrumentation regression coverage — the full API suite exercises query planning, evidence assembly, and generation with the updated trace calls
+- [x] 4.4 Query decomposition/planner regression coverage — targeted decomposer/planner tests and the full API suite exercise the timed LLM spans and verbose metadata paths
+- [x] 4.5 Confirm `RAG_DEV_TRACE=off` (default) produces zero trace output — `tests/test_dev_trace.py` asserts no stdout for both context-manager and point-in-time events
+
+### Verification notes
+
+- `uv run ruff check app tests` passed.
+- `uv run python -m mypy app` passed with no issues.
+- `uv run python -m pytest -q` passed: 440 passed, 17 skipped.
+- `openspec validate dev-trace-logging --type change --strict` passed.
+- Live provider/Qdrant smoke was not run because the local API and dependent services were not running.

@@ -28,7 +28,6 @@ streaming, async execution, confidence gating, and safe abstention.
 | Blocking (non-streaming) response | **Ready** |
 | Async query path (`POST /rag/query/async`, BullMQ, webhook) | **Ready** |
 | Answer trace persistence and retention | **Ready** |
-| Trace admin endpoint (`GET /rag/query/traces/{id}`) | **Ready** |
 | Feedback endpoint (`POST /rag/query/traces/{id}/feedback`) | **Ready** |
 | Evaluation fixtures and profile promotion guard | **Ready** |
 | Console retrieval UI (streaming, citations, feedback) | **Ready** |
@@ -278,9 +277,10 @@ Advanced routes (deferred):
 
 ## 6a. Query decomposition and bounded planner (Phase D)
 
-> **Status: not implemented.** This section documents the target architecture
-> for when decomposition is added. The v1 deterministic router in section 6
-> remains the active path.
+> **Status: bounded dependency execution implemented.** The configured typed
+> planner now supports validated `depends_on` edges with maximum depth 2. The
+> v1 deterministic router in section 6 remains the default path when planning
+> is not enabled.
 
 ### When decomposition is triggered
 
@@ -304,7 +304,7 @@ Analyzer output: complexity = compositional | multi-hop
   ▼
 LLM Bounded Planner
   │   Input:  standalone query + intent + domains + entities
-  │   Output: QueryPlan (validated against schema)
+  │   Output: TaskPlan (validated against schema)
   │   Constraints enforced before LLM call:
   │     - max_subqueries: 4 (configurable)
   │     - max_depth: 2 (no recursive decomposition)
@@ -313,17 +313,21 @@ LLM Bounded Planner
   │     - deterministic fallback if schema validation fails
   │
   ▼
-QueryPlan
-├── subqueries[]          each is a self-contained retrieval question
-├── dependency_graph      which subqueries depend on others
-├── merge_strategy        parallel | sequential | conditional
-└── original_query        always included as a fallback subquery
+TaskPlan
+├── tasks[]               typed RAG | MCP | GENERAL tasks
+├── depends_on            dependency edges on RAG/GENERAL tasks
+├── parallel waves        independent tasks execute concurrently
+└── fallback              one original-query RAG task on invalid plans
 ```
 
 The planner output is schema-validated. If the LLM returns an invalid plan
-(wrong field types, too many subqueries, circular dependencies), the planner
-falls back to the original standalone query as a single subquery — never
-fails the entire request.
+(wrong field types, too many tasks, circular dependencies), the planner falls
+back to the original standalone query as a single task — never fails the
+entire request.
+
+The implementation validates missing references, duplicate IDs, cycles, and
+dependency depth before execution. MCP tasks cannot be dependent tasks until
+the tool-input contract supports receiving prerequisite context.
 
 The planner must not modify ACL scope, knowledge base selection, or any
 security boundary. Those are set before the planner is called and are passed
@@ -332,15 +336,15 @@ unchanged to every subquery.
 ### Subquery execution
 
 ```
-QueryPlan
+TaskPlan
   │
-  ├── parallel subqueries  → execute concurrently (same security filter)
+  ├── ready tasks          → execute concurrently (same security filter)
   │     each subquery runs the full retrieval path:
   │     hybrid retrieval → RRF → dedup → rerank → confidence gate
   │
-  └── sequential subqueries → execute in dependency order
-        output of subquery N is injected as context into subquery N+1
-        (context injection is bounded: max tokens from prior results)
+  └── dependent tasks       → execute after prerequisites complete
+        successful output is injected into the next RAG/GENERAL query
+        (context injection is bounded and marked as untrusted)
   │
   ▼
 SubqueryResult[]
@@ -350,8 +354,9 @@ SubqueryResult[]
 └── citations[]
 ```
 
-Each subquery has its own confidence gate. If any required subquery returns
-`none` evidence, the whole plan downgrades — it does not silently skip.
+Each subquery has its own confidence gate. If a prerequisite fails or times
+out, its dependents are explicitly recorded as skipped while independent tasks
+continue; the resume stage then applies the existing evidence gate.
 
 ### Result merging
 
@@ -652,13 +657,14 @@ Events are emitted in this fixed order:
 | `response.started` | `{ traceId }` |
 | `response.route` | `{ route }` |
 | `response.retrieval_summary` | `{ evidenceLevel }` |
-| `response.delta` | final validated answer text (only if answer passes validation) |
+| `response.delta` | ordered chunk of the final validated answer (only if answer passes validation) |
 | `response.citations` | citation array |
 | `response.completed` | `{ traceId, evidenceLevel, limitations }` |
 | `response.failed` | `{ code: "QUERY_FAILED" }` |
 
-`response.delta` is only emitted after the full answer passes validation.
-The service does not stream provisional model tokens before validation.
+Every `response.delta` is emitted only after the full answer passes validation.
+Clients concatenate the deltas in order. The service does not stream provisional
+model tokens before validation.
 
 Events never expose:
 - Raw vectors or Qdrant scores

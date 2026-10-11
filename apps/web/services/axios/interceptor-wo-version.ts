@@ -47,10 +47,14 @@ instance.interceptors.response.use(
     return res.data
   },
   (error) => {
-    if (error.response?.status === 401 && typeof window !== "undefined") {
+    // Redirect to login but always reject so react-query enters error
+    // state instead of hanging on a never-resolving promise.
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      window.location.pathname !== authConfig.loginPath
+    ) {
       window.location.href = authConfig.loginPath
-
-      return new Promise(() => {})
     }
 
     throw (error.response?.data ?? error) as ErrorResponse

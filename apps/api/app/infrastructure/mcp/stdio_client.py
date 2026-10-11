@@ -1,4 +1,3 @@
-import asyncio
 from contextlib import AsyncExitStack
 
 from mcp import ClientSession
@@ -16,13 +15,14 @@ class StdioMcpClient(McpClientAdapter):
         self._session: ClientSession | None = None
 
     async def connect(self) -> None:
+        # NOTE: no asyncio.wait_for here — timeout is owned by McpRuntimeService.
         if self._session is not None:
             return
         stack = AsyncExitStack()
         try:
-            read_stream, write_stream = await asyncio.wait_for(stack.enter_async_context(stdio_client(self._parameters)), self._timeout)
-            session = await asyncio.wait_for(stack.enter_async_context(ClientSession(read_stream, write_stream)), self._timeout)
-            await asyncio.wait_for(session.initialize(), self._timeout)
+            read_stream, write_stream = await stack.enter_async_context(stdio_client(self._parameters))
+            session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
+            await session.initialize()
         except BaseException:
             await stack.aclose()
             raise
@@ -31,11 +31,11 @@ class StdioMcpClient(McpClientAdapter):
 
     async def list_tools(self) -> list[McpToolDescriptor]:
         session = self._require_session()
-        result = await asyncio.wait_for(session.list_tools(), self._timeout)
+        result = await session.list_tools()
         return [McpToolDescriptor(name=tool.name, description=tool.description or "", input_schema=dict(tool.inputSchema)) for tool in result.tools]
 
     async def call_tool(self, name: str, arguments: dict[str, object]) -> McpCallResult:
-        result = await asyncio.wait_for(self._require_session().call_tool(name, arguments), self._timeout)
+        result = await self._require_session().call_tool(name, arguments)
         return McpCallResult(result=result, is_error=result.isError)
 
     async def close(self) -> None:

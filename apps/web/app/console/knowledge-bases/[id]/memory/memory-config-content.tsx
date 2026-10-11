@@ -4,9 +4,13 @@ import { Button } from "$/components/button"
 import { PanelCard } from "$/components/panel-card"
 import {
   useDeleteMemoryConfig,
+  useDeleteProjectMemoryConfig,
   useMemoryConfig,
   useMemoryConfigDefaults,
+  useProjectMemoryConfig,
+  useProjectMemoryConfigDefaults,
   useUpsertMemoryConfig,
+  useUpsertProjectMemoryConfig,
 } from "$/hooks/transactions/use-memory-config"
 import { useModelProfiles } from "$/hooks/transactions/use-model-profiles"
 import { memoryConfigSchema } from "@open-grounding/schemas"
@@ -18,15 +22,28 @@ const JINJA_VARS_HINT =
   "Available variables: {{ conversation_messages }}, {{ knowledge_base_name }}, {{ turn_count }}"
 
 type Props = {
-  knowledgeBaseId: string
+  knowledgeBaseId?: string
+  projectId?: string
 }
 
-export default function MemoryConfigContent({ knowledgeBaseId }: Props) {
-  const { data: config, isLoading } = useMemoryConfig(knowledgeBaseId)
-  const { data: defaults } = useMemoryConfigDefaults(knowledgeBaseId)
+export default function MemoryConfigContent({
+  knowledgeBaseId,
+  projectId,
+}: Props) {
+  const kbConfig = useMemoryConfig(knowledgeBaseId ?? null)
+  const projectConfig = useProjectMemoryConfig(projectId ?? null)
+  const kbDefaults = useMemoryConfigDefaults(knowledgeBaseId ?? null)
+  const projectDefaults = useProjectMemoryConfigDefaults(projectId ?? null)
+  const config = projectId ? projectConfig.data : kbConfig.data
+  const defaults = projectId ? projectDefaults.data : kbDefaults.data
+  const isLoading = projectId ? projectConfig.isLoading : kbConfig.isLoading
   const { data: modelProfiles } = useModelProfiles()
-  const upsertMutation = useUpsertMemoryConfig(knowledgeBaseId)
-  const deleteMutation = useDeleteMemoryConfig(knowledgeBaseId)
+  const upsertKbMutation = useUpsertMemoryConfig(knowledgeBaseId ?? "")
+  const upsertProjectMutation = useUpsertProjectMemoryConfig(projectId ?? "")
+  const deleteKbMutation = useDeleteMemoryConfig(knowledgeBaseId ?? "")
+  const deleteProjectMutation = useDeleteProjectMemoryConfig(projectId ?? "")
+  const upsertMutation = projectId ? upsertProjectMutation : upsertKbMutation
+  const deleteMutation = projectId ? deleteProjectMutation : deleteKbMutation
 
   const enabledId = useId()
   const summModelId = useId()
@@ -124,15 +141,20 @@ export default function MemoryConfigContent({ knowledgeBaseId }: Props) {
           Conversation Memory
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          Enable persistent memory for this knowledge base. Completed
-          conversations are summarized and retrieved at query time to provide
-          context from prior sessions.
+          Enable persistent memory for this{" "}
+          {projectId ? "Project" : "knowledge base"}. Completed conversations
+          are summarized and retrieved at query time to provide context from
+          prior sessions.
         </p>
       </div>
 
       <PanelCard
         title="Configuration"
-        description="Memory settings for this knowledge base."
+        description={
+          projectId
+            ? "Shared memory settings for every Knowledge Base in this Project."
+            : "Memory settings for this knowledge base."
+        }
       >
         <div className="flex flex-col gap-5">
           {/* Enable toggle */}

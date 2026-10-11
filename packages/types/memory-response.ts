@@ -1,6 +1,7 @@
 export type MemoryConfigResponse = {
   id: string
-  knowledgeBaseId: string
+  knowledgeBaseId: string | null
+  projectId?: string | null
   enabled: boolean
   summarizationModelProfileId: string
   embeddingProfileId: string

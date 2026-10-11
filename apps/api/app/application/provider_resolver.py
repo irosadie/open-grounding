@@ -26,11 +26,11 @@ async def resolve_model_profile(
     profile_id: str,
     settings: Settings,
 ) -> ResolvedProvider:
-    from app.infrastructure.database import create_session_factory
+    from app.infrastructure.database import get_session_factory
     from app.infrastructure.providers.registry import get_provider_api_key
     from app.infrastructure.rag_catalog import SqlAlchemyModelProfileRepository
 
-    session_factory = create_session_factory(settings)
+    session_factory = get_session_factory()
     async with session_factory() as session:
         repo = SqlAlchemyModelProfileRepository(session)
         profile = await repo.find_by_id(tenant_id=tenant_id, profile_id=profile_id)

@@ -1,0 +1,5 @@
+{"schema_version":1,"seq":1,"ts":"2026-09-18T06:03:12.517265+00:00","trace_id":"b9a08b7f-73cd-4703-826b-1b7795b9546d","event":"session_meta","payload":{"source":"memory.summarize","conversation_id":"a9014f76-82ad-43fc-8a1f-286563a31dd9","knowledge_base_id":"a3740a78-5156-4add-bd31-eb8983fcbb82"}}
+{"schema_version":1,"seq":2,"ts":"2026-09-18T06:03:12.527566+00:00","trace_id":"b9a08b7f-73cd-4703-826b-1b7795b9546d","event":"turn_started","payload":{"attempt":1,"conversation_id":"a9014f76-82ad-43fc-8a1f-286563a31dd9"}}
+{"schema_version":1,"seq":3,"ts":"2026-09-18T06:03:12.528257+00:00","trace_id":"b9a08b7f-73cd-4703-826b-1b7795b9546d","event":"compaction","payload":{"operation":"memory.summarize","conversation_id":"a9014f76-82ad-43fc-8a1f-286563a31dd9","reason":"summarize_conversation","attempt":1}}
+{"schema_version":1,"seq":4,"ts":"2026-09-18T06:03:12.614910+00:00","trace_id":"b9a08b7f-73cd-4703-826b-1b7795b9546d","event":"turn_completed","payload":{"attempt":1,"created":false}}
+{"schema_version":1,"seq":5,"ts":"2026-09-18T06:03:12.615371+00:00","trace_id":"b9a08b7f-73cd-4703-826b-1b7795b9546d","event":"trace_completed","payload":{"source":"memory.summarize"}}

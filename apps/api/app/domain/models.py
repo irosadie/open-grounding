@@ -23,6 +23,74 @@ class TenantMembershipStatus(StrEnum):
     INACTIVE = "INACTIVE"
 
 
+class PolicyScope(StrEnum):
+    DEPLOYMENT = "DEPLOYMENT"
+    TENANT = "TENANT"
+    PROJECT = "PROJECT"
+    KNOWLEDGE_BASE = "KNOWLEDGE_BASE"
+
+
+class ProjectStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
+
+
+@dataclass(frozen=True)
+class ProjectMigrationReview:
+    id: str
+    tenant_id: str
+    project_id: str
+    knowledge_base_id: str | None
+    config_kind: str
+    status: str
+    legacy_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class AnswerSourcePolicy(StrEnum):
+    DOCUMENT_ONLY = "DOCUMENT_ONLY"
+    DOCUMENT_OR_MCP = "DOCUMENT_OR_MCP"
+    DOCUMENT_MCP_GENERAL = "DOCUMENT_MCP_GENERAL"
+
+
+class GreetingPolicy(StrEnum):
+    ALLOW_UNGROUNDED = "ALLOW_UNGROUNDED"
+    REQUIRE_ALLOWED_SOURCE = "REQUIRE_ALLOWED_SOURCE"
+    REFUSE = "REFUSE"
+
+
+class NoEvidenceAction(StrEnum):
+    ABSTAIN = "ABSTAIN"
+    REFUSE = "REFUSE"
+    ANSWER_UNGROUNDED = "ANSWER_UNGROUNDED"
+
+
+class ResponseStyle(StrEnum):
+    CONCISE = "CONCISE"
+    BALANCED = "BALANCED"
+    DETAILED = "DETAILED"
+
+
+class ProvenanceKind(StrEnum):
+    DOCUMENT = "DOCUMENT"
+    MCP = "MCP"
+
+
+class GuardrailStage(StrEnum):
+    INPUT = "INPUT"
+    TOOL = "TOOL"
+    OUTPUT = "OUTPUT"
+
+
+class GuardrailDecision(StrEnum):
+    ALLOW = "ALLOW"
+    DENY = "DENY"
+    REDACT = "REDACT"
+    REQUIRE_CONFIRMATION = "REQUIRE_CONFIRMATION"
+    FAIL_CLOSED = "FAIL_CLOSED"
+
+
 @dataclass(frozen=True)
 class User:
     id: str
@@ -61,5 +129,17 @@ class TenantMembership:
     tenant_id: str
     user_id: str
     status: TenantMembershipStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(frozen=True)
+class Project:
+    id: str
+    tenant_id: str
+    slug: str
+    name: str
+    status: ProjectStatus
+    is_default: bool
     created_at: datetime
     updated_at: datetime

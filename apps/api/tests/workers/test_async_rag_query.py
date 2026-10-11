@@ -25,7 +25,6 @@ from app.domain.models import UserRole
 from app.domain.rag.query_job import RagQueryJob, RagQueryJobStatus
 from app.domain.tenant_context import TenantContext
 
-
 # ---------------------------------------------------------------------------
 # Worker tests
 # ---------------------------------------------------------------------------
@@ -83,7 +82,8 @@ async def test_handle_rag_query_success_path() -> None:
         mock_worker_cls.return_value = mock_worker_instance
 
         from app.core.settings import Settings
-        worker = create_query_worker(Settings(_env_file=None), mock_session_factory, "redis://localhost:6379")
+
+        create_query_worker(Settings(_env_file=None), mock_session_factory, "redis://localhost:6379")
 
         # Extract the handler that was registered
         handler = mock_worker_cls.call_args[0][1]
@@ -145,7 +145,8 @@ async def test_handle_rag_query_failure_path() -> None:
         mock_worker_cls.return_value = mock_worker_instance
 
         from app.core.settings import Settings
-        worker = create_query_worker(Settings(_env_file=None), mock_session_factory, "redis://localhost:6379")
+
+        create_query_worker(Settings(_env_file=None), mock_session_factory, "redis://localhost:6379")
 
         handler = mock_worker_cls.call_args[0][1]
         with pytest.raises(RuntimeError, match="LLM timeout"):

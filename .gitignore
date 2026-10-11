@@ -17,6 +17,7 @@ coverage
 
 # logs
 *.log
+.runtime/llm-traces/
 
 # macOS
 .DS_Store

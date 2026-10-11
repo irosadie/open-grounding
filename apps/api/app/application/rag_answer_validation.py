@@ -11,13 +11,27 @@ Repair = Callable[[tuple[str, ...]], Awaitable[GroundedAnswer]]
 
 class RagAnswerValidationService:
     async def validate_or_abstain(
-        self, *, answer: GroundedAnswer, evidence: EvidenceContext, repair: Repair | None
+        self,
+        *,
+        answer: GroundedAnswer,
+        evidence: EvidenceContext,
+        repair: Repair | None,
+        tenant_id: str | None = None,
+        trace_id: str | None = None,
     ) -> tuple[GroundedAnswer | None, AnswerValidation, bool]:
-        validation = validate_answer(answer=answer, evidence=evidence)
+        validation = validate_answer(answer=answer, evidence=evidence, tenant_id=tenant_id, trace_id=trace_id)
         if validation.is_valid:
             return answer, validation, False
         if repair is None:
             return None, validation, False
-        repaired = await repair(validation.errors)
-        repaired_validation = validate_answer(answer=repaired, evidence=evidence)
+        try:
+            repaired = await repair(validation.errors)
+        except Exception:
+            return None, validation, True
+        repaired_validation = validate_answer(
+            answer=repaired,
+            evidence=evidence,
+            tenant_id=tenant_id,
+            trace_id=trace_id,
+        )
         return (repaired if repaired_validation.is_valid else None), repaired_validation, True

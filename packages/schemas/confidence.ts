@@ -1,10 +1,18 @@
 import { z } from "zod"
 
-export const confidenceLabels = ["SUPPORTED", "PARTIALLY_SUPPORTED", "UNSUPPORTED", "ABSTAIN"] as const
+export const confidenceLabels = [
+  "SUPPORTED",
+  "PARTIALLY_SUPPORTED",
+  "UNSUPPORTED",
+  "ABSTAIN",
+] as const
 
 export type ConfidenceLabel = (typeof confidenceLabels)[number]
 
-export const calibrationSources = ["OPERATOR_LABELED", "SYNTHETIC_BOOTSTRAP"] as const
+export const calibrationSources = [
+  "OPERATOR_LABELED",
+  "SYNTHETIC_BOOTSTRAP",
+] as const
 
 export type CalibrationSource = (typeof calibrationSources)[number]
 

@@ -16,19 +16,32 @@ export type DocumentVersionItem = {
 
 const fetchDocuments = async (
   knowledgeBaseId: string,
+  page: number,
+  pageSize: number,
 ): Promise<DocumentVersionItem[]> => {
   const result = await axios<DocumentVersionItem[]>({
     method: "GET",
     url: apiRouters.rag.ingestion.documents,
-    params: { knowledge_base_id: knowledgeBaseId },
+    // Backend yang belum mendukung page/page_size boleh mengabaikan
+    // params ini; UI tetap merender array penuh + windowing client-side.
+    params: { knowledge_base_id: knowledgeBaseId, page, page_size: pageSize },
   })
   return result
 }
 
-export const useRagDocuments = (knowledgeBaseId: string | null) => {
+export const useRagDocuments = (
+  knowledgeBaseId: string | null,
+  page = 1,
+  pageSize = 50,
+) => {
   return useQuery({
-    queryKey: [queryKeys.rag.ingestion.documents, knowledgeBaseId],
-    queryFn: () => fetchDocuments(knowledgeBaseId as string),
+    queryKey: [
+      queryKeys.rag.ingestion.documents,
+      knowledgeBaseId,
+      page,
+      pageSize,
+    ],
+    queryFn: () => fetchDocuments(knowledgeBaseId as string, page, pageSize),
     enabled: !!knowledgeBaseId,
   })
 }

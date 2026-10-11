@@ -22,9 +22,10 @@ async def refresh_tokens(repo: AuthRepository, settings: Settings, refresh_token
     if user is None or user.status is UserStatus.SUSPENDED:
         raise DomainError.invalid_token()
     session = await repo.find_auth_session(payload["sessionId"], user.id)
-    if session is None or session.token_hash != hash_session_token(refresh_token):
+    current_token_hash = hash_session_token(refresh_token)
+    if session is None or session.token_hash != current_token_hash:
         raise DomainError.invalid_token()
-    return build_token_pair(
+    tokens = build_token_pair(
         user_id=user.id,
         email=user.email,
         role=user.role,
@@ -32,3 +33,13 @@ async def refresh_tokens(repo: AuthRepository, settings: Settings, refresh_token
         session_id=session.id,
         settings=settings,
     )
+    async with repo.transaction():
+        rotated = await repo.rotate_auth_session_token(
+            session_id=session.id,
+            user_id=user.id,
+            current_token_hash=current_token_hash,
+            next_token_hash=hash_session_token(str(tokens["refreshToken"])),
+        )
+        if not rotated:
+            raise DomainError.invalid_token()
+    return tokens

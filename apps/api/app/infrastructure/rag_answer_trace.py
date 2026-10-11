@@ -4,8 +4,8 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, Uuid, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.rag.answer_trace import AnswerCitation, AnswerFeedback, AnswerRun
@@ -47,8 +47,8 @@ class AnswerCitationRecord(Base):
     tenant_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     answer_run_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_answer_runs.id", ondelete="CASCADE"), nullable=False)
     citation_id: Mapped[str] = mapped_column(String(32), nullable=False)
-    chunk_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_chunks.id", ondelete="RESTRICT"), nullable=False)
-    document_version_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_document_versions.id", ondelete="RESTRICT"), nullable=False)
+    chunk_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_chunks.id", ondelete="RESTRICT"), nullable=True)
+    document_version_id: Mapped[str | None] = mapped_column(Uuid(as_uuid=False), ForeignKey("rag_document_versions.id", ondelete="RESTRICT"), nullable=True)
     locator: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=False), default=utc_now, nullable=False)
 
@@ -99,7 +99,9 @@ class EvaluationResultRecord(Base):
 
 
 def _to_answer_run(row: AnswerRunRecord) -> AnswerRun:
-    return AnswerRun(row.id, row.tenant_id, row.trace_id, row.conversation_id, row.original_query, row.standalone_query, row.route, row.evidence_level, row.profile_snapshot, tuple(row.limitations), row.created_at, row.feature_vector)
+    return AnswerRun(
+        row.id, row.tenant_id, row.trace_id, row.conversation_id, row.original_query, row.standalone_query, row.route, row.evidence_level, row.profile_snapshot, tuple(row.limitations), row.created_at, row.feature_vector
+    )
 
 
 def _to_answer_citation(row: AnswerCitationRecord) -> AnswerCitation:
@@ -167,13 +169,12 @@ class SqlAlchemyAnswerRunRepository:
         return _to_answer_run(row)
 
     async def list_unlabeled_for_profile(self, *, tenant_id: str, retrieval_profile_id: str, page: int, page_size: int) -> list[AnswerRun]:
-        from sqlalchemy import not_, exists, select as sa_select
+        from sqlalchemy import not_
+        from sqlalchemy import select as sa_select
 
         from app.infrastructure.rag_catalog import CalibrationFixtureEntryRecord
 
-        labeled_subquery = sa_select(CalibrationFixtureEntryRecord.answer_run_id).where(
-            CalibrationFixtureEntryRecord.answer_run_id.is_not(None)
-        ).scalar_subquery()
+        labeled_subquery = sa_select(CalibrationFixtureEntryRecord.answer_run_id).where(CalibrationFixtureEntryRecord.answer_run_id.is_not(None)).scalar_subquery()
         stmt = (
             select(AnswerRunRecord)
             .where(
@@ -245,9 +246,7 @@ class SqlAlchemyAnswerTraceDetailRepository:
         self._session.add(RetrievalSummaryRecord(id=str(uuid4()), tenant_id=tenant_id, answer_run_id=answer_run_id, summary=summary))
         await self._session.commit()
 
-    async def create_validation_outcome(
-        self, *, tenant_id: str, answer_run_id: str, is_valid: bool, checks: dict[str, object], repair_attempted: bool
-    ) -> None:
+    async def create_validation_outcome(self, *, tenant_id: str, answer_run_id: str, is_valid: bool, checks: dict[str, object], repair_attempted: bool) -> None:
         self._session.add(
             ValidationOutcomeRecord(
                 id=str(uuid4()),

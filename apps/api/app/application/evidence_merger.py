@@ -32,8 +32,8 @@ def merge_evidence(
                 seen[chunk_id] = dict(chunk)
             else:
                 # Keep highest score across sub-queries
-                existing_score = float(seen[chunk_id].get("score", 0.0))
-                new_score = float(chunk.get("score", 0.0))
+                existing_score = _score(seen[chunk_id].get("score"))
+                new_score = _score(chunk.get("score"))
                 if new_score > existing_score:
                     seen[chunk_id] = dict(chunk)
 
@@ -41,6 +41,19 @@ def merge_evidence(
     dedup_removed = total_raw - len(seen)
 
     # Sort by score descending
-    merged = sorted(seen.values(), key=lambda c: float(c.get("score", 0.0)), reverse=True)
+    merged = sorted(seen.values(), key=lambda c: _score(c.get("score")), reverse=True)
 
     return merged[:top_k], max(dedup_removed, 0)
+
+
+def _score(value: object) -> float:
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return 0.0
+    return 0.0

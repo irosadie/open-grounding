@@ -6,26 +6,42 @@ import { PanelCard } from "$/components/panel-card"
 import { useModelProfiles } from "$/hooks/transactions/use-model-profiles"
 import {
   useDeletePlannerConfig,
+  useDeleteProjectPlannerConfig,
   usePlannerConfig,
   usePlannerDefaults,
+  useProjectPlannerConfig,
+  useProjectPlannerDefaults,
   useUpsertPlannerConfig,
+  useUpsertProjectPlannerConfig,
 } from "$/hooks/transactions/use-planner-config"
 import { plannerConfigSchema, plannerTaskTypes } from "@open-grounding/schemas"
 import type { ModelProfileListResponse } from "@open-grounding/types"
 import { Brain, Save, Trash2 } from "lucide-react"
 import { useEffect, useId, useState } from "react"
 
-type Props = { knowledgeBaseId: string }
+type Props = { knowledgeBaseId?: string; projectId?: string }
 
 const HINT =
   "Variables: {{ query }}, {{ max_tasks }}, {{ available_tools }}, {{ knowledge_base_name }}"
 
-export default function PlannerConfigContent({ knowledgeBaseId }: Props) {
-  const { data: config, isLoading } = usePlannerConfig(knowledgeBaseId)
-  const { data: defaults } = usePlannerDefaults(knowledgeBaseId)
+export default function PlannerConfigContent({
+  knowledgeBaseId,
+  projectId,
+}: Props) {
+  const kbConfig = usePlannerConfig(knowledgeBaseId ?? null)
+  const projectConfig = useProjectPlannerConfig(projectId ?? null)
+  const kbDefaults = usePlannerDefaults(knowledgeBaseId ?? null)
+  const projectDefaults = useProjectPlannerDefaults(projectId ?? null)
+  const config = projectId ? projectConfig.data : kbConfig.data
+  const defaults = projectId ? projectDefaults.data : kbDefaults.data
+  const isLoading = projectId ? projectConfig.isLoading : kbConfig.isLoading
   const { data: modelProfiles } = useModelProfiles()
-  const saveMutation = useUpsertPlannerConfig(knowledgeBaseId)
-  const deleteMutation = useDeletePlannerConfig(knowledgeBaseId)
+  const saveKbMutation = useUpsertPlannerConfig(knowledgeBaseId ?? "")
+  const saveProjectMutation = useUpsertProjectPlannerConfig(projectId ?? "")
+  const deleteKbMutation = useDeletePlannerConfig(knowledgeBaseId ?? "")
+  const deleteProjectMutation = useDeleteProjectPlannerConfig(projectId ?? "")
+  const saveMutation = projectId ? saveProjectMutation : saveKbMutation
+  const deleteMutation = projectId ? deleteProjectMutation : deleteKbMutation
   const modelId = useId()
   const systemId = useId()
   const userId = useId()
@@ -106,7 +122,11 @@ export default function PlannerConfigContent({ knowledgeBaseId }: Props) {
       </div>
       <PanelCard
         title="Planner Configuration"
-        description="Planner settings for this knowledge base."
+        description={
+          projectId
+            ? "Shared planner settings for every Knowledge Base in this Project."
+            : "Planner settings for this knowledge base."
+        }
       >
         <div className="flex flex-col gap-5">
           <label className="flex items-center justify-between text-sm font-medium text-gray-700">

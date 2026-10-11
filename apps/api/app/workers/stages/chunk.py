@@ -27,9 +27,7 @@ async def chunk_document(
     repo = SqlAlchemyDocumentVersionRepository(session)
     index_repo = SqlAlchemyIndexProfileRepository(session)
 
-    await repo.update_lifecycle_state(
-        tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="CHUNKING"
-    )
+    await repo.update_lifecycle_state(tenant_id=tenant_id, version_id=document_version_id, lifecycle_state="CHUNKING")
 
     # Get parsed text — fallback to DB if in-memory cache is cold (e.g. after worker restart)
     text = _parsed_cache.get(document_version_id)
@@ -51,18 +49,17 @@ async def chunk_document(
     chunk_size = index_profile.chunk_size_tokens or 400
     overlap = index_profile.chunk_overlap_tokens or 50
 
-    chunks = _split_text(text, strategy=strategy, chunk_size=chunk_size, overlap=overlap)
-
     tracer = get_tracer()
     async with tracer.op(
         "ingestion.chunk",
         version_id=document_version_id,
-        chunks=len(chunks),
         strategy=strategy,
         chunk_size=chunk_size,
         verbose_meta={"overlap": overlap},
-    ):
+    ) as trace_meta:
+        chunks = _split_text(text, strategy=strategy, chunk_size=chunk_size, overlap=overlap)
         _chunks_cache[document_version_id] = chunks
+        trace_meta["chunks"] = len(chunks)
 
     logger.info("[chunk] %d chunks from %s (strategy=%s, size=%d)", len(chunks), document_version_id, strategy, chunk_size)
     return chunks

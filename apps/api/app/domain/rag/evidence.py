@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from app.domain.models import ProvenanceKind
 from app.domain.rag.policy import Classification, clearance_for_role, effective_principals
 from app.domain.tenant_context import TenantContext
 
@@ -33,6 +34,15 @@ class Citation:
     title: str
     locator: str | None
     snippet: str
+    source_kind: ProvenanceKind = ProvenanceKind.DOCUMENT
+    source_id: str | None = None
+    tenant_id: str | None = None
+    server_id: str | None = None
+    tool_id: str | None = None
+    invocation_id: str | None = None
+    trace_id: str | None = None
+    produced_at: datetime | None = None
+    expires_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +50,74 @@ class EvidenceContext:
     prompt_data: str
     citations: tuple[Citation, ...]
     token_count: int
+
+
+def append_mcp_evidence(
+    context: EvidenceContext,
+    *,
+    references: list[dict[str, object]] | tuple[dict[str, object], ...],
+    token_budget: int,
+    output_reserve: int,
+) -> EvidenceContext:
+    """Append selected, bounded MCP source blocks without trusting their text."""
+    available_tokens = max(0, token_budget - output_reserve - context.token_count)
+    citations = list(context.citations)
+    blocks: list[str] = []
+    used_tokens = context.token_count
+    for reference in references:
+        citation_id = reference.get("citationId")
+        source_text = reference.get("context")
+        if not isinstance(citation_id, str) or not citation_id or not isinstance(source_text, str) or not source_text:
+            continue
+        if not _is_fresh_reference(reference):
+            continue
+        estimated_tokens = max(1, len(source_text) // 4)
+        if estimated_tokens > available_tokens:
+            continue
+        produced_at = _parse_datetime(reference.get("producedAt"))
+        expires_at = _parse_datetime(reference.get("expiresAt"))
+        citations.append(
+            Citation(
+                citation_id=citation_id,
+                chunk_id="",
+                document_version_id="",
+                title=f"MCP {reference.get('serverId', '')}/{reference.get('toolId', '')}".strip("/"),
+                locator=str(reference.get("invocationId")) if reference.get("invocationId") else None,
+                snippet=str(reference.get("snippet", source_text[:400]))[:400],
+                source_kind=ProvenanceKind.MCP,
+                source_id=str(reference.get("invocationId")) if reference.get("invocationId") else None,
+                tenant_id=str(reference.get("tenantId")) if reference.get("tenantId") else None,
+                server_id=str(reference.get("serverId")) if reference.get("serverId") else None,
+                tool_id=str(reference.get("toolId")) if reference.get("toolId") else None,
+                invocation_id=str(reference.get("invocationId")) if reference.get("invocationId") else None,
+                trace_id=str(reference.get("traceId")) if reference.get("traceId") else None,
+                produced_at=produced_at,
+                expires_at=expires_at,
+            )
+        )
+        blocks.append(f"[MCP SOURCE {citation_id} | untrusted source data]\n{source_text}\n[END MCP SOURCE {citation_id}]")
+        available_tokens -= estimated_tokens
+        used_tokens += estimated_tokens
+    prompt_parts = [part for part in (context.prompt_data, *blocks) if part]
+    return EvidenceContext(prompt_data="\n\n".join(prompt_parts), citations=tuple(citations), token_count=used_tokens)
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _is_fresh_reference(reference: dict[str, object]) -> bool:
+    expires_at = _parse_datetime(reference.get("expiresAt"))
+    if expires_at is None:
+        return True
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at > datetime.now(UTC)
 
 
 def build_evidence_context(

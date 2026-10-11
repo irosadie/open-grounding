@@ -13,8 +13,7 @@ from app.application.calibration_service import (
 )
 from app.domain.errors import DomainError
 from app.domain.rag.answer_trace import AnswerRun
-from app.domain.rag.confidence import CalibrationFixture, CalibrationModelVersion, CalibrationSource, ConfidenceConfig, ConfidenceLabel, FEATURE_NAMES
-
+from app.domain.rag.confidence import FEATURE_NAMES, CalibrationFixture, CalibrationModelVersion, CalibrationSource, ConfidenceConfig, ConfidenceLabel
 
 NOW = datetime.now(UTC).replace(tzinfo=None)
 

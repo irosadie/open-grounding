@@ -1,12 +1,12 @@
 """Tenant-scoped calibration entities and deterministic confidence helpers."""
 
+from builtins import list as builtin_list
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
 from app.domain.rag.answer_trace import AnswerRun
-
 
 FEATURE_NAMES = (
     "reranker_score_mean",
@@ -100,10 +100,10 @@ class CalibrationFixtureRepository(Protocol):
     async def get_active(self, *, tenant_id: str, retrieval_profile_id: str) -> CalibrationFixture | None: ...
     async def list(self, *, tenant_id: str, retrieval_profile_id: str) -> list[CalibrationFixture]: ...
     async def deactivate_previous(self, *, tenant_id: str, retrieval_profile_id: str) -> None: ...
-    async def append_entries(self, *, tenant_id: str, fixture_id: str, entries: list[CalibrationFixtureEntry]) -> None: ...
+    async def append_entries(self, *, tenant_id: str, fixture_id: str, entries: builtin_list[CalibrationFixtureEntry]) -> None: ...
     async def count_labeled_entries(self, *, tenant_id: str, retrieval_profile_id: str) -> int: ...
-    async def get_entries(self, *, tenant_id: str, fixture_id: str) -> list[CalibrationFixtureEntry]: ...
-    async def upsert_answer_run_entries(self, *, tenant_id: str, fixture_id: str, entries: list[CalibrationFixtureEntry]) -> int: ...
+    async def get_entries(self, *, tenant_id: str, fixture_id: str) -> builtin_list[CalibrationFixtureEntry]: ...
+    async def upsert_answer_run_entries(self, *, tenant_id: str, fixture_id: str, entries: builtin_list[CalibrationFixtureEntry]) -> int: ...
     async def get(self, *, tenant_id: str, fixture_id: str) -> CalibrationFixture | None: ...
 
 
@@ -140,9 +140,7 @@ class ConfidenceFeatureExtractor:
                 "chunk_coverage_ratio": _number(validation.get("chunk_coverage_ratio", validation.get("chunkCoverageRatio", 0.0))),
                 "source_agreement": _number(snapshot.get("source_agreement", snapshot.get("sourceAgreement", len(sources) / len(evidence) if evidence else 0.0))),
                 "citation_validity_ratio": _number(validation.get("citation_validity_ratio", validation.get("citationValidityRatio", 0.0))),
-                "retrieval_retry_count": float(
-                    min(1, max(0, int(_number(snapshot.get("retrieval_retry_count", snapshot.get("retrievalRetryCount", 0.0))))))
-                ),
+                "retrieval_retry_count": float(min(1, max(0, int(_number(snapshot.get("retrieval_retry_count", snapshot.get("retrievalRetryCount", 0.0))))))),
             }
         weights = feature_weights or {}
         return {name: raw[name] * _number(weights.get(name, 1.0)) for name in FEATURE_NAMES}

@@ -1,6 +1,6 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 
 class RegisterRequest(BaseModel):
@@ -90,6 +90,45 @@ class InvokeToolRequest(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class AnswerBehaviorProfileRequest(BaseModel):
+    version: str = Field(min_length=1, max_length=120)
+    persona: str = Field(default="", max_length=2_000)
+    response_style: Literal["CONCISE", "BALANCED", "DETAILED"] = "BALANCED"
+    max_output_tokens: int = Field(default=1_024, ge=128, le=8_192)
+    source_policy: Literal["DOCUMENT_ONLY", "DOCUMENT_OR_MCP", "DOCUMENT_MCP_GENERAL"] = "DOCUMENT_MCP_GENERAL"
+    greeting_policy: Literal["ALLOW_UNGROUNDED", "REQUIRE_ALLOWED_SOURCE", "REFUSE"] = "ALLOW_UNGROUNDED"
+    no_evidence_action: Literal["ABSTAIN", "REFUSE", "ANSWER_UNGROUNDED"] = "ANSWER_UNGROUNDED"
+    require_citations: bool = True
+    allow_mcp_sources: bool = True
+
+    model_config = {"extra": "forbid"}
+
+    @model_validator(mode="after")
+    def validate_policy_combination(self) -> "AnswerBehaviorProfileRequest":
+        if self.no_evidence_action == "ANSWER_UNGROUNDED" and self.source_policy != "DOCUMENT_MCP_GENERAL":
+            raise ValueError("ANSWER_UNGROUNDED requires DOCUMENT_MCP_GENERAL")
+        if self.source_policy == "DOCUMENT_ONLY" and self.allow_mcp_sources:
+            raise ValueError("DOCUMENT_ONLY cannot enable MCP sources")
+        normalized_persona = " ".join(self.persona.casefold().split())
+        if "ignore previous instructions" in normalized_persona or "reveal the system prompt" in normalized_persona:
+            raise ValueError("Persona conflicts with platform policy")
+        return self
+
+
+class GuardrailProfileRequest(BaseModel):
+    version: str = Field(min_length=1, max_length=120)
+    input_rules: list[str] = Field(default_factory=list, max_length=32)
+    tool_rules: list[str] = Field(default_factory=list, max_length=32)
+    output_rules: list[str] = Field(default_factory=list, max_length=32)
+    max_tool_calls: int = Field(default=4, ge=1, le=32)
+    max_tool_timeout_seconds: int = Field(default=30, ge=1, le=120)
+    max_tool_payload_bytes: int = Field(default=1_048_576, ge=65_536, le=10_485_760)
+    max_mcp_freshness_seconds: int = Field(default=900, ge=0, le=86_400)
+    require_tool_confirmation: bool = False
+
+    model_config = {"extra": "forbid"}
+
+
 class UpdateMcpToolRequest(BaseModel):
     allowed: bool
 
@@ -153,6 +192,29 @@ class ParsedTextResponse(BaseModel):
     lifecycle_state: str
 
 
+class SimilarDocumentResponse(BaseModel):
+    document_version_id: str = Field(alias="documentVersionId")
+    document_id: str = Field(alias="documentId")
+    title: str
+    lifecycle_state: str = Field(alias="lifecycleState")
+    score: float
+    preview: str
+
+    model_config = {"populate_by_name": True}
+
+
+class SimilarDocumentsDataResponse(BaseModel):
+    version_id: str = Field(alias="versionId")
+    knowledge_base_id: str | None = Field(default=None, alias="knowledgeBaseId")
+    documents: list[SimilarDocumentResponse]
+
+    model_config = {"populate_by_name": True}
+
+
+class SimilarDocumentsResponse(SuccessEnvelope):
+    data: SimilarDocumentsDataResponse
+
+
 class UpdateParsedTextRequest(BaseModel):
     text: str = Field(min_length=1, max_length=10_000_000)
 
@@ -180,6 +242,7 @@ class RagQueryRequest(BaseModel):
     conversation_id: str | None = Field(default=None, max_length=120, description="Optional server-owned conversation identifier")
     message: str = Field(min_length=1, max_length=8_000, description="Question for the LLM; permitted evidence is used when available")
     knowledge_base_ids: list[str] = Field(min_length=1, max_length=20, description="Knowledge bases that may provide optional evidence")
+    project_id: str | None = Field(default=None, max_length=120, description="Optional Project owning every selected knowledge base")
     mode: str = Field(default="grounded", pattern="^(grounded)$", description="Compatibility mode; safe requests may still receive a general LLM answer")
     stream: bool = Field(default=False, description="Request an SSE response when enabled")
     decomposition: DecompositionOverride | None = Field(default=None, description="Optional per-request decomposition override")
@@ -202,6 +265,14 @@ class RagQueryCitationResponse(BaseModel):
     title: str
     locator: str | None = None
     snippet: str
+    source_kind: Literal["DOCUMENT", "MCP"] = "DOCUMENT"
+    source_id: str | None = None
+    server_id: str | None = None
+    tool_id: str | None = None
+    invocation_id: str | None = None
+    trace_id: str | None = None
+    produced_at: str | None = None
+    expires_at: str | None = None
 
 
 class RagQueryResponse(BaseModel):
@@ -230,6 +301,7 @@ class RagAnswerFeedbackRequest(BaseModel):
 class CreateKnowledgeBaseRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    project_id: str | None = Field(default=None, max_length=120, description="Project that will own this knowledge base; defaults to the tenant default Project")
 
     model_config = {"extra": "forbid"}
 
@@ -240,10 +312,32 @@ class KnowledgeBaseResponse(BaseModel):
     slug: str
     name: str
     status: str
+    project_id: str | None
     created_at: str
     updated_at: str
 
     model_config = {"populate_by_name": True}
+
+
+class CreateProjectRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255, description="Human-readable Project name")
+    slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", description="Stable lowercase Project slug")
+    knowledge_base_ids: list[str] = Field(default_factory=list, max_length=20, description="Existing Knowledge Bases to assign")
+
+    model_config = {"extra": "forbid"}
+
+
+class UpdateProjectRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255, description="Updated human-readable Project name")
+    slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", description="Updated stable lowercase Project slug")
+
+    model_config = {"extra": "forbid"}
+
+
+class ProjectKnowledgeBaseAssignmentRequest(BaseModel):
+    knowledge_base_id: str = Field(min_length=1, max_length=120, description="Knowledge Base to assign to this Project")
+
+    model_config = {"extra": "forbid"}
 
 
 # --- Model profile schemas --------------------------------------------------
@@ -569,6 +663,7 @@ class GenerateSyntheticRequest(BaseModel):
 class AsyncRagQueryRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8192)
     knowledge_base_ids: list[str] = Field(min_length=1, max_length=20)
+    project_id: str | None = Field(default=None, max_length=120)
     conversation_id: str | None = None
     webhook_url: str | None = Field(default=None, max_length=2048)
     mode: Literal["grounded"] = "grounded"
@@ -607,24 +702,58 @@ class IngestionConfigWriteRequest(BaseModel):
     min_aggregate_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     min_page_coverage: float = Field(default=0.5, ge=0.0, le=1.0)
     auto_review: bool = Field(default=False)
-    parser: Literal["auto", "docling_serve", "docling_inprocess", "pdfminer"] = Field(default="auto")
-    docling_serve_url: str | None = Field(default=None)
-    docling_serve_api_key: str | None = Field(default=None)  # write-only, never returned
+    parser: Literal["auto", "docling_serve", "docling_inprocess", "pdfminer"] = Field(
+        default="auto",
+        description="Parser selection for documents in this knowledge base.",
+    )
+    docling_serve_url: str | None = Field(
+        default=None,
+        max_length=2048,
+        description="Optional HTTP/HTTPS docling-serve URL override for this knowledge base.",
+    )
+    docling_serve_api_key: str | None = Field(default=None, min_length=1)  # write-only, never returned
 
     model_config = {"extra": "forbid"}
 
 
 class IngestionConfigResponse(BaseModel):
-    id: str | None
-    knowledge_base_id: str
-    min_text_coverage: float
-    max_invalid_char_ratio: float
-    min_aggregate_confidence: float
-    min_page_coverage: float
-    auto_review: bool
-    parser: str
-    docling_serve_url: str | None
-    docling_serve_api_key_set: bool
-    created_at: str | None
-    updated_at: str | None
-    is_default: bool
+    id: str | None = Field(description="Persisted ingestion config ID, or null when defaults are returned.")
+    knowledge_base_id: str = Field(alias="knowledgeBaseId")
+    min_text_coverage: float = Field(alias="minTextCoverage")
+    max_invalid_char_ratio: float = Field(alias="maxInvalidCharRatio")
+    min_aggregate_confidence: float = Field(alias="minAggregateConfidence")
+    min_page_coverage: float = Field(alias="minPageCoverage")
+    auto_review: bool = Field(alias="autoReview")
+    parser: str = Field(description="Effective parser selection for this knowledge base.")
+    docling_serve_url: str | None = Field(alias="doclingServeUrl")
+    docling_serve_api_key_set: bool = Field(alias="doclingServeApiKeySet")
+    created_at: str | None = Field(alias="createdAt")
+    updated_at: str | None = Field(alias="updatedAt")
+    is_default: bool = Field(alias="isDefault")
+
+    model_config = {
+        "populate_by_name": True,
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "id": None,
+                    "knowledgeBaseId": "kb-123",
+                    "minTextCoverage": 0.3,
+                    "maxInvalidCharRatio": 0.1,
+                    "minAggregateConfidence": 0.5,
+                    "minPageCoverage": 0.5,
+                    "autoReview": False,
+                    "parser": "auto",
+                    "doclingServeUrl": None,
+                    "doclingServeApiKeySet": False,
+                    "createdAt": None,
+                    "updatedAt": None,
+                    "isDefault": True,
+                }
+            ]
+        },
+    }
+
+
+class IngestionConfigSuccessResponse(SuccessEnvelope):
+    data: IngestionConfigResponse

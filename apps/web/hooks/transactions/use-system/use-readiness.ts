@@ -32,6 +32,9 @@ export const useReadiness = (args?: UseReadinessArgs) => {
     queryFn: fetchReadiness,
     enabled,
     refetchInterval: 30000,
+    // Tidak ada poller permanen saat tab hidden (visibility bawaan react-query).
+    refetchIntervalInBackground: false,
+    staleTime: 30_000,
   })
 
   return {

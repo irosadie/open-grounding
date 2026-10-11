@@ -7,9 +7,39 @@ Both implement the domain ports in ``adapter_ports.py``.
 
 from __future__ import annotations
 
+import asyncio
+import random
+from typing import cast
+
 from app.core.settings import Settings
 from app.domain.rag.adapter_ports import EmbeddingAdapter, SparseEncoderAdapter
 from app.domain.tenant_context import TenantContext
+
+_EMBED_TIMEOUT_S = 10.0
+_RETRY_JITTER_S = 0.25
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, ValueError):
+        return False
+    if isinstance(exc, asyncio.CancelledError):
+        return False
+    try:
+        import httpx
+
+        if isinstance(exc, (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError)):
+            return True
+    except ImportError:
+        pass
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return True
+    status = getattr(exc, "status_code", None)
+    if status in (408, 409, 425, 429):
+        return True
+    if isinstance(status, int) and 500 <= status <= 599:
+        return True
+    name = type(exc).__name__
+    return name in {"APITimeoutError", "APIConnectionError", "RateLimitError", "InternalServerError"}
 
 
 class ProviderEmbeddingAdapter(EmbeddingAdapter):
@@ -32,7 +62,19 @@ class ProviderEmbeddingAdapter(EmbeddingAdapter):
             api_key=resolved.api_key,
             base_url=resolved.base_url,
         )
-        return await provider.embed(texts)
+        try:
+            return cast(
+                list[list[float]],
+                await asyncio.wait_for(provider.embed(texts), timeout=_EMBED_TIMEOUT_S),
+            )
+        except Exception as exc:
+            if not _is_retryable(exc):
+                raise
+            await asyncio.sleep(random.uniform(0, _RETRY_JITTER_S))
+            return cast(
+                list[list[float]],
+                await asyncio.wait_for(provider.embed(texts), timeout=_EMBED_TIMEOUT_S),
+            )
 
 
 class ProfileSparseEncoderAdapter(SparseEncoderAdapter):
@@ -58,4 +100,16 @@ class ProfileSparseEncoderAdapter(SparseEncoderAdapter):
         encode_sparse = getattr(provider, "encode_sparse", None)
         if encode_sparse is None:
             raise ValueError(f"Provider {resolved.provider_name} does not support sparse encoding")
-        return await encode_sparse(texts)
+        try:
+            return cast(
+                list[dict[str, object]],
+                await asyncio.wait_for(encode_sparse(texts), timeout=_EMBED_TIMEOUT_S),
+            )
+        except Exception as exc:
+            if not _is_retryable(exc):
+                raise
+            await asyncio.sleep(random.uniform(0, _RETRY_JITTER_S))
+            return cast(
+                list[dict[str, object]],
+                await asyncio.wait_for(encode_sparse(texts), timeout=_EMBED_TIMEOUT_S),
+            )

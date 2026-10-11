@@ -30,6 +30,9 @@ export const useRagIngestionDelete = () => {
       void queryClient.invalidateQueries({
         queryKey: [queryKeys.rag.ingestion.status],
       })
+      void queryClient.invalidateQueries({
+        queryKey: [queryKeys.rag.ingestion.documents],
+      })
     },
   })
 

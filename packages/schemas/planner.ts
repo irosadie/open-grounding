@@ -9,7 +9,10 @@ export const plannerConfigSchema = z.object({
   userPromptTemplate: z.string().min(1, "User prompt template is required"),
   maxTasks: z.number().int().min(1).max(8).default(4),
   taskTimeoutSeconds: z.number().int().min(1).max(60).default(15),
-  taskTypes: z.array(z.enum(plannerTaskTypes)).min(1).default([...plannerTaskTypes]),
+  taskTypes: z
+    .array(z.enum(plannerTaskTypes))
+    .min(1)
+    .default([...plannerTaskTypes]),
   mcpEnabled: z.boolean().default(false),
   guardrails: z.record(z.unknown()).default({}),
 })

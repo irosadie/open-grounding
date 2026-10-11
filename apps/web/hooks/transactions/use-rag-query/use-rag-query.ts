@@ -16,6 +16,7 @@ const askRag = async (payload: RagQueryProps) => {
     data: {
       message: validated.message,
       knowledge_base_ids: validated.knowledgeBaseIds,
+      project_id: validated.projectId,
       conversation_id: validated.conversationId,
       mode: validated.mode,
       stream: false,

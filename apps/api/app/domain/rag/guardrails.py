@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from app.domain.rag.answer_policy import GuardrailProfile
+
 
 @dataclass(frozen=True)
 class GuardrailDecision:
@@ -24,15 +26,17 @@ _PROTECTED_REQUEST_PATTERNS = (
 _REFUSAL_REASON = "This request cannot be answered because it violates the safety guardrails."
 
 
-def evaluate_query(message: str) -> GuardrailDecision:
-    return _evaluate_text(message)
+def evaluate_query(message: str, *, profile: GuardrailProfile | None = None) -> GuardrailDecision:
+    return _evaluate_text(message, enabled=profile is None or "BLOCK_POLICY_BYPASS" in profile.input_rules)
 
 
-def evaluate_answer(answer: str) -> GuardrailDecision:
-    return _evaluate_text(answer)
+def evaluate_answer(answer: str, *, profile: GuardrailProfile | None = None) -> GuardrailDecision:
+    return _evaluate_text(answer, enabled=profile is None or "BLOCK_SECRET_DISCLOSURE" in profile.output_rules)
 
 
-def _evaluate_text(text: str) -> GuardrailDecision:
+def _evaluate_text(text: str, *, enabled: bool = True) -> GuardrailDecision:
+    if not enabled:
+        return GuardrailDecision(allowed=True)
     normalized = " ".join(text.casefold().split())
     if any(pattern in normalized for pattern in _PROTECTED_REQUEST_PATTERNS):
         return GuardrailDecision(allowed=False, code="POLICY_REFUSAL", reason=_REFUSAL_REASON)

@@ -1,4 +1,8 @@
+import json
 from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -11,7 +15,7 @@ from app.domain.errors import DomainError
 from app.domain.models import UserRole
 from app.domain.rag.answer_trace import AnswerRun
 from app.domain.rag.catalog import KnowledgeBase
-from app.domain.rag.conversation import ConversationMessage
+from app.domain.rag.conversation import ConversationMessage, ConversationSpeaker
 from app.domain.rag.query import QueryRoute, normalize_query, plan_query
 from app.domain.tenant_context import TenantContext
 from app.interfaces.http.schemas import PlannerOverride, RagQueryRequest, RagQueryStreamRequest
@@ -59,14 +63,14 @@ def test_query_normalization_is_bounded_after_whitespace_collapse() -> None:
 
 
 @pytest.mark.asyncio
-async def test_safe_conversational_input_is_answered_by_the_llm_without_document_evidence() -> None:
+async def test_safe_conversational_input_is_answered_by_the_llm_without_document_evidence(tmp_path: Path) -> None:
     tenant = TenantContext(
         tenant_id=str(uuid4()),
         membership_id=str(uuid4()),
         user_id=str(uuid4()),
         role=UserRole.USER,
     )
-    settings = Settings(_env_file=None, rag_query_enabled=True)
+    settings = Settings(_env_file=None, rag_query_enabled=True, rag_llm_trace_enabled=True, rag_llm_trace_dir=str(tmp_path))
     generation = FakeGenerationService()
     result = await RagQueryService(
         settings,
@@ -83,6 +87,10 @@ async def test_safe_conversational_input_is_answered_by_the_llm_without_document
     assert result["evidenceLevel"] == "none"
     assert result["citations"] == []
     assert generation.grounded is False
+    trace_file = next(tmp_path.rglob("rollout-*.jsonl"))
+    events = [json.loads(line) for line in trace_file.read_text(encoding="utf-8").splitlines()]
+    names = [event["event"] for event in events]
+    assert names.index("user_message") < names.index("assistant_response") < names.index("turn_completed")
 
 
 @pytest.mark.asyncio
@@ -160,6 +168,45 @@ async def test_disabled_query_is_safe_abstention() -> None:
 
 
 @pytest.mark.asyncio
+async def test_query_stays_successful_when_memory_enqueue_fails() -> None:
+    tenant = TenantContext(
+        tenant_id=str(uuid4()),
+        membership_id=str(uuid4()),
+        user_id=str(uuid4()),
+        role=UserRole.USER,
+    )
+    settings = Settings(_env_file=None)
+    config_repo = MagicMock()
+    config_repo.find_by_knowledge_base = AsyncMock(return_value=SimpleNamespace(enabled=True))
+    service = RagQueryService(
+        settings,
+        FakeAnswerRunRepository(),
+        RagQueryAdmission(settings),
+        FakeKnowledgeBaseRepository(),
+        FakeConversationHistoryRepository(),
+        FakeIndexGenerationRepository(),
+    )
+
+    with (
+        patch("app.infrastructure.rag_catalog.SqlAlchemyMemoryConfigRepository", return_value=config_repo),
+        patch(
+            "app.workers.ingestion_worker.enqueue_memory_summarize",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("redis unavailable"),
+        ),
+    ):
+        result = await service.query(
+            tenant=tenant,
+            message="question",
+            knowledge_base_ids=("kb",),
+            conversation_id=None,
+            session=object(),
+        )
+
+    assert result["route"] == "abstain"
+
+
+@pytest.mark.asyncio
 async def test_enabled_query_abstains_when_knowledge_base_is_not_tenant_available() -> None:
     tenant = TenantContext(
         tenant_id=str(uuid4()),
@@ -192,6 +239,35 @@ async def test_query_uses_only_configured_recent_conversation_window() -> None:
         tenant=tenant, message="question", knowledge_base_ids=("kb",), conversation_id="conversation-1"
     )
     assert conversations.request == (tenant.tenant_id, tenant.user_id, "conversation-1", 2)
+
+
+@pytest.mark.asyncio
+async def test_query_excludes_current_turn_from_generation_history() -> None:
+    tenant = TenantContext(tenant_id=str(uuid4()), membership_id=str(uuid4()), user_id=str(uuid4()), role=UserRole.USER)
+    settings = Settings(_env_file=None, rag_query_enabled=True)
+    conversations = RecordingConversationHistoryRepository(
+        [
+            ConversationMessage("prior-user", tenant.tenant_id, "conversation-1", ConversationSpeaker.USER, "prior question", datetime.now(UTC).replace(tzinfo=None)),
+            ConversationMessage("prior-assistant", tenant.tenant_id, "conversation-1", ConversationSpeaker.ASSISTANT, "prior answer", datetime.now(UTC).replace(tzinfo=None)),
+        ]
+    )
+    generation = CapturingGenerationService()
+
+    await RagQueryService(
+        settings,
+        FakeAnswerRunRepository(),
+        RagQueryAdmission(settings),
+        FakeKnowledgeBaseRepository(),
+        conversations,
+        FakeIndexGenerationRepository(),
+        generation=generation,
+    ).query(tenant=tenant, message="current question", knowledge_base_ids=("kb",), conversation_id="conversation-1")
+
+    assert generation.messages == [
+        {"role": "user", "content": "prior question"},
+        {"role": "assistant", "content": "prior answer"},
+    ]
+    assert all(message.content != "current question" for message in conversations.history_snapshot)
 
 
 @pytest.mark.asyncio
@@ -286,6 +362,23 @@ class FakeConversationHistoryRepository:
         return []
 
 
+class RecordingConversationHistoryRepository:
+    def __init__(self, messages: list[ConversationMessage]) -> None:
+        self.messages = messages
+        self.history_snapshot: list[ConversationMessage] = []
+
+    async def ensure_conversation(self, *, tenant_id: str, user_id: str, conversation_id: str) -> None:
+        del tenant_id, user_id, conversation_id
+
+    async def save_message(self, *, message: ConversationMessage) -> None:
+        self.messages.append(message)
+
+    async def recent_messages(self, *, tenant_id: str, user_id: str, conversation_id: str, limit: int) -> list[ConversationMessage]:
+        del tenant_id, user_id, conversation_id
+        self.history_snapshot = list(self.messages[-limit:])
+        return list(self.history_snapshot)
+
+
 class FakeIndexGenerationRepository:
     async def find_active_for_knowledge_bases(self, *, tenant_id: str, knowledge_base_ids: tuple[str, ...]) -> list[object]:
         del tenant_id, knowledge_base_ids
@@ -311,6 +404,16 @@ class FakeGenerationService:
                 "limitations": [],
             }
         )
+
+
+class CapturingGenerationService(FakeGenerationService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[dict[str, str]] = []
+
+    async def generate(self, *, messages: list[dict[str, str]] | None = None, **kwargs: object) -> object:
+        self.messages = messages or []
+        return await super().generate(**kwargs)
 
 
 class FakeAnswerTraceDetailRepository:

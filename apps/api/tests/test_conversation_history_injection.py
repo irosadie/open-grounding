@@ -20,7 +20,6 @@ from app.domain.rag.conversation import ConversationMessage, ConversationSpeaker
 from app.domain.rag.evidence import Citation, EvidenceContext
 from app.domain.tenant_context import TenantContext
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
